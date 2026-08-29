@@ -1,9 +1,10 @@
 # 生命游戏实验台
 
 基于浏览器的 Conway 生命游戏实验平台。规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
-验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)。
+验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)，
+用户反馈记录见 [docs/feedback.md](./docs/feedback.md)。
 
-当前进度：**插入阶段「布局重构」已完成**（阶段 4 之前）。
+当前进度：**插入阶段「布局微调」已完成**（阶段 4 之前）。
 
 ## 目录结构
 

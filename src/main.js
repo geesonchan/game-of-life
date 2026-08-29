@@ -144,6 +144,8 @@ app.setMode = function (mode, opts = {}) {
   // 语域跟着模式走：简洁模式优先取 key + '.simple' 的大白话文案
   setRegister(app.mode)
   if (app.mode === 'simple' && app.stamp) app.setStamp(null)
+  // 简洁模式下玩具条常驻展开 —— 常驻的东西不需要开关，所以那个标签也一并隐藏（data-mode）
+  if (app.mode === 'simple') app.setRail(true)
   app.handleResize()
   if (!opts.silent) app.toast(t(app.mode === 'simple' ? 'mode.toSimple' : 'mode.toFull'))
 }

@@ -20,7 +20,7 @@ export function setupLibrary(app) {
 
   function renderPatterns() {
     patternList.innerHTML = PATTERNS.map(p => `
-      <button class="card ${app.stamp && app.stamp.key === p.key ? 'on' : ''}" data-pattern="${p.key}" title="${t('tip.pattern')}">
+      <button class="card ${app.stamp && app.stamp.key === p.key ? 'on' : ''}" data-pattern="${p.key}" title="${t('pattern.' + p.key + '.desc')}">
         ${miniArt(p)}
         <span class="card-text">
           <b>${t('pattern.' + p.key)}</b>

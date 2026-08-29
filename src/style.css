@@ -515,7 +515,14 @@ body.mode-full [data-mode="simple"] { display: none !important; }
 .tb-brand em { font-style: normal; font-size: 10px; color: var(--muted); }
 
 .tb-seg { display: flex; align-items: center; gap: 6px; flex: none; }
-.tb-right { margin-left: auto; gap: 8px; }
+/* 运行控件与模式/语言一起靠右；清空单独留在左段，离得远反而不容易误按 */
+.tb-run { margin-left: auto; }
+.tb-right {
+  gap: 8px;
+  padding-left: 12px;
+  margin-left: 4px;
+  border-left: 1px solid var(--line);
+}
 .topbar button { padding: 6px 12px; font-size: 13px; }
 .topbar .seg button { padding: 3px 9px; font-size: 11px; }
 
@@ -540,8 +547,7 @@ body.mode-full [data-mode="simple"] { display: none !important; }
   border-bottom: 1px solid var(--line);
   padding: 10px 12px 8px;
 }
-.strip .card-list { display: none; }
-.strip .card-list.on {
+.strip .card-list {
   display: flex;
   flex-direction: row;
   gap: 8px;
@@ -583,7 +589,6 @@ body.mode-full [data-mode="simple"] { display: none !important; }
 @media (max-width: 900px) {
   .panel { width: 252px; }
   .tb-brand { display: none; }
-  .tb-right { margin-left: auto; }
 }
 @media (max-width: 900px) {
   /* 三列在窄侧栏里会把数字截断成「44…」，退成两列 */
@@ -595,4 +600,39 @@ body.mode-full [data-mode="simple"] { display: none !important; }
   .tb-run, .tb-tabs, .tb-right { flex-wrap: wrap; }
   .panel { width: 228px; }
   .strip .card { width: 190px; }
+}
+
+/* ---------- 左缘竖排工具条（玩具盒） ---------- */
+/* 它是工作区的布局成员，不是浮层 —— 展开时画布变窄，绝不会被盖住 */
+.toolrail {
+  flex: none;
+  width: 112px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 8px 7px 10px;
+}
+.rail-list { gap: 5px; }
+.toolrail .card {
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 4px 7px;
+  text-align: center;
+}
+.toolrail .card-art { width: 32px; height: 32px; }
+.toolrail .card-text { flex: none; width: 100%; }
+.toolrail .card-text b { font-size: 11px; line-height: 1.3; }
+/* 工具条只放缩略图 + 名称；一句话说明走 title 悬停 */
+.toolrail .card-text em,
+.toolrail .card-size { display: none; }
+.rail-hint { margin: 9px 2px 0; font-size: 10px; line-height: 1.5; }
+
+/* 窄屏收窄。注意必须写在 .toolrail 基础规则之后 ——
+   同等优先级下后写的赢，早先那两个 media 块在文件更前面，会被基础规则盖掉。 */
+@media (max-width: 900px) { .toolrail { width: 96px; } }
+@media (max-width: 768px) {
+  .toolrail { width: 88px; }
+  .toolrail .card-art { width: 26px; height: 26px; }
+  .toolrail .card-text b { font-size: 10px; }
 }

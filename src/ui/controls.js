@@ -129,24 +129,42 @@ export function setupControls(app) {
 
   /* ---------- 顶栏「图案 / 世界」标签 ---------- */
 
+  // 图案走左缘竖排工具条，世界走顶部横条 —— 占的是不同的边，可以同时开着
+  const rail = $('tool-rail')
+  const railHint = $('rail-hint')
   const strip = $('card-strip')
   const stripHint = $('strip-hint')
   const tabs = [...document.querySelectorAll('.tb-tabs .tab')]
-  let openTab = null
 
-  /** 同一时刻只开一条；再点同一个标签就收起 */
+  function syncTabs() {
+    tabs.forEach(b => b.classList.toggle('on',
+      b.dataset.tab === 'pattern' ? !rail.hidden : !strip.hidden))
+  }
+
+  /** 左缘工具条：展开会让画布变窄，而不是盖在画布上 */
+  app.setRail = function (open) {
+    rail.hidden = !open
+    syncTabs()
+    app.handleResize()
+  }
+
+  /** 顶部世界横条 */
+  app.setWorlds = function (open) {
+    strip.hidden = !open
+    syncTabs()
+    app.handleResize()
+  }
+
   app.toggleTab = function (name) {
-    openTab = openTab === name ? null : name
-    strip.hidden = openTab === null
-    tabs.forEach(b => b.classList.toggle('on', b.dataset.tab === openTab))
-    $('pattern-list').classList.toggle('on', openTab === 'pattern')
-    $('world-list').classList.toggle('on', openTab === 'world')
-    if (openTab) stripHint.textContent = t(openTab === 'pattern' ? 'pattern.hint' : 'world.hint')
-    app.handleResize()          // 卡片条撑开/收起会改变画布高度
+    if (name === 'pattern') app.setRail(rail.hidden)
+    else app.setWorlds(strip.hidden)
   }
+
   app.refreshTabHint = function () {
-    if (openTab) stripHint.textContent = t(openTab === 'pattern' ? 'pattern.hint' : 'world.hint')
+    railHint.textContent = t('pattern.hint')
+    stripHint.textContent = t('world.hint')
   }
+  app.refreshTabHint()
   tabs.forEach(b => b.addEventListener('click', () => app.toggleTab(b.dataset.tab)))
 
   /* ---------- 语言与模式开关 ---------- */

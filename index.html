@@ -16,6 +16,15 @@
         <em data-mode="full" data-i18n="app.subtitle">阶段 3.7 · 布局重构</em>
       </div>
 
+      <div class="tb-seg tb-left">
+        <button id="btn-clear" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
+      </div>
+
+      <div class="tb-seg tb-tabs">
+        <button class="tab" data-tab="pattern" data-mode="full" data-i18n="pattern.section" data-i18n-title="tip.pattern">图案盒子</button>
+        <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>
+      </div>
+
       <div class="tb-seg tb-run">
         <button id="btn-play" class="primary" data-i18n="ctrl.play" data-i18n-title="tip.play">▶ 播放</button>
         <button id="btn-step" data-i18n="ctrl.step" data-i18n-title="tip.step">单步</button>
@@ -24,12 +33,6 @@
           <input type="range" id="in-speed" min="1" max="60" step="1" value="10" />
           <b id="lbl-speed">10</b>
         </label>
-        <button id="btn-clear" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
-      </div>
-
-      <div class="tb-seg tb-tabs">
-        <button class="tab" data-tab="pattern" data-i18n="pattern.section" data-i18n-title="tip.pattern">图案盒子</button>
-        <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>
       </div>
 
       <div class="tb-seg tb-right">
@@ -45,9 +48,8 @@
       </div>
     </header>
 
-    <!-- 顶栏标签展开的横向卡片条 -->
+    <!-- 「世界」标签展开的顶部横条（图案改走左缘竖排工具条） -->
     <div class="strip" id="card-strip" hidden>
-      <div class="card-list strip-list" id="pattern-list"></div>
       <div class="card-list strip-list" id="world-list"></div>
       <p class="note strip-hint" id="strip-hint"></p>
     </div>
@@ -56,6 +58,11 @@
 
     <!-- ============ 工作区：画布 + 右栏 ============ -->
     <div class="workspace">
+      <nav class="toolrail" id="tool-rail" hidden>
+        <div class="card-list rail-list" id="pattern-list"></div>
+        <p class="note rail-hint" id="rail-hint"></p>
+      </nav>
+
       <main class="stage">
         <canvas id="board"></canvas>
         <div class="hud" id="hud">

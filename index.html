@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>生命游戏实验台</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <main class="stage">
+      <canvas id="board"></canvas>
+      <div class="hud" id="hud">
+        <span class="hud-item">代数 <b id="hud-gen">0</b></span>
+        <span class="hud-item">存活 <b id="hud-alive">0</b></span>
+        <span class="hud-item">实速 <b id="hud-gps">0</b> 代/秒</span>
+        <span class="hud-item muted" id="hud-scale">缩放 4.0×</span>
+      </div>
+      <div class="toast" id="toast" hidden></div>
+    </main>
+
+    <aside class="panel">
+      <header class="panel-head">
+        <h1>生命游戏实验台</h1>
+        <p class="sub">阶段 1 · 引擎 / 渲染 / 基础控制</p>
+      </header>
+
+      <section class="group">
+        <div class="row btn-row">
+          <button id="btn-play" class="primary">▶ 播放</button>
+          <button id="btn-step">单步</button>
+        </div>
+        <label class="field">
+          <span>速度 <b id="lbl-speed">10</b> 代/秒</span>
+          <input type="range" id="in-speed" min="1" max="60" step="1" value="10" />
+        </label>
+        <p class="note" id="throttle-note" hidden>⚠ 单代计算超时，已自动降速</p>
+      </section>
+
+      <section class="group">
+        <h2>初始化</h2>
+        <label class="field">
+          <span>密度 <b id="lbl-density">0.35</b></span>
+          <input type="range" id="in-density" min="0" max="1" step="0.01" value="0.35" />
+        </label>
+        <label class="field">
+          <span>种子（留空则随机生成）</span>
+          <input type="text" id="in-seed" placeholder="例如 4271" />
+        </label>
+        <div class="row btn-row">
+          <button id="btn-random">随机填充</button>
+          <button id="btn-clear">清空</button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>棋盘</h2>
+        <label class="field">
+          <span>边界</span>
+          <select id="in-boundary">
+            <option value="torus" selected>环形（对侧相连）</option>
+            <option value="dead">死边界（界外恒死）</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>尺寸</span>
+          <select id="in-size">
+            <option value="100">100 × 100</option>
+            <option value="200" selected>200 × 200</option>
+            <option value="300">300 × 300</option>
+            <option value="500">500 × 500</option>
+          </select>
+        </label>
+        <div class="row btn-row">
+          <button id="btn-fit">适配视图</button>
+        </div>
+      </section>
+
+      <section class="group">
+        <h2>规则</h2>
+        <div class="kv"><span>记法</span><b id="lbl-notation">B3/S23</b></div>
+        <div class="kv"><span>指纹</span><b id="lbl-fingerprint" class="mono">–</b></div>
+        <p class="note">阶段 1 固定为标准生命游戏；条款编辑器在阶段 3 开放。</p>
+      </section>
+
+      <section class="group">
+        <h2>操作提示</h2>
+        <ul class="tips">
+          <li><b>左键</b>拖动 = 画活细胞</li>
+          <li><b>右键</b>拖动 = 擦除</li>
+          <li><b>中键</b> 或 <b>空格+左键</b> 拖动 = 平移</li>
+          <li><b>滚轮</b> = 以光标为中心缩放</li>
+          <li><b>P</b> 播放/暂停 · <b>N</b> 单步 · <b>F</b> 适配视图</li>
+        </ul>
+      </section>
+    </aside>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

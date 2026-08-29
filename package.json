@@ -1,0 +1,19 @@
+{
+  "name": "game-of-life-lab",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "生命游戏实验台",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:jsc": "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc -m tests/run-jsc.js"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}

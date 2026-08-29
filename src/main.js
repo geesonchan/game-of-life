@@ -10,6 +10,9 @@ import { RingSeries } from './data/series.js'
 import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
 import { createRuleEditor } from './ui/rule-editor.js'
+import { setupLibrary } from './ui/library.js'
+import { placePattern, centerOrigin } from './engine/patterns.js'
+import { t, applyStatic, onLangChange, getLang } from './i18n/index.js'
 
 const DEFAULT_SIZE = 200
 const HISTORY_LEN = 500   // 折线图窗口：最近 500 代
@@ -41,7 +44,9 @@ const app = {
   fpsWindowStart: 0,
   fps: 0,
   needsFit: false,
-  chartGen: -1
+  chartGen: -1,
+  mode: 'full',       // 'simple' | 'full'
+  stamp: null         // 当前选中的图案（跟随鼠标待放置）
 }
 
 /* ---------------- 行为 ---------------- */
@@ -57,7 +62,7 @@ app.tick = function () {
 app.setRunning = function (on) {
   app.running = on
   app.autoPaused = false
-  app.el.play.textContent = on ? '⏸ 暂停' : '▶ 播放'
+  app.el.play.textContent = t(on ? 'ctrl.pause' : 'ctrl.play')
   app.el.play.classList.toggle('primary', !on)
   app.windowStart = performance.now()
   app.gensInWindow = 0
@@ -80,7 +85,7 @@ app.clear = function () {
   app.series.clear()
   app.dirty = true
   app.updateHud()
-  app.toast('已清空')
+  app.toast(t('toast.cleared'))
 }
 
 app.randomize = function () {
@@ -91,24 +96,27 @@ app.randomize = function () {
   app.series.push(app.engine.stats.alive)
   app.dirty = true
   app.updateHud()
-  app.toast(`已用种子 ${seed} · 密度 ${app.density.toFixed(2)} 初始化`)
+  app.toast(t('toast.randomized', { seed, density: app.density.toFixed(2) }))
 }
 
 /** 应用一条新编译的规则（引擎会把不可达状态的细胞清成死亡，见 D18） */
-app.applyRule = function (rule) {
+app.applyRule = function (rule, message) {
   app.engine.setRule(rule)
   app.renderer.setAgingLayers(rule.agingLayers)
   app.visual.sync(app.engine)   // 被清掉的衰老细胞不该留下年龄或残影
   app.updateRuleInfo()
+  if (app.library) app.library.renderWorlds()
   app.dirty = true
   app.updateHud()
-  app.toast(`规则已应用 · ${rule.notation || '条款规则'} · 指纹 ${rule.fingerprint}`)
+  app.toast(message || t('toast.ruleApplied', {
+    notation: rule.notation || t('rule.beyondBS'), fp: rule.fingerprint
+  }))
 }
 
 app.updateRuleInfo = function () {
   const r = app.engine.rule
   document.getElementById('lbl-rule-name').textContent = r.name
-  document.getElementById('lbl-notation').textContent = r.notation || '条款规则（超出 B/S）'
+  document.getElementById('lbl-notation').textContent = r.notation || t('rule.beyondBS')
   document.getElementById('lbl-fingerprint').textContent = r.fingerprint
   let n = 0
   for (let i = 0; i < r.reachable.length; i++) if (r.reachable[i]) n++
@@ -122,7 +130,44 @@ app.resizeBoard = function (w, h) {
   app.series.clear()
   app.fitView()
   app.updateHud()
-  app.toast(`棋盘 ${w} × ${h}`)
+  app.toast(t('toast.resized', { w, h }))
+}
+
+/** 简洁 / 完整模式切换：只改 body 上的 class，具体哪些区块显示由 CSS 的 data-mode 决定 */
+app.setMode = function (mode) {
+  app.mode = mode === 'simple' ? 'simple' : 'full'
+  document.body.classList.toggle('mode-simple', app.mode === 'simple')
+  document.body.classList.toggle('mode-full', app.mode === 'full')
+  if (app.mode === 'simple') app.setStamp(null)
+  app.handleResize()
+  app.toast(t(app.mode === 'simple' ? 'mode.toSimple' : 'mode.toFull'))
+}
+
+/** 选中 / 取消选中一个待放置的图案 */
+app.setStamp = function (pattern) {
+  app.stamp = pattern
+  app.library.renderPatterns()
+  app.canvas.classList.toggle('stamping', !!pattern)
+  app.dirty = true
+  if (pattern) app.toast(t('pattern.selected', { name: t('pattern.' + pattern.key) }))
+  else app.toast(t('pattern.cancelled'))
+}
+
+/** 在某个格子放下当前图案（以光标为中心） */
+app.placeStampAt = function (cell) {
+  const p = app.stamp
+  if (!p) return
+  if (p.w > app.engine.w || p.h > app.engine.h) {
+    app.toast(t('pattern.tooBig', { name: t('pattern.' + p.key) }))
+    return
+  }
+  const o = centerOrigin(p, cell.x, cell.y)
+  placePattern(app.engine, p, o.x, o.y)
+  app.engine.stats.alive = app.engine.countAlive()
+  app.visual.reconcile(app.engine)
+  app.dirty = true
+  app.updateHud()
+  app.toast(t('pattern.placed', { name: t('pattern.' + p.key) }))
 }
 
 app.fitView = function () {
@@ -187,7 +232,8 @@ app.updateHud = function () {
   hud.gps.textContent = app.running ? app.gps.toFixed(0) : '0'
   hud.fps.textContent = app.running ? app.fps.toFixed(0) : '–'
   const c = app.hoverCell
-  hud.scale.textContent = `缩放 ${app.viewport.scale.toFixed(1)}×` + (c ? ` · 格 (${c.x}, ${c.y})` : '')
+  hud.scale.textContent = `${t('hud.zoom')} ${app.viewport.scale.toFixed(1)}×`
+    + (c ? ` · ${t('hud.cell')} (${c.x}, ${c.y})` : '')
 
   st.gen.textContent = app.engine.generation
   st.alive.textContent = s.alive
@@ -203,8 +249,26 @@ setupControls(app)
 setupCanvasInput(app)
 app.ruleEditor = createRuleEditor(app)
 document.getElementById('btn-rule').addEventListener('click', () => app.ruleEditor.open())
+app.library = setupLibrary(app)
+app.library.render()
 app.renderer.setAgingLayers(app.engine.rule.agingLayers)
 app.updateRuleInfo()
+applyStatic()
+
+// 切语言：静态文字整棵树重刷，动态生成的部分各自重绘
+onLangChange(() => {
+  applyStatic()
+  app.el.play.textContent = t(app.running ? 'ctrl.pause' : 'ctrl.play')
+  app.el.lblTrail.textContent = trailLabelOf(Number(app.el.trailLen.value))
+  app.library.render()
+  app.updateRuleInfo()
+  app.updateHud()
+  app.chart.draw(app.series, app.renderer.flat)
+  app.ruleEditor.relocalize()
+})
+function trailLabelOf(v) {
+  return t(v <= 6 ? 'vis.trail.short' : v <= 13 ? 'vis.trail.mid' : 'vis.trail.long')
+}
 
 app.engine.randomize(4271, app.density)
 app.visual.sync(app.engine)
@@ -273,6 +337,10 @@ function frame(now) {
 
   if (app.dirty) {
     app.renderer.draw(app.engine, app.viewport, app.visual, app.visualOpts)
+    if (app.stamp && app.hoverCell) {
+      const o = centerOrigin(app.stamp, app.hoverCell.x, app.hoverCell.y)
+      app.renderer.drawGhost(app.viewport, app.stamp, o.x, o.y, app.engine.w, app.engine.h)
+    }
     app.dirty = false
     app.updateHud()
   }

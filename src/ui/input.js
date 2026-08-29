@@ -20,8 +20,15 @@ export function setupCanvasInput(app) {
   }
 
   canvas.addEventListener('pointerdown', e => {
+    const p0 = devicePos(e)
+    // 选中图案时，左键 = 放置，右键 = 取消选择；此时不进画笔
+    if (app.stamp && (e.button === 0 || e.button === 2) && !spaceHeld) {
+      if (e.button === 2) app.setStamp(null)
+      else app.placeStampAt(vp.screenToCell(p0.x, p0.y))
+      return
+    }
     canvas.setPointerCapture(e.pointerId)
-    const p = devicePos(e)
+    const p = p0
     if (e.button === 1 || spaceHeld) {
       mode = 'pan'
       canvas.classList.add('panning')
@@ -54,6 +61,8 @@ export function setupCanvasInput(app) {
     // 鼠标位置的格坐标显示在 HUD 上
     const c = vp.screenToCell(p.x, p.y)
     app.hoverCell = (c.x >= 0 && c.y >= 0 && c.x < app.engine.w && c.y < app.engine.h) ? c : null
+    // 图案预览要跟着鼠标走，所以移动就得重画
+    if (app.stamp) app.dirty = true
   })
 
   function endDrag(e) {
@@ -66,7 +75,10 @@ export function setupCanvasInput(app) {
   }
   canvas.addEventListener('pointerup', endDrag)
   canvas.addEventListener('pointercancel', endDrag)
-  canvas.addEventListener('pointerleave', () => { app.hoverCell = null })
+  canvas.addEventListener('pointerleave', () => {
+    app.hoverCell = null
+    if (app.stamp) app.dirty = true
+  })
 
   canvas.addEventListener('wheel', e => {
     e.preventDefault()
@@ -77,9 +89,12 @@ export function setupCanvasInput(app) {
     app.updateHud()
   }, { passive: false })
 
-  // 空格键按住 = 临时平移模式
+  // 空格键按住 = 临时平移模式；Esc 取消图案选择
   window.addEventListener('keydown', e => {
     if (e.code === 'Space' && !isTyping(e.target)) { spaceHeld = true; e.preventDefault() }
+    else if (e.key === 'Escape' && app.stamp && document.getElementById('rule-modal').hidden) {
+      app.setStamp(null); e.preventDefault()
+    }
   })
   window.addEventListener('keyup', e => {
     if (e.code === 'Space') spaceHeld = false

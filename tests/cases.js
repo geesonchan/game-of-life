@@ -6,6 +6,8 @@ import { lifeRule, compileRule, parseBS, bsToClauses } from '../src/engine/rules
 import { validateRule, validateClauses } from '../src/engine/validate.js'
 import { presetRule, PRESETS } from '../src/engine/presets.js'
 import { exportRule, importRule } from '../src/engine/rule-io.js'
+import { PATTERNS, getPattern, placePattern, centerOrigin } from '../src/engine/patterns.js'
+import { DICT } from '../src/i18n/dict.js'
 
 /** 把 ASCII 图案（O=活，.=死）画到棋盘上，左上角落在 (ox,oy) */
 export function place(engine, pattern, ox, oy) {
@@ -323,7 +325,7 @@ cases.push(
       t.equal(padded.notation, 'B3/S23', '应能反解出记法')
       const vp = validateRule(padded)
       t.equal(vp.reachable.join(','), 'dead,alive', '可达状态只应有死和活')
-      t.ok(vp.warnings.some(w => w.includes('衰老')), '应提醒有永不出现的衰老层')
+      t.ok(vp.warnings.some(w => w.key === 'v.warn.unreachableAging'), '应提醒有永不出现的衰老层')
       // 但指纹与 0 层的 Life 不同 —— 查找表尺寸不同，这是对的
       t.ok(padded.fingerprint !== presetRule('life').fingerprint, '层数不同则查找表不同，指纹应不同')
 
@@ -333,7 +335,9 @@ cases.push(
       t.equal(brain.notation, null, '不可表达时记法应为 null')
       const vb = validateRule(brain)
       t.equal(vb.bs.culprit, 1, '应指出第 2 条条款（alive → 衰老 1）是原因')
-      t.ok(vb.bs.reason.includes('衰老'), '置灰原因文案应提到衰老态')
+      t.equal(vb.bs.reasonKey, 'v.bs.culprit', '置灰原因应以 key 形式返回，不含任何人类语言')
+      t.equal(vb.bs.reasonParams.state, 'aging_1', '原因参数应带上出问题的状态')
+      t.equal(vb.bs.reasonParams.n, 2, '原因参数应带上条款序号')
       t.equal(vb.reachable.length, 3, "Brian's Brain 应有 3 个可达状态")
     }
   },
@@ -435,6 +439,135 @@ cases.push(
     }
   }
 )
+
+/* ================= 阶段 3.5：i18n 与图案库 ================= */
+
+/** 取出模板串里的 {占位符} 名字 */
+function placeholders(str) {
+  return (String(str).match(/\{[a-zA-Z]+\}/g) || []).sort().join(',')
+}
+
+cases.push(
+  {
+    name: 'i18n 词典：中英键集完全一致，无空值',
+    run(t) {
+      const zhKeys = Object.keys(DICT.zh).sort()
+      const enKeys = Object.keys(DICT.en).sort()
+      const missingInEn = zhKeys.filter(k => !(k in DICT.en))
+      const missingInZh = enKeys.filter(k => !(k in DICT.zh))
+      t.equal(missingInEn.join(','), '', `英文缺失的键：${missingInEn.join(', ')}`)
+      t.equal(missingInZh.join(','), '', `中文缺失的键：${missingInZh.join(', ')}`)
+      t.ok(zhKeys.length > 100, `词条数量应有规模，实际 ${zhKeys.length}`)
+      for (const k of zhKeys) {
+        t.ok(String(DICT.zh[k]).trim() !== '', `中文词条 ${k} 不应为空`)
+        t.ok(String(DICT.en[k]).trim() !== '', `英文词条 ${k} 不应为空`)
+      }
+    }
+  },
+  {
+    name: 'i18n 词典：中英占位符一一对应',
+    run(t) {
+      // 占位符对不上是最隐蔽的翻译 bug —— 界面上会直接漏出 {n} 之类的原文
+      for (const k of Object.keys(DICT.zh)) {
+        t.equal(placeholders(DICT.en[k]), placeholders(DICT.zh[k]), `词条 ${k} 的占位符中英不一致`)
+      }
+    }
+  },
+  {
+    name: 'i18n 词典：校验器与图案库用到的 key 都有词条',
+    run(t) {
+      // 引擎只返回 key，词典里没有对应词条的话界面会直接吐出 key 本身
+      const used = new Set()
+      // 校验器可能产出的所有 key
+      for (const k of ['v.unreachable-state', 'v.shadowed', 'v.redundant', 'v.invalid-state',
+        'v.bs.culprit', 'v.bs.generic', 'v.warn.allDead', 'v.warn.unreachableAging',
+        'e.agingRange', 'e.notArray', 'e.badState', 'e.agingOutOfRange', 'e.emptySet',
+        'e.badNeighbor', 'e.badNeighborOp', 'e.badRange', 'e.rangeInverted', 'e.unknownOp',
+        'e.compileFail']) used.add(k)
+      // 每个图案与每个预设都要有名称、说明、世界卡片文案
+      for (const p of PATTERNS) { used.add('pattern.' + p.key); used.add('pattern.' + p.key + '.desc') }
+      for (const p of PRESETS) {
+        used.add('preset.' + p.key); used.add('world.' + p.key); used.add('world.' + p.key + '.desc')
+      }
+      for (const k of used) {
+        t.ok(k in DICT.zh, `词典缺少中文词条：${k}`)
+        t.ok(k in DICT.en, `词典缺少英文词条：${k}`)
+      }
+    }
+  },
+  {
+    name: '图案库：5 个内置图案的尺寸与活细胞数正确',
+    run(t) {
+      t.equal(PATTERNS.length, 5, '应有 5 个内置图案')
+      const expect = {
+        glider: [3, 3, 5], gun: [36, 9, 36], pulsar: [13, 13, 48], lwss: [5, 4, 9], rpentomino: [3, 3, 5]
+      }
+      for (const key of Object.keys(expect)) {
+        const p = getPattern(key)
+        const [w, h, n] = expect[key]
+        t.equal(p.w, w, `${key} 宽度`)
+        t.equal(p.h, h, `${key} 高度`)
+        t.equal(p.cells.length, n, `${key} 活细胞数`)
+      }
+    }
+  },
+  {
+    name: '图案库：滑翔机放上棋盘后确实是滑翔机',
+    run(t) {
+      const e = new LifeEngine(40, 40, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e, getPattern('glider'), 10, 10)
+      const before = liveCells(e)
+      t.equal(before.length, 5, '放置后应有 5 个活细胞')
+      for (let i = 0; i < 4; i++) e.step()
+      const after = liveCells(e).map(c => `${c[0]},${c[1]}`).sort().join(';')
+      const expected = before.map(c => `${c[0] + 1},${c[1] + 1}`).sort().join(';')
+      t.equal(after, expected, '4 代后应整体平移 (1,1)')
+    }
+  },
+  {
+    name: '图案库：脉冲星周期为 3，轻量飞船 4 代平移 (2,0)',
+    run(t) {
+      const e = new LifeEngine(40, 40, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e, getPattern('pulsar'), 12, 12)
+      const g0 = e.snapshot()
+      e.step()
+      t.ok(!eqSnapshot(g0, e.snapshot()), '第 1 代应与初始不同')
+      e.step(); e.step()
+      t.ok(eqSnapshot(g0, e.snapshot()), '第 3 代应回到初始 ⇒ 周期为 3')
+
+      const e2 = new LifeEngine(40, 40, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e2, getPattern('lwss'), 20, 15)
+      const c0 = liveCells(e2)
+      t.equal(c0.length, 9, '轻量飞船应有 9 个活细胞')
+      for (let i = 0; i < 4; i++) e2.step()
+      const moved = liveCells(e2).map(c => `${c[0]},${c[1]}`).sort().join(';')
+      // 这个朝向的 LWSS 向西飞：每 4 代平移 (-2, 0)
+      const want = c0.map(c => `${c[0] - 2},${c[1]}`).sort().join(';')
+      t.equal(moved, want, '轻量飞船 4 代应横向平移 2 格')
+    }
+  },
+  {
+    name: '图案库：越界裁剪与居中放置',
+    run(t) {
+      const e = new LifeEngine(10, 10, { boundary: 'dead' })
+      // 左上角外放置：只有落在棋盘内的部分会写入
+      const placed = placePattern(e, getPattern('pulsar'), -6, -6)
+      t.ok(placed > 0 && placed < 48, `应部分裁剪，实际写入 ${placed} 格`)
+      t.equal(e.countAlive(), placed, '写入格数应与返回值一致')
+
+      const g = getPattern('glider')
+      const o = centerOrigin(g, 20, 30)
+      t.equal(o.x, 19, '3 宽的图案居中于 x=20 时左上角应在 19')
+      t.equal(o.y, 29, '3 高的图案居中于 y=30 时左上角应在 29')
+    }
+  }
+)
+
+function eqSnapshot(a, b) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
 
 function now() {
   if (typeof performance !== 'undefined' && performance.now) return performance.now()

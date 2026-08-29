@@ -309,9 +309,9 @@ table.lut th, table.lut td {
 }
 table.lut thead th { color: var(--muted); font-weight: 500; }
 table.lut tbody th { width: 62px; color: var(--muted); font-weight: 500; }
-table.lut td.sdead { background: #1b1f27; color: #6b7688; }
-table.lut td.salive { background: var(--accent-dim); color: #eaffef; font-weight: 600; }
-table.lut td[class*="s衰"], table.lut td.saging1, table.lut td.saging2 { background: #3a2e46; color: #d3b6ea; }
+table.lut td.s-dead { background: #1b1f27; color: #6b7688; }
+table.lut td.s-alive { background: var(--accent-dim); color: #eaffef; font-weight: 600; }
+table.lut td.s-aging { background: #3a2e46; color: #d3b6ea; }
 table.lut td.fb { border-style: dashed; border-color: #4a5568; }
 .fb-legend { border-bottom: 1px dashed #4a5568; }
 
@@ -334,3 +334,56 @@ table.lut td.fb { border-style: dashed; border-color: #4a5568; }
 .modal-foot .row { gap: 8px; }
 .modal-foot button { min-width: 88px; }
 .modal-foot button:disabled { opacity: .4; cursor: default; }
+
+/* ---------- 阶段 3.5：双语开关、简洁/完整模式、图案与世界卡片 ---------- */
+
+/* 模式可见性：data-mode 标出这块只属于哪个模式 */
+body.mode-simple [data-mode="full"] { display: none !important; }
+body.mode-full [data-mode="simple"] { display: none !important; }
+
+.head-row { display: flex; align-items: flex-start; gap: 8px; }
+.head-row h1 { flex: 1; min-width: 0; }
+.head-switches { display: flex; flex-direction: column; gap: 4px; flex: none; }
+
+.seg {
+  display: inline-flex;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg button {
+  padding: 3px 9px;
+  font-size: 11px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--muted);
+}
+.seg button:hover { background: #232936; color: var(--text); }
+.seg button.on { background: var(--accent-dim); color: #eaffef; font-weight: 600; }
+
+/* 图案 / 世界卡片 */
+.card-list { display: flex; flex-direction: column; gap: 6px; }
+.card {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px;
+  text-align: left;
+  line-height: 1.35;
+}
+.card.on { border-color: var(--accent); background: #1f2a22; }
+.card-art { width: 30px; height: 30px; flex: none; fill: var(--accent); opacity: .9; }
+.card.on .card-art { fill: #b6f5c0; }
+.card-text { flex: 1; min-width: 0; }
+.card-text b { display: block; font-size: 13px; }
+.card-text em {
+  display: block; font-style: normal; font-size: 11px; color: var(--muted);
+}
+.card-size {
+  flex: none; font-style: normal; font-size: 10px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.card.world { padding: 8px 10px; }
+.card.world .card-text b { font-size: 13px; }
+
+#board.stamping { cursor: copy; }

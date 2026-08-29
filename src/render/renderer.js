@@ -254,6 +254,35 @@ export class Renderer {
     return this.trailCtx
   }
 
+  /**
+   * 画图案放置预览（半透明），跟着鼠标走。
+   * 画在最上层，不进拖尾图层 —— 它是界面提示，不是棋盘内容。
+   */
+  drawGhost(vp, pattern, ox, oy, boardW, boardH) {
+    const ctx = this.ctx
+    const size = Math.max(1, vp.scale)
+    ctx.save()
+    ctx.globalAlpha = 0.6
+    ctx.fillStyle = rgb(this.flat)
+    for (const [dx, dy] of pattern.cells) {
+      const x = ox + dx, y = oy + dy
+      if (x < 0 || y < 0 || x >= boardW || y >= boardH) continue
+      const px = (x - vp.originX) * vp.scale
+      const py = (y - vp.originY) * vp.scale
+      ctx.fillRect(px, py, size, size)
+    }
+    ctx.globalAlpha = 0.9
+    ctx.strokeStyle = rgb(this.flat)
+    ctx.setLineDash([4, 3])
+    ctx.lineWidth = 1
+    const bx = (ox - vp.originX) * vp.scale
+    const by = (oy - vp.originY) * vp.scale
+    ctx.strokeRect(Math.round(bx) + 0.5, Math.round(by) + 0.5,
+      Math.round(pattern.w * vp.scale), Math.round(pattern.h * vp.scale))
+    ctx.setLineDash([])
+    ctx.restore()
+  }
+
   strokeBorder(ctx, rx, ry, rw, rh) {
     ctx.strokeStyle = COLORS.border
     ctx.lineWidth = 1

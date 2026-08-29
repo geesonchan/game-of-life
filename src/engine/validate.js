@@ -1,4 +1,5 @@
 // 规则校验器。纯逻辑，可在 Node 里跑测试。
+// 只返回「消息 key + 参数」，不返回任何人类语言的句子 —— 文字属于界面层（见 D22）。
 // 分两段：
 //   validateClauses() —— 结构校验，在编译之前跑，保证 compileRule 不会抛异常
 //   validateRule()    —— 语义校验，在编译之后跑，报告永不可达条款、冗余条款、B/S 表达力
@@ -10,16 +11,16 @@ const STATE_RE = /^(alive|dead|aging_(\d+))$/
 
 /**
  * 结构校验：只看条款写得合不合法，不看语义。
- * @returns {{ok: boolean, errors: Array<{clause: number|null, message: string}>}}
+ * @returns {{ok: boolean, errors: Array<{clause: number|null, key: string, params: object}>}}
  */
 export function validateClauses(clauses, agingLayers) {
   const errors = []
   const layers = agingLayers | 0
   if (layers < 0 || layers > 8) {
-    errors.push({ clause: null, message: `衰老层数必须在 0–8 之间，当前为 ${agingLayers}` })
+    errors.push({ clause: null, key: 'e.agingRange', params: { value: agingLayers } })
   }
   if (!Array.isArray(clauses)) {
-    errors.push({ clause: null, message: '条款列表必须是数组' })
+    errors.push({ clause: null, key: 'e.notArray', params: {} })
     return { ok: false, errors }
   }
 
@@ -28,11 +29,11 @@ export function validateClauses(clauses, agingLayers) {
       const v = c[field]
       const m = STATE_RE.exec(String(v))
       if (!m) {
-        errors.push({ clause: i, message: `${field} 的状态名非法：${JSON.stringify(v)}` })
+        errors.push({ clause: i, key: 'e.badState', params: { field, value: JSON.stringify(v) } })
       } else if (m[2] !== undefined) {
         const k = Number(m[2])
         if (k < 1 || k > layers) {
-          errors.push({ clause: i, message: `${field} 引用了 aging_${k}，但当前衰老层数为 ${layers}` })
+          errors.push({ clause: i, key: 'e.agingOutOfRange', params: { field, k, layers } })
         }
       }
     }
@@ -42,25 +43,25 @@ export function validateClauses(clauses, agingLayers) {
         case 'in':
         case 'not_in':
           if (!Array.isArray(cond.values) || cond.values.length === 0) {
-            errors.push({ clause: i, message: `${cond.op} 条件的邻居数集合不能为空` })
+            errors.push({ clause: i, key: 'e.emptySet', params: { op: cond.op } })
           } else if (cond.values.some(v => !Number.isInteger(v) || v < 0 || v > 8)) {
-            errors.push({ clause: i, message: '邻居数必须是 0–8 的整数' })
+            errors.push({ clause: i, key: 'e.badNeighbor', params: {} })
           }
           break
         case 'eq': case 'lt': case 'lte': case 'gt': case 'gte':
           if (!Number.isInteger(cond.value) || cond.value < 0 || cond.value > 8) {
-            errors.push({ clause: i, message: `${cond.op} 条件的邻居数必须是 0–8 的整数` })
+            errors.push({ clause: i, key: 'e.badNeighborOp', params: { op: cond.op } })
           }
           break
         case 'range':
           if (!Number.isInteger(cond.min) || !Number.isInteger(cond.max)) {
-            errors.push({ clause: i, message: 'range 条件的上下界必须是整数' })
+            errors.push({ clause: i, key: 'e.badRange', params: {} })
           } else if (cond.min > cond.max) {
-            errors.push({ clause: i, message: `range 条件的下界 ${cond.min} 大于上界 ${cond.max}` })
+            errors.push({ clause: i, key: 'e.rangeInverted', params: { min: cond.min, max: cond.max } })
           }
           break
         default:
-          errors.push({ clause: i, message: `未知的邻居条件 op：${cond.op}` })
+          errors.push({ clause: i, key: 'e.unknownOp', params: { op: cond.op } })
       }
     }
   })
@@ -72,11 +73,11 @@ export function validateClauses(clauses, agingLayers) {
  * 语义校验：在已编译的规则上做可达性分析。
  * @param {object} rule compileRule() 的产物
  * @returns {{
- *   clauses: Array<{index:number, status:string, hits:number, message:string}>,
+ *   clauses: Array<{index:number, status:string, hits:number, key:string|null, params:object}>,
  *   reachable: string[],
- *   bs: {expressible:boolean, notation:string|null, born:number[], survive:number[], reason:string|null, culprit:number|null},
+ *   bs: {expressible:boolean, notation:string|null, born:number[], survive:number[], reasonKey:string|null, reasonParams:object, culprit:number|null},
  *   table: Array<{state:string, cells:Array<{n:number, next:string, fallback:boolean}>}>,
- *   warnings: string[]
+ *   warnings: Array<{key:string, params:object}>
  * }}
  */
 export function validateRule(rule) {
@@ -87,31 +88,22 @@ export function validateRule(rule) {
     const whenState = stateIndexOf(c.when)
     const hits = clauseHits[i]
     if (whenState >= numStates || whenState < 0) {
-      return { index: i, status: 'invalid', hits, message: `条款引用了不存在的状态 ${c.when}` }
+      return { index: i, status: 'invalid', hits, key: 'v.invalid-state', params: { state: c.when } }
     }
     if (!reachable[whenState]) {
-      return {
-        index: i, status: 'unreachable-state', hits,
-        message: `永不可达：状态「${zh(c.when)}」在这套规则下永远不会出现，本条款不会被执行`
-      }
+      return { index: i, status: 'unreachable-state', hits, key: 'v.unreachable-state', params: { state: c.when } }
     }
     if (hits === 0) {
-      return {
-        index: i, status: 'shadowed', hits,
-        message: '永不可达：它能匹配的邻居数已被上面的条款全部抢走，本条款不会被执行'
-      }
+      return { index: i, status: 'shadowed', hits, key: 'v.shadowed', params: {} }
     }
     if (isRemovable(rule, i)) {
-      return {
-        index: i, status: 'redundant', hits,
-        message: '冗余：删掉它编译出的查找表逐格不变，指纹也不变'
-      }
+      return { index: i, status: 'redundant', hits, key: 'v.redundant', params: {} }
     }
-    return { index: i, status: 'ok', hits, message: '' }
+    return { index: i, status: 'ok', hits, key: null, params: {} }
   })
 
   // ---- B/S 表达力（D18）----
-  const bs = { expressible: rule.bsExpressible, notation: rule.notation, born: [], survive: [], reason: null, culprit: null }
+  const bs = { expressible: rule.bsExpressible, notation: rule.notation, born: [], survive: [], reasonKey: null, reasonParams: {}, culprit: null }
   if (bs.expressible) {
     for (let n = 0; n <= 8; n++) {
       if (lookup[DEAD * 9 + n] === ALIVE) bs.born.push(n)
@@ -124,9 +116,12 @@ export function validateRule(rule) {
       return w >= 0 && w < numStates && reachable[w] && stateIndexOf(c.then) > ALIVE && clauseHits[i] > 0
     })
     bs.culprit = culprit >= 0 ? culprit : null
-    bs.reason = culprit >= 0
-      ? `第 ${culprit + 1} 条条款会产生「${zh(clauses[culprit].then)}」，超出 B/S 记法只有生/死两态的表达力`
-      : '规则中存在可达的衰老态，超出 B/S 记法只有生/死两态的表达力'
+    if (culprit >= 0) {
+      bs.reasonKey = 'v.bs.culprit'
+      bs.reasonParams = { n: culprit + 1, state: clauses[culprit].then }
+    } else {
+      bs.reasonKey = 'v.bs.generic'
+    }
   }
 
   // ---- 编译表预览：只列可达状态（D20）----
@@ -142,14 +137,12 @@ export function validateRule(rule) {
 
   // ---- 规则级提醒 ----
   const warnings = []
-  if (!reachable[ALIVE] || bsAllDead(lookup)) {
-    // 存活态无法从死态产生，且活细胞也无法存活 ⇒ 任何棋盘必然一代内全灭
-    if (bsAllDead(lookup)) warnings.push('这条规则下没有任何邻居数能让细胞存活或出生，棋盘会在一代内全灭')
-  }
+  // 任何邻居数都无法产生或维持存活 ⇒ 棋盘必然一代内全灭
+  if (bsAllDead(lookup)) warnings.push({ key: 'v.warn.allDead', params: {} })
   const unreachableAging = []
   for (let s = 2; s < numStates; s++) if (!reachable[s]) unreachableAging.push(stateName(s))
   if (unreachableAging.length) {
-    warnings.push(`有 ${unreachableAging.length} 层衰老态永远不会出现（${unreachableAging.map(zh).join('、')}），衰老层数可以调小`)
+    warnings.push({ key: 'v.warn.unreachableAging', params: { n: unreachableAging.length, states: unreachableAging } })
   }
 
   return {
@@ -168,14 +161,6 @@ function stateIndexOf(name) {
   if (name === 'alive') return ALIVE
   const m = /^aging_(\d+)$/.exec(String(name))
   return m ? 1 + Number(m[1]) : -1
-}
-
-/** 状态名的中文说法，只用于提示文案 */
-export function zh(name) {
-  if (name === 'dead') return '死亡'
-  if (name === 'alive') return '存活'
-  const m = /^aging_(\d+)$/.exec(String(name))
-  return m ? `衰老 ${m[1]}` : String(name)
 }
 
 /**

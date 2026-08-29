@@ -1,12 +1,13 @@
 // 侧栏控件绑定。所有控件只调用 app 上的方法或改 app 的视觉开关，不直接碰引擎内部。
 import { normalizeSeed, randomSeed } from '../engine/prng.js'
 import { isTyping } from './input.js'
+import { t, setLang, getLang } from '../i18n/index.js'
 
 const $ = id => document.getElementById(id)
 
 /** 拖尾滑块（1–20）→ 每帧叠加的底色不透明度。越小残留越久。 */
 export function trailAlphaOf(v) { return 0.45 * Math.pow(0.85, v - 1) }
-function trailLabel(v) { return v <= 6 ? '短' : v <= 13 ? '中' : '长' }
+function trailLabel(v) { return t(v <= 6 ? 'vis.trail.short' : v <= 13 ? 'vis.trail.mid' : 'vis.trail.long') }
 
 export function setupControls(app) {
   const el = {
@@ -39,7 +40,7 @@ export function setupControls(app) {
 
   el.boundary.addEventListener('change', () => {
     app.engine.setBoundary(el.boundary.value)
-    app.toast(el.boundary.value === 'torus' ? '边界：环形' : '边界：死边界')
+    app.toast(t(el.boundary.value === 'torus' ? 'toast.boundaryTorus' : 'toast.boundaryDead'))
   })
 
   el.size.addEventListener('change', () => {
@@ -98,6 +99,24 @@ export function setupControls(app) {
   app.renderer.setGlowFrames(Number(el.glowFrames.value))
   el.glowFrames.parentElement.classList.toggle('disabled', !el.glow.checked)
   el.trailLen.parentElement.classList.toggle('disabled', !el.trails.checked)
+
+  /* ---------- 语言与模式开关 ---------- */
+
+  const langSwitch = $('lang-switch')
+  langSwitch.addEventListener('click', e => {
+    const b = e.target.closest('[data-lang]')
+    if (!b) return
+    setLang(b.dataset.lang)
+    langSwitch.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.lang === getLang()))
+  })
+
+  const modeSwitch = $('mode-switch')
+  modeSwitch.addEventListener('click', e => {
+    const b = e.target.closest('[data-mode-val]')
+    if (!b) return
+    app.setMode(b.dataset.modeVal)
+    modeSwitch.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.modeVal === app.mode))
+  })
 
   // 键盘快捷键
   window.addEventListener('keydown', e => {

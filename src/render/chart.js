@@ -1,5 +1,7 @@
 // 存活数折线图（最近 N 代）。渲染层组件：只读数据层的序列，不回写。
 
+import { t } from '../i18n/index.js'
+
 const CHART_COLORS = {
   bg: '#12151c',
   grid: 'rgba(255,255,255,0.06)',
@@ -46,7 +48,7 @@ export class Chart {
       ctx.fillStyle = CHART_COLORS.text
       ctx.font = `${11 * this.dpr}px -apple-system, sans-serif`
       ctx.textAlign = 'center'
-      ctx.fillText('等待数据…', w / 2, h / 2 + 4 * this.dpr)
+      ctx.fillText(t('chart.empty'), w / 2, h / 2 + 4 * this.dpr)
       return
     }
 
@@ -101,8 +103,8 @@ export class Chart {
     ctx.fillStyle = CHART_COLORS.text
     ctx.font = `${10 * this.dpr}px ui-monospace, Menlo, monospace`
     ctx.textAlign = 'left'
-    ctx.fillText(`峰值 ${max}`, 4 * this.dpr, Math.max(10 * this.dpr, peakY - 3 * this.dpr))
+    ctx.fillText(t('chart.peak', { n: max }), 4 * this.dpr, Math.max(10 * this.dpr, peakY - 3 * this.dpr))
     ctx.textAlign = 'right'
-    ctx.fillText(`最近 ${n} 代`, w - 4 * this.dpr, h - 4 * this.dpr)
+    ctx.fillText(t('chart.window', { n }), w - 4 * this.dpr, h - 4 * this.dpr)
   }
 }

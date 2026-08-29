@@ -3,23 +3,22 @@
 // 结构校验 → 编译 → 语义校验（可达性 / 遮蔽 / 冗余 / B/S 表达力），结果直接显示在界面上。
 // 判定规则见 docs/decisions.md D17–D21。
 import { compileRule, bsToClauses } from '../engine/rules.js'
-import { validateClauses, validateRule, zh } from '../engine/validate.js'
+import { validateClauses, validateRule } from '../engine/validate.js'
 import { PRESETS, presetRule } from '../engine/presets.js'
 import { exportRule, importRule } from '../engine/rule-io.js'
+import { t, stateLabel } from '../i18n/index.js'
 
-const OPS = [
-  { op: 'in', label: '邻居数 ∈' },
-  { op: 'not_in', label: '邻居数 ∉' },
-  { op: 'eq', label: '邻居数 =' },
-  { op: 'range', label: '邻居数 介于' },
-  { op: 'lte', label: '邻居数 ≤' },
-  { op: 'gte', label: '邻居数 ≥' },
-  { op: 'any', label: '任意邻居数' }
-]
+const OP_KEYS = ['in', 'not_in', 'eq', 'range', 'lte', 'gte', 'any']
 
-const STATUS_TEXT = {
-  'ok': '', 'redundant': '冗余', 'shadowed': '永不可达', 'unreachable-state': '永不可达', 'invalid': '非法'
+/** 把 {key, params} 渲染成本地化句子；状态名参数要再过一次本地化 */
+function msg(rep) {
+  if (!rep || !rep.key) return ''
+  const params = { ...(rep.params || {}) }
+  if (params.state !== undefined) params.state = stateLabel(params.state)
+  return t(rep.key, params)
 }
+
+function joinList(items) { return items.join(t('list.sep')) }
 
 export function createRuleEditor(app) {
   const $ = id => document.getElementById(id)
@@ -61,10 +60,10 @@ export function createRuleEditor(app) {
     report = null
     if (structural.ok) {
       try {
-        compiled = compileRule({ name: '自定义规则', agingLayers: draft.agingLayers, clauses: draft.clauses })
+        compiled = compileRule({ name: t('rule.custom'), agingLayers: draft.agingLayers, clauses: draft.clauses })
         report = validateRule(compiled)
       } catch (e) {
-        structural = { ok: false, errors: [{ clause: null, message: `编译失败：${e.message}` }] }
+        structural = { ok: false, errors: [{ clause: null, key: 'e.compileFail', params: { msg: e.message } }] }
       }
     }
     renderAging()
@@ -72,7 +71,7 @@ export function createRuleEditor(app) {
     renderBS()
     renderValidation()
     renderTable()
-    el.notation.textContent = compiled ? (compiled.notation || '条款规则（超出 B/S）') : '—'
+    el.notation.textContent = compiled ? (compiled.notation || t('rule.beyondBS')) : '—'
     el.fingerprint.textContent = compiled ? compiled.fingerprint : '—'
     el.apply.disabled = !compiled
   }
@@ -91,28 +90,28 @@ export function createRuleEditor(app) {
       const rep = report ? report.clauses[i] : null
       const structErr = structural.errors.filter(e => e.clause === i)
       const status = structErr.length ? 'invalid' : (rep ? rep.status : 'ok')
-      const msg = structErr.length ? structErr.map(e => e.message).join('；') : (rep ? rep.message : '')
+      const text = structErr.length ? joinList(structErr.map(e => t(e.key, e.params))) : msg(rep)
       return `
         <div class="clause ${status !== 'ok' ? 'is-' + status : ''}" draggable="true" data-i="${i}">
           <div class="clause-main">
-            <span class="drag" title="拖动排序">⠿</span>
+            <span class="drag" title="${t('editor.dragTitle')}">⠿</span>
             <span class="idx">${i + 1}</span>
             <select data-act="when" data-i="${i}">${options(states, c.when)}</select>
-            <select data-act="op" data-i="${i}">${options(OPS.map(o => [o.op, o.label]), (c.neighbors && c.neighbors.op) || 'any')}</select>
+            <select data-act="op" data-i="${i}">${options(OP_KEYS.map(o => [o, t('op.' + o)]), (c.neighbors && c.neighbors.op) || 'any')}</select>
             <span class="cond">${condEditor(c.neighbors, i)}</span>
             <span class="arrow">→</span>
             <select data-act="then" data-i="${i}">${options(states, c.then)}</select>
             <span class="clause-btns">
-              <button data-act="up" data-i="${i}" title="上移" ${i === 0 ? 'disabled' : ''}>↑</button>
-              <button data-act="down" data-i="${i}" title="下移" ${i === draft.clauses.length - 1 ? 'disabled' : ''}>↓</button>
-              <button data-act="del" data-i="${i}" title="删除">✕</button>
+              <button data-act="up" data-i="${i}" title="${t('editor.up')}" ${i === 0 ? 'disabled' : ''}>↑</button>
+              <button data-act="down" data-i="${i}" title="${t('editor.down')}" ${i === draft.clauses.length - 1 ? 'disabled' : ''}>↓</button>
+              <button data-act="del" data-i="${i}" title="${t('editor.delete')}">✕</button>
             </span>
           </div>
-          ${msg ? `<div class="clause-msg"><b>${STATUS_TEXT[status] || ''}</b> ${msg}</div>` : ''}
+          ${text ? `<div class="clause-msg"><b>${status === 'ok' ? '' : t('validate.badge.' + status)}</b> ${text}</div>` : ''}
         </div>`
     }).join('') + `<div class="clause fallback"><div class="clause-main">
-        <span class="drag"></span><span class="idx">兜</span>
-        <span class="fallback-text">以上都不命中 → 维持原状（隐含兜底，不可删除）</span>
+        <span class="drag"></span><span class="idx">${t('editor.fallbackIdx')}</span>
+        <span class="fallback-text">${t('editor.fallback')}</span>
       </div></div>`
   }
 
@@ -224,10 +223,12 @@ export function createRuleEditor(app) {
       </div>`).join('')
     if (enabled) {
       el.bsReason.className = 'note'
-      el.bsReason.textContent = '勾选框与条款列表双向同步：改动会按 B/S 重写生死两态的条款（衰老态条款保留）。'
+      el.bsReason.textContent = t('editor.bsSync')
     } else {
       el.bsReason.className = 'note warn'
-      el.bsReason.textContent = bs ? `已置灰 —— ${bs.reason}` : '条款存在结构错误，暂时无法判定 B/S 表达力。'
+      el.bsReason.textContent = bs
+        ? t('editor.bsGreyed', { reason: msg({ key: bs.reasonKey, params: bs.reasonParams }) })
+        : t('editor.bsUnknown')
     }
   }
 
@@ -273,8 +274,11 @@ export function createRuleEditor(app) {
 
   /* ---------------- 预设 ---------------- */
 
-  el.presets.innerHTML = PRESETS.map(p =>
-    `<button class="preset" data-key="${p.key}"><b>${p.name}</b><span>${p.notation}</span><em>${p.note}</em></button>`).join('')
+  function renderPresets() {
+    el.presets.innerHTML = PRESETS.map(p =>
+      `<button class="preset" data-key="${p.key}"><b>${p.name}</b><span>${p.notation}</span><em>${t('preset.' + p.key)}</em></button>`).join('')
+  }
+  renderPresets()
   el.presets.addEventListener('click', e => {
     const b = e.target.closest('.preset')
     if (!b) return
@@ -288,33 +292,37 @@ export function createRuleEditor(app) {
   function renderValidation() {
     const parts = []
     if (!structural.ok) {
-      parts.push(`<div class="v-line v-error"><b>结构错误 ${structural.errors.length} 处</b>，修好之后才能应用：<ul>` +
-        structural.errors.map(e => `<li>${e.clause === null ? '' : `第 ${e.clause + 1} 条：`}${e.message}</li>`).join('') + '</ul></div>')
+      parts.push(`<div class="v-line v-error"><b>${t('validate.structErrors', { n: structural.errors.length })}</b><ul>` +
+        structural.errors.map(e => `<li>${e.clause === null ? '' : t('validate.clausePrefix', { n: e.clause + 1 })}${t(e.key, e.params)}</li>`).join('') + '</ul></div>')
     } else if (report) {
       const bad = report.clauses.filter(c => c.status === 'shadowed' || c.status === 'unreachable-state')
       const red = report.clauses.filter(c => c.status === 'redundant')
       if (bad.length === 0 && red.length === 0) {
-        parts.push('<div class="v-line v-ok">✓ 所有条款都可达，没有冗余</div>')
+        parts.push(`<div class="v-line v-ok">${t('validate.ok')}</div>`)
       }
-      if (bad.length) parts.push(`<div class="v-line v-warn">⚠ 第 ${bad.map(c => c.index + 1).join('、')} 条永不可达（已在上方标灰）</div>`)
-      if (red.length) parts.push(`<div class="v-line v-info">· 第 ${red.map(c => c.index + 1).join('、')} 条冗余，删掉指纹不变</div>`)
-      for (const w of report.warnings) parts.push(`<div class="v-line v-warn">⚠ ${w}</div>`)
-      parts.push(`<div class="v-line v-info">· 可达状态：${report.reachable.map(zh).join('、')}</div>`)
+      if (bad.length) parts.push(`<div class="v-line v-warn">${t('validate.unreachableList', { list: joinList(bad.map(c => c.index + 1)) })}</div>`)
+      if (red.length) parts.push(`<div class="v-line v-info">${t('validate.redundantList', { list: joinList(red.map(c => c.index + 1)) })}</div>`)
+      for (const w of report.warnings) {
+        const params = { ...w.params }
+        if (params.states) params.list = joinList(params.states.map(s => stateLabel(s)))
+        parts.push(`<div class="v-line v-warn">⚠ ${t(w.key, params)}</div>`)
+      }
+      parts.push(`<div class="v-line v-info">${t('validate.reachable', { list: joinList(report.reachable.map(s => stateLabel(s))) })}</div>`)
     }
     el.validation.innerHTML = parts.join('')
   }
 
   function renderTable() {
-    if (!report) { el.table.innerHTML = '<p class="note">条款有结构错误，无法编译预览。</p>'; return }
+    if (!report) { el.table.innerHTML = `<p class="note">${t('editor.noTable')}</p>`; return }
     el.table.innerHTML = `
       <table class="lut">
-        <thead><tr><th>当前状态</th>${[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => `<th>${n}</th>`).join('')}</tr></thead>
+        <thead><tr><th>${t('editor.tableHead')}</th>${[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => `<th>${n}</th>`).join('')}</tr></thead>
         <tbody>${report.table.map(row => `
-          <tr><th>${zh(row.state)}</th>${row.cells.map(c =>
-            `<td class="s-${c.next.replace('_', '')} ${c.fallback ? 'fb' : ''}" title="${c.fallback ? '由隐含兜底决定' : '由条款决定'}">${short(c.next)}</td>`).join('')}</tr>`).join('')}
+          <tr><th>${stateLabel(row.state)}</th>${row.cells.map(c =>
+            `<td class="s-${c.next.startsWith('aging') ? 'aging' : c.next} ${c.fallback ? 'fb' : ''}">${stateLabel(c.next, true)}</td>`).join('')}</tr>`).join('')}
         </tbody>
       </table>
-      <p class="note">行 = 当前状态，列 = 活邻居数。<span class="fb-legend">虚线</span> 表示这一格没有条款匹配，由隐含兜底「维持原状」决定。</p>`
+      <p class="note">${t('editor.tableNote')}</p>`
   }
 
   /* ---------------- 导入 / 导出（D21） ---------------- */
@@ -324,16 +332,14 @@ export function createRuleEditor(app) {
     el.io.hidden = false
     el.ioText.value = exportRule(compiled)
     el.ioMsg.className = 'note'
-    el.ioMsg.textContent = compiled.bsExpressible
-      ? '可用 B/S 记法表达，已导出记法字符串。'
-      : '超出 B/S 表达力，已退化导出条款 JSON。'
+    el.ioMsg.textContent = t(compiled.bsExpressible ? 'editor.exportedBS' : 'editor.exportedJSON')
     el.ioText.select()
   })
   el.importBtn.addEventListener('click', () => {
     if (el.io.hidden) {
       el.io.hidden = false
       el.ioMsg.className = 'note'
-      el.ioMsg.textContent = '把 B/S 记法（如 B36/S23）或条款 JSON 粘进来，再点一次「导入」。'
+      el.ioMsg.textContent = t('editor.importHint')
       el.ioText.value = ''
       el.ioText.focus()
       return
@@ -342,11 +348,11 @@ export function createRuleEditor(app) {
       const r = importRule(el.ioText.value)
       draft = { agingLayers: r.agingLayers, clauses: deepClone(r.clauses) }
       el.ioMsg.className = 'note ok'
-      el.ioMsg.textContent = `导入成功，指纹 ${r.fingerprint}`
+      el.ioMsg.textContent = t('editor.importOk', { fp: r.fingerprint })
       refresh()
     } catch (err) {
       el.ioMsg.className = 'note warn'
-      el.ioMsg.textContent = `导入失败：${err.message}`
+      el.ioMsg.textContent = t('editor.importFail', { msg: err.message })
     }
   })
   el.ioClose.addEventListener('click', () => { el.io.hidden = true })
@@ -365,7 +371,13 @@ export function createRuleEditor(app) {
     if (e.key === 'Escape' && !el.modal.hidden) close()
   })
 
-  return { open }
+  /** 切语言时调用：预设列表与所有动态文案重绘 */
+  function relocalize() {
+    renderPresets()
+    if (!el.modal.hidden) refresh()
+  }
+
+  return { open, relocalize }
 
   /* ---------------- 小工具 ---------------- */
 
@@ -377,8 +389,8 @@ export function createRuleEditor(app) {
 }
 
 function stateOptions(agingLayers) {
-  const out = [['dead', '死亡'], ['alive', '存活']]
-  for (let k = 1; k <= agingLayers; k++) out.push([`aging_${k}`, `衰老 ${k}`])
+  const out = [['dead', stateLabel('dead')], ['alive', stateLabel('alive')]]
+  for (let k = 1; k <= agingLayers; k++) out.push([`aging_${k}`, stateLabel(`aging_${k}`)])
   return out
 }
 
@@ -406,12 +418,6 @@ function clampInt(v, lo, hi) {
   const n = Math.round(Number(v))
   if (!Number.isFinite(n)) return lo
   return Math.max(lo, Math.min(hi, n))
-}
-
-function short(name) {
-  if (name === 'dead') return '死'
-  if (name === 'alive') return '活'
-  return name.replace('aging_', '衰')
 }
 
 function deepClone(o) { return JSON.parse(JSON.stringify(o)) }

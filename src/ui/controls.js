@@ -6,6 +6,28 @@ import { prefs } from './prefs.js'
 
 const $ = id => document.getElementById(id)
 
+/**
+ * 按钮组：取代选项少的 select（见 docs/decisions.md D33）。
+ * 对外暴露 .value 与 .set(v)，调用处写法与原来的 el.xxx.value 基本一致。
+ */
+function setupBtnGroup(id, initial, onChange) {
+  const root = $(id)
+  const sync = v => root.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.val === v))
+  let value = initial
+  sync(value)
+  root.addEventListener('click', e => {
+    const b = e.target.closest('[data-val]')
+    if (!b || b.dataset.val === value) return
+    value = b.dataset.val
+    sync(value)
+    onChange(value)
+  })
+  return {
+    get value() { return value },
+    set(v) { value = v; sync(v) }
+  }
+}
+
 /** 拖尾滑块（1–20）→ 每帧叠加的底色不透明度。越小残留越久。 */
 export function trailAlphaOf(v) { return 0.45 * Math.pow(0.85, v - 1) }
 function trailLabel(v) { return t(v <= 6 ? 'vis.trail.short' : v <= 13 ? 'vis.trail.mid' : 'vis.trail.long') }
@@ -14,10 +36,9 @@ export function setupControls(app) {
   const el = {
     play: $('btn-play'), step: $('btn-step'), random: $('btn-random'), clear: $('btn-clear'),
     fit: $('btn-fit'), speed: $('in-speed'), density: $('in-density'), seed: $('in-seed'),
-    boundary: $('in-boundary'), size: $('in-size'),
     lblSpeed: $('lbl-speed'), lblDensity: $('lbl-density'),
     lblNotation: $('lbl-notation'), lblFingerprint: $('lbl-fingerprint'),
-    palette: $('in-palette'), age: $('in-age'), glow: $('in-glow'),
+    age: $('in-age'), glow: $('in-glow'),
     glowFrames: $('in-glow-frames'), lblGlow: $('lbl-glow'),
     trails: $('in-trails'), trailLen: $('in-trail-len'), lblTrail: $('lbl-trail')
   }
@@ -39,20 +60,20 @@ export function setupControls(app) {
     el.lblDensity.textContent = app.density.toFixed(2)
   })
 
-  el.boundary.addEventListener('change', () => {
-    app.engine.setBoundary(el.boundary.value)
-    app.toast(t(el.boundary.value === 'torus' ? 'toast.boundaryTorus' : 'toast.boundaryDead'))
+  el.boundary = setupBtnGroup('in-boundary', app.engine.boundary, v => {
+    app.engine.setBoundary(v)
+    app.toast(t(v === 'torus' ? 'toast.boundaryTorus' : 'toast.boundaryDead'))
   })
 
-  el.size.addEventListener('change', () => {
-    const n = Number(el.size.value)
+  el.size = setupBtnGroup('in-size', String(app.engine.w), v => {
+    const n = Number(v)
     app.resizeBoard(n, n)
   })
 
   /* ---------- 视觉效果（全部只影响渲染层） ---------- */
 
-  el.palette.addEventListener('change', () => {
-    app.renderer.setPalette(el.palette.value)
+  el.palette = setupBtnGroup('in-palette', app.renderer.paletteKey, v => {
+    app.renderer.setPalette(v)
     app.chart.draw(app.series, app.renderer.flat)  // 折线图主色跟随色带
     app.dirty = true
   })
@@ -96,10 +117,37 @@ export function setupControls(app) {
   app.visualOpts.trailAlpha = trailAlphaOf(Number(el.trailLen.value))
   el.lblTrail.textContent = trailLabel(Number(el.trailLen.value))
   el.lblGlow.textContent = el.glowFrames.value
-  app.renderer.setPalette(el.palette.value)
   app.renderer.setGlowFrames(Number(el.glowFrames.value))
   el.glowFrames.parentElement.classList.toggle('disabled', !el.glow.checked)
   el.trailLen.parentElement.classList.toggle('disabled', !el.trails.checked)
+
+  /* ---------- 右栏分组折叠 ---------- */
+
+  document.querySelectorAll('.panel .group-head').forEach(h => {
+    h.addEventListener('click', () => h.parentElement.classList.toggle('collapsed'))
+  })
+
+  /* ---------- 顶栏「图案 / 世界」标签 ---------- */
+
+  const strip = $('card-strip')
+  const stripHint = $('strip-hint')
+  const tabs = [...document.querySelectorAll('.tb-tabs .tab')]
+  let openTab = null
+
+  /** 同一时刻只开一条；再点同一个标签就收起 */
+  app.toggleTab = function (name) {
+    openTab = openTab === name ? null : name
+    strip.hidden = openTab === null
+    tabs.forEach(b => b.classList.toggle('on', b.dataset.tab === openTab))
+    $('pattern-list').classList.toggle('on', openTab === 'pattern')
+    $('world-list').classList.toggle('on', openTab === 'world')
+    if (openTab) stripHint.textContent = t(openTab === 'pattern' ? 'pattern.hint' : 'world.hint')
+    app.handleResize()          // 卡片条撑开/收起会改变画布高度
+  }
+  app.refreshTabHint = function () {
+    if (openTab) stripHint.textContent = t(openTab === 'pattern' ? 'pattern.hint' : 'world.hint')
+  }
+  tabs.forEach(b => b.addEventListener('click', () => app.toggleTab(b.dataset.tab)))
 
   /* ---------- 语言与模式开关 ---------- */
 

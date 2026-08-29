@@ -188,10 +188,22 @@ app.fitView = function () {
   app.updateHud()
 }
 
-// 容器尺寸变化时只重设画布像素，不改动用户的缩放/平移
+/**
+ * 容器尺寸变化：保持缩放不变，但让原本在画布正中的那个格子仍然在正中。
+ * 顶栏的卡片条一展一收就会改变画布高度，若只改像素不动视口，棋盘会被裁掉一截；
+ * 重新 fit 又会把用户的缩放冲掉。折中就是"锚住中心点"。
+ */
 app.handleResize = function () {
-  app.renderer.resize()
-  if (app.needsFit) app.fitView()
+  const vp = app.viewport
+  const oldW = app.canvas.width, oldH = app.canvas.height
+  const cx = vp.originX + oldW / (2 * vp.scale)
+  const cy = vp.originY + oldH / (2 * vp.scale)
+  const { w, h } = app.renderer.resize()
+  if (app.needsFit) { app.fitView(); return }
+  if (oldW > 1 && oldH > 1 && w > 1 && h > 1) {
+    vp.originX = cx - w / (2 * vp.scale)
+    vp.originY = cy - h / (2 * vp.scale)
+  }
   app.dirty = true
 }
 
@@ -288,6 +300,7 @@ onLangChange(() => {
   app.chart.draw(app.series, app.renderer.flat)
   app.ruleEditor.relocalize()
   app.intro.relocalize()
+  app.refreshTabHint()
 })
 function trailLabelOf(v) {
   return t(v <= 6 ? 'vis.trail.short' : v <= 13 ? 'vis.trail.mid' : 'vis.trail.long')

@@ -8,165 +8,177 @@
 </head>
 <body class="mode-full">
   <div id="app">
-    <main class="stage">
-      <canvas id="board"></canvas>
-      <div class="hud" id="hud">
-        <span class="hud-item"><span data-i18n="hud.gen">代数</span> <b id="hud-gen">0</b></span>
-        <span class="hud-item"><span data-i18n="hud.alive">存活</span> <b id="hud-alive">0</b></span>
-        <span class="hud-item" data-mode="full"><span data-i18n="hud.gps">实速</span> <b id="hud-gps">0</b> <span data-i18n="unit.gps">代/秒</span></span>
-        <span class="hud-item" data-mode="full"><span data-i18n="hud.fps">帧率</span> <b id="hud-fps">–</b></span>
-        <span class="hud-item muted" id="hud-scale">缩放 4.0×</span>
-      </div>
-      <div class="toast" id="toast" hidden></div>
-    </main>
 
-    <aside class="panel">
-      <header class="panel-head">
-        <div class="head-row">
-          <h1 data-i18n="app.title">生命游戏实验台</h1>
-          <div class="head-switches">
-            <button class="help-btn" id="btn-help" data-i18n-title="tip.help">?</button>
-            <div class="seg" id="mode-switch" role="group" data-i18n-title="tip.mode">
-              <button data-mode-val="simple" data-i18n="mode.simpleLabel">简洁</button>
-              <button data-mode-val="full" class="on" data-i18n="mode.fullLabel">完整</button>
-            </div>
-            <div class="seg" id="lang-switch" role="group" data-i18n-title="tip.lang">
-              <button data-lang="zh" class="on">中</button>
-              <button data-lang="en">EN</button>
+    <!-- ============ 顶栏：做一件事的控件 ============ -->
+    <header class="topbar">
+      <div class="tb-brand">
+        <b data-i18n="app.title">生命游戏实验台</b>
+        <em data-mode="full" data-i18n="app.subtitle">阶段 3.7 · 布局重构</em>
+      </div>
+
+      <div class="tb-seg tb-run">
+        <button id="btn-play" class="primary" data-i18n="ctrl.play" data-i18n-title="tip.play">▶ 播放</button>
+        <button id="btn-step" data-i18n="ctrl.step" data-i18n-title="tip.step">单步</button>
+        <label class="tb-speed" data-i18n-title="tip.speed">
+          <span data-i18n="ctrl.speed">速度</span>
+          <input type="range" id="in-speed" min="1" max="60" step="1" value="10" />
+          <b id="lbl-speed">10</b>
+        </label>
+        <button id="btn-clear" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
+      </div>
+
+      <div class="tb-seg tb-tabs">
+        <button class="tab" data-tab="pattern" data-i18n="pattern.section" data-i18n-title="tip.pattern">图案盒子</button>
+        <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>
+      </div>
+
+      <div class="tb-seg tb-right">
+        <div class="seg" id="mode-switch" role="group" data-i18n-title="tip.mode">
+          <button data-mode-val="simple" data-i18n="mode.simpleLabel">简洁</button>
+          <button data-mode-val="full" class="on" data-i18n="mode.fullLabel">完整</button>
+        </div>
+        <div class="seg" id="lang-switch" role="group" data-i18n-title="tip.lang">
+          <button data-lang="zh" class="on">中</button>
+          <button data-lang="en">EN</button>
+        </div>
+        <button class="help-btn" id="btn-help" data-i18n-title="tip.help">?</button>
+      </div>
+    </header>
+
+    <!-- 顶栏标签展开的横向卡片条 -->
+    <div class="strip" id="card-strip" hidden>
+      <div class="card-list strip-list" id="pattern-list"></div>
+      <div class="card-list strip-list" id="world-list"></div>
+      <p class="note strip-hint" id="strip-hint"></p>
+    </div>
+
+    <p class="note topbar-note" id="throttle-note" hidden data-i18n="ctrl.throttled">⚠ 单代计算超时，已自动降速</p>
+
+    <!-- ============ 工作区：画布 + 右栏 ============ -->
+    <div class="workspace">
+      <main class="stage">
+        <canvas id="board"></canvas>
+        <div class="hud" id="hud">
+          <span class="hud-item"><span data-i18n="hud.gen">代数</span> <b id="hud-gen">0</b></span>
+          <span class="hud-item"><span data-i18n="hud.alive">存活</span> <b id="hud-alive">0</b></span>
+          <span class="hud-item" data-mode="full"><span data-i18n="hud.gps">实速</span> <b id="hud-gps">0</b> <span data-i18n="unit.gps">代/秒</span></span>
+          <span class="hud-item" data-mode="full"><span data-i18n="hud.fps">帧率</span> <b id="hud-fps">–</b></span>
+          <span class="hud-item muted" id="hud-scale">缩放 4.0×</span>
+        </div>
+        <div class="toast" id="toast" hidden></div>
+      </main>
+
+      <aside class="panel">
+        <section class="group" data-mode="full">
+          <h2 class="group-head"><span data-i18n="board.section">棋盘</span></h2>
+          <div class="group-body">
+            <label class="field" data-i18n-title="tip.size">
+              <span data-i18n="board.size">尺寸</span>
+              <div class="btn-group grid2" id="in-size">
+                <button data-val="100">100 × 100</button>
+                <button data-val="200">200 × 200</button>
+                <button data-val="300">300 × 300</button>
+                <button data-val="500">500 × 500</button>
+              </div>
+            </label>
+            <label class="field" data-i18n-title="tip.boundary">
+              <span data-i18n="board.boundary">边界</span>
+              <div class="btn-group stack" id="in-boundary">
+                <button data-val="torus" data-i18n="board.torus" data-i18n-title="tip.torus">环形（对侧相连）</button>
+                <button data-val="dead" data-i18n="board.dead" data-i18n-title="tip.deadEdge">死边界（界外恒死）</button>
+              </div>
+            </label>
+            <label class="field" data-i18n-title="tip.density">
+              <span><span data-i18n="init.density">密度</span> <b id="lbl-density">0.35</b></span>
+              <input type="range" id="in-density" min="0" max="1" step="0.01" value="0.35" />
+            </label>
+            <label class="field" data-i18n-title="tip.seed">
+              <span data-i18n="init.seed">种子（留空则随机生成）</span>
+              <input type="text" id="in-seed" data-i18n-placeholder="init.seedPlaceholder" placeholder="例如 4271" />
+            </label>
+            <div class="row btn-row">
+              <button id="btn-random" data-i18n="ctrl.random" data-i18n-title="tip.random">随机填充</button>
+              <button id="btn-fit" data-i18n="ctrl.fit" data-i18n-title="tip.fit">适配视图</button>
             </div>
           </div>
-        </div>
-        <p class="sub" data-mode="full" data-i18n="app.subtitle">阶段 3.6 · 文案与引导</p>
-      </header>
+        </section>
 
-      <!-- 主控制：两种模式都在 -->
-      <section class="group">
-        <div class="row btn-row">
-          <button id="btn-play" class="primary" data-i18n="ctrl.play" data-i18n-title="tip.play">▶ 播放</button>
-          <button id="btn-step" data-i18n="ctrl.step" data-i18n-title="tip.step">单步</button>
-        </div>
-        <label class="field" data-i18n-title="tip.speed">
-          <span><span data-i18n="ctrl.speed">速度</span> <b id="lbl-speed">10</b> <span data-i18n="unit.gps">代/秒</span></span>
-          <input type="range" id="in-speed" min="1" max="60" step="1" value="10" />
-        </label>
-        <div class="row btn-row">
-          <button id="btn-clear" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
-        </div>
-        <p class="note" id="throttle-note" hidden data-i18n="ctrl.throttled">⚠ 单代计算超时，已自动降速</p>
-      </section>
+        <section class="group" data-mode="full">
+          <h2 class="group-head"><span data-i18n="vis.section">视觉</span></h2>
+          <div class="group-body">
+            <label class="field" data-i18n-title="tip.palette">
+              <span data-i18n="vis.palette">色带</span>
+              <div class="btn-group" id="in-palette">
+                <button data-val="emerald" data-i18n="vis.palette.emerald">翠绿</button>
+                <button data-val="lava" data-i18n="vis.palette.lava">熔岩</button>
+                <button data-val="glacier" data-i18n="vis.palette.glacier">冰川</button>
+              </div>
+            </label>
+            <label class="check" data-i18n-title="tip.age"><input type="checkbox" id="in-age" checked /><span data-i18n="vis.age">年龄着色</span></label>
+            <label class="check" data-i18n-title="tip.glow"><input type="checkbox" id="in-glow" checked /><span data-i18n="vis.glow">死亡余晖</span></label>
+            <label class="field indent" data-i18n-title="tip.glowLen">
+              <span><span data-i18n="vis.glowLen">余晖长度</span> <b id="lbl-glow">4</b> <span data-i18n="unit.gen">代</span></span>
+              <input type="range" id="in-glow-frames" min="3" max="5" step="1" value="4" />
+            </label>
+            <label class="check" data-i18n-title="tip.trails"><input type="checkbox" id="in-trails" /><span data-i18n="vis.trails">拖尾模式</span></label>
+            <label class="field indent" data-i18n-title="tip.trailLen">
+              <span><span data-i18n="vis.trailLen">拖尾长度</span> <b id="lbl-trail">中</b></span>
+              <input type="range" id="in-trail-len" min="1" max="20" step="1" value="10" />
+            </label>
+          </div>
+        </section>
 
-      <!-- 图案盒子：两种模式都在 -->
-      <section class="group">
-        <h2 data-i18n="pattern.section">图案盒子</h2>
-        <div class="card-list" id="pattern-list"></div>
-        <p class="note" data-i18n="pattern.hint">点一个图案，它会跟着鼠标走，再点画布放下。</p>
-      </section>
+        <section class="group" data-mode="full">
+          <h2 class="group-head"><span data-i18n="stat.section">本代统计</span></h2>
+          <div class="group-body">
+            <div class="stat-grid">
+              <div class="stat" data-i18n-title="tip.stat.gen"><span data-i18n="stat.gen">代数</span><b id="st-gen">0</b></div>
+              <div class="stat" data-i18n-title="tip.stat.alive"><span data-i18n="stat.alive">存活</span><b id="st-alive">0</b></div>
+              <div class="stat born" data-i18n-title="tip.stat.births"><span data-i18n="stat.births">出生</span><b id="st-births">0</b></div>
+              <div class="stat" data-i18n-title="tip.stat.area"><span data-i18n="stat.area">活动区</span><b id="st-area">0</b></div>
+              <div class="stat lonely" data-i18n-title="tip.stat.lonely"><span data-i18n="stat.lonely">孤独死</span><b id="st-lonely">0</b></div>
+              <div class="stat crowded" data-i18n-title="tip.stat.crowded"><span data-i18n="stat.crowded">拥挤死</span><b id="st-crowded">0</b></div>
+            </div>
+            <canvas id="chart" class="chart" data-i18n-title="tip.chart"></canvas>
+            <p class="note" data-i18n="stat.chartNote">存活数折线图 · 最近 500 代</p>
+          </div>
+        </section>
 
-      <!-- 世界卡片：简洁模式下的规则预设 -->
-      <section class="group" data-mode="simple">
-        <h2 data-i18n="world.section">世界</h2>
-        <div class="card-list" id="world-list"></div>
-        <p class="note" data-i18n="world.hint">换一个世界，同样的图案会长出完全不同的东西。</p>
-      </section>
+        <section class="group" data-mode="full">
+          <h2 class="group-head"><span data-i18n="rule.section">规则</span></h2>
+          <div class="group-body">
+            <div class="kv"><span data-i18n="rule.name">名称</span><b id="lbl-rule-name">Life</b></div>
+            <div class="kv" data-i18n-title="tip.notation"><span data-i18n="rule.notation">记法</span><b id="lbl-notation">B3/S23</b></div>
+            <div class="kv" data-i18n-title="tip.fingerprint"><span data-i18n="rule.fingerprint">指纹</span><b id="lbl-fingerprint" class="mono">–</b></div>
+            <div class="kv" data-i18n-title="tip.states"><span data-i18n="rule.states">可达状态</span><b id="lbl-states">2</b></div>
+            <div class="row btn-row">
+              <button id="btn-rule" data-i18n="rule.edit" data-i18n-title="tip.rule">编辑规则…</button>
+            </div>
+          </div>
+        </section>
 
-      <section class="group" data-mode="full">
-        <h2 data-i18n="stat.section">本代统计</h2>
-        <div class="stat-grid">
-          <div class="stat" data-i18n-title="tip.stat.gen"><span data-i18n="stat.gen">代数</span><b id="st-gen">0</b></div>
-          <div class="stat" data-i18n-title="tip.stat.alive"><span data-i18n="stat.alive">存活</span><b id="st-alive">0</b></div>
-          <div class="stat born" data-i18n-title="tip.stat.births"><span data-i18n="stat.births">出生</span><b id="st-births">0</b></div>
-          <div class="stat" data-i18n-title="tip.stat.area"><span data-i18n="stat.area">活动区</span><b id="st-area">0</b></div>
-          <div class="stat lonely" data-i18n-title="tip.stat.lonely"><span data-i18n="stat.lonely">孤独死</span><b id="st-lonely">0</b></div>
-          <div class="stat crowded" data-i18n-title="tip.stat.crowded"><span data-i18n="stat.crowded">拥挤死</span><b id="st-crowded">0</b></div>
-        </div>
-        <canvas id="chart" class="chart" data-i18n-title="tip.chart"></canvas>
-        <p class="note" data-i18n="stat.chartNote">存活数折线图 · 最近 500 代</p>
-      </section>
+        <!-- 阶段 4 预留：实验台账 / 事件编年史面板挂在这里。
+             位置定在统计与规则之后、操作提示之前 —— 都属于"读"的内容，连在一起。 -->
+        <section class="group" data-mode="full" id="slot-records" hidden>
+          <h2 class="group-head"><span></span></h2>
+          <div class="group-body"></div>
+        </section>
 
-      <section class="group" data-mode="full">
-        <h2 data-i18n="vis.section">视觉</h2>
-        <label class="field" data-i18n-title="tip.palette">
-          <span data-i18n="vis.palette">色带</span>
-          <select id="in-palette">
-            <option value="emerald" data-i18n="vis.palette.emerald">翠绿</option>
-            <option value="lava" data-i18n="vis.palette.lava">熔岩</option>
-            <option value="glacier" data-i18n="vis.palette.glacier">冰川</option>
-          </select>
-        </label>
-        <label class="check" data-i18n-title="tip.age"><input type="checkbox" id="in-age" checked /><span data-i18n="vis.age">年龄着色（新生亮 → 存活越久越深）</span></label>
-        <label class="check" data-i18n-title="tip.glow"><input type="checkbox" id="in-glow" checked /><span data-i18n="vis.glow">死亡余晖</span></label>
-        <label class="field indent" data-i18n-title="tip.glowLen">
-          <span><span data-i18n="vis.glowLen">余晖长度</span> <b id="lbl-glow">4</b> <span data-i18n="unit.gen">代</span></span>
-          <input type="range" id="in-glow-frames" min="3" max="5" step="1" value="4" />
-        </label>
-        <label class="check" data-i18n-title="tip.trails"><input type="checkbox" id="in-trails" /><span data-i18n="vis.trails">拖尾模式</span></label>
-        <label class="field indent" data-i18n-title="tip.trailLen">
-          <span><span data-i18n="vis.trailLen">拖尾长度</span> <b id="lbl-trail">中</b></span>
-          <input type="range" id="in-trail-len" min="1" max="20" step="1" value="10" />
-        </label>
-      </section>
-
-      <section class="group" data-mode="full">
-        <h2 data-i18n="init.section">初始化</h2>
-        <label class="field" data-i18n-title="tip.density">
-          <span><span data-i18n="init.density">密度</span> <b id="lbl-density">0.35</b></span>
-          <input type="range" id="in-density" min="0" max="1" step="0.01" value="0.35" />
-        </label>
-        <label class="field" data-i18n-title="tip.seed">
-          <span data-i18n="init.seed">种子（留空则随机生成）</span>
-          <input type="text" id="in-seed" data-i18n-placeholder="init.seedPlaceholder" placeholder="例如 4271" />
-        </label>
-        <div class="row btn-row">
-          <button id="btn-random" data-i18n="ctrl.random" data-i18n-title="tip.random">随机填充</button>
-        </div>
-      </section>
-
-      <section class="group" data-mode="full">
-        <h2 data-i18n="board.section">棋盘</h2>
-        <label class="field" data-i18n-title="tip.boundary">
-          <span data-i18n="board.boundary">边界</span>
-          <select id="in-boundary">
-            <option value="torus" selected data-i18n="board.torus" data-i18n-title="tip.torus">环形（对侧相连）</option>
-            <option value="dead" data-i18n="board.dead" data-i18n-title="tip.deadEdge">死边界（界外恒死）</option>
-          </select>
-        </label>
-        <label class="field" data-i18n-title="tip.size">
-          <span data-i18n="board.size">尺寸</span>
-          <select id="in-size">
-            <option value="100">100 × 100</option>
-            <option value="200" selected>200 × 200</option>
-            <option value="300">300 × 300</option>
-            <option value="500">500 × 500</option>
-          </select>
-        </label>
-        <div class="row btn-row">
-          <button id="btn-fit" data-i18n="ctrl.fit" data-i18n-title="tip.fit">适配视图</button>
-        </div>
-      </section>
-
-      <section class="group" data-mode="full">
-        <h2 data-i18n="rule.section">规则</h2>
-        <div class="kv"><span data-i18n="rule.name">名称</span><b id="lbl-rule-name">Life</b></div>
-        <div class="kv" data-i18n-title="tip.notation"><span data-i18n="rule.notation">记法</span><b id="lbl-notation">B3/S23</b></div>
-        <div class="kv" data-i18n-title="tip.fingerprint"><span data-i18n="rule.fingerprint">指纹</span><b id="lbl-fingerprint" class="mono">–</b></div>
-        <div class="kv" data-i18n-title="tip.states"><span data-i18n="rule.states">可达状态</span><b id="lbl-states">2</b></div>
-        <div class="row btn-row">
-          <button id="btn-rule" data-i18n="rule.edit" data-i18n-title="tip.rule">编辑规则…</button>
-        </div>
-      </section>
-
-      <section class="group">
-        <h2 data-i18n="tips.section">操作提示</h2>
-        <ul class="tips">
-          <li data-i18n-html="tips.draw"></li>
-          <li data-i18n-html="tips.erase"></li>
-          <li data-i18n-html="tips.stamp"></li>
-          <li data-mode="full" data-i18n-html="tips.pan"></li>
-          <li data-i18n-html="tips.zoom"></li>
-          <li data-mode="full" data-i18n-html="tips.keys"></li>
-        </ul>
-      </section>
-    </aside>
+        <section class="group">
+          <h2 class="group-head"><span data-i18n="tips.section">操作提示</span></h2>
+          <div class="group-body">
+            <ul class="tips">
+              <li data-i18n-html="tips.draw"></li>
+              <li data-i18n-html="tips.erase"></li>
+              <li data-i18n-html="tips.stamp"></li>
+              <li data-mode="full" data-i18n-html="tips.pan"></li>
+              <li data-i18n-html="tips.zoom"></li>
+              <li data-mode="full" data-i18n-html="tips.keys"></li>
+            </ul>
+          </div>
+        </section>
+      </aside>
+    </div>
   </div>
 
   <div class="modal" id="intro-modal" hidden>
@@ -201,16 +213,13 @@
         <span class="tag mono" id="re-fingerprint">–</span>
         <button class="icon" id="re-close" data-i18n-title="editor.close" title="关闭">✕</button>
       </header>
-
       <div class="modal-body">
         <div class="re-col re-left">
           <h3 data-i18n="editor.presets">内置预设</h3>
           <div class="preset-list" id="re-presets"></div>
-
           <h3 data-i18n="editor.bs">B/S 快捷视图</h3>
           <div class="bs-grid" id="re-bs"></div>
           <p class="note" id="re-bs-reason"></p>
-
           <h3 data-i18n="editor.aging">衰老层数</h3>
           <label class="field">
             <span><span data-i18n="editor.agingLayers">层数</span> <b id="re-lbl-aging">0</b> · <span data-i18n="editor.agingHint">0 = 只有生/死两态</span></span>
@@ -219,26 +228,21 @@
           <button id="re-gen-chain" data-i18n="editor.genChain">生成衰老链</button>
           <p class="note" data-i18n="editor.genChainNote">换成 衰老1 → 衰老2 → … → 死亡 的标准链。</p>
         </div>
-
         <div class="re-col re-right">
           <h3><span data-i18n="editor.clauses">条款列表</span> <span class="hint" data-i18n="editor.clausesHint">从上到下匹配，第一条命中生效</span></h3>
           <div class="clause-list" id="re-clauses"></div>
           <button id="re-add" data-i18n="editor.addClause">＋ 添加条款</button>
-
           <h3 data-i18n="editor.validation">校验</h3>
           <div id="re-validation"></div>
-
           <h3 data-i18n="editor.tablePreview">编译表预览</h3>
           <div id="re-table"></div>
         </div>
       </div>
-
       <div class="io-panel" id="re-io" hidden>
         <textarea id="re-io-text" spellcheck="false" rows="6" data-i18n-placeholder="editor.ioPlaceholder" placeholder="B36/S23 或条款 JSON"></textarea>
         <p class="note" id="re-io-msg"></p>
         <button id="re-io-close" data-i18n="editor.collapse">收起</button>
       </div>
-
       <footer class="modal-foot">
         <div class="row">
           <button id="re-export" data-i18n="editor.export">导出</button>

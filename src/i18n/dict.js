@@ -5,7 +5,7 @@ export const DICT = {
   zh: {
     /* ---- 应用 ---- */
     'app.title': '生命游戏实验台',
-    'app.subtitle': '阶段 3.6 · 文案与引导',
+    'app.subtitle': '阶段 3.7 · 布局重构',
     'app.lang': '语言',
     'mode.simpleLabel': '简洁',
     'mode.fullLabel': '完整',
@@ -341,7 +341,7 @@ export const DICT = {
 
   en: {
     'app.title': 'Game of Life Lab',
-    'app.subtitle': 'Stage 3.6 · Wording & Onboarding',
+    'app.subtitle': 'Stage 3.7 · Layout',
     'app.lang': 'Language',
     'mode.simpleLabel': 'Simple',
     'mode.fullLabel': 'Full',

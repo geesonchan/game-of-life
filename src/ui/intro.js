@@ -7,7 +7,7 @@ import { Renderer } from '../render/renderer.js'
 import { Viewport } from '../render/viewport.js'
 import { VisualState } from '../render/visual-state.js'
 import { getPattern, placePattern, centerOrigin } from '../engine/patterns.js'
-import { t } from '../i18n/index.js'
+import { t, setLang, getLang } from '../i18n/index.js'
 import { prefs } from './prefs.js'
 
 /** 一块可点、可走一步的迷你棋盘 */
@@ -83,6 +83,17 @@ export function createIntro(app) {
   const nextBtn = document.getElementById('intro-next')
   const moreBtn = document.getElementById('intro-more')
   const skipBtn = document.getElementById('intro-skip')
+  const langSeg = document.getElementById('intro-lang')
+
+  // 卡片自带语言开关：首次打开时卡片盖住了侧栏那个开关，
+  // 看不懂中文的人得先关掉卡片才能换语言 —— 那正是最不该设障碍的一刻。
+  langSeg.addEventListener('click', e => {
+    const b = e.target.closest('[data-lang]')
+    if (!b) return
+    setLang(b.dataset.lang)          // 会触发 onLangChange，卡片自己重绘
+    prefs.set('lang', getLang())     // 记住，下次打开就是这个语言
+    if (app.syncSwitches) app.syncSwitches()
+  })
 
   let page = 0
   let stageBoard = null
@@ -120,6 +131,7 @@ export function createIntro(app) {
     backBtn.hidden = page === 0
     backBtn.textContent = t('intro.back')
     skipBtn.textContent = t('intro.skip')
+    langSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.lang === getLang()))
 
     // 第三幕的主按钮是「开始玩」；完整模式下另给一个通往参考页的次按钮
     const isAct3 = page === 2

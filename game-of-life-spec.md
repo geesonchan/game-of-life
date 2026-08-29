@@ -21,7 +21,10 @@
 - **Vite + 原生 JavaScript**（不用 React，不用 TypeScript）。代码注释用中文。
 - 渲染用 **HTML5 Canvas**（2D context）。禁止用 DOM 元素画格子。
 - 无后端。所有数据在内存 + 文件下载/上传（JSON、RLE、CSV）。
-- 不使用 localStorage / sessionStorage。
+- 不使用 localStorage / sessionStorage 存放游戏数据。
+  > **修订（阶段 3.6 之后）**：localStorage 允许用于界面偏好，且仅限三样 ——
+  > 介绍卡已看过、语言选择、简洁/完整模式。棋盘、存档、台账等游戏数据一律仍走显式文件导出。
+  > 修订理由与强制手段见 `docs/decisions.md` D30。
 - 目标棋盘规模：默认 200×200，需流畅支持到 500×500。
 
 ## 2. 架构原则（不可违反）

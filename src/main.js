@@ -13,7 +13,8 @@ import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
 import { placePattern, centerOrigin } from './engine/patterns.js'
-import { t, applyStatic, onLangChange, setRegister } from './i18n/index.js'
+import { t, applyStatic, onLangChange, setRegister, setLang, getLang } from './i18n/index.js'
+import { prefs } from './ui/prefs.js'
 
 const DEFAULT_SIZE = 200
 const HISTORY_LEN = 500   // 折线图窗口：最近 500 代
@@ -136,15 +137,15 @@ app.resizeBoard = function (w, h) {
 }
 
 /** 简洁 / 完整模式切换：只改 body 上的 class，具体哪些区块显示由 CSS 的 data-mode 决定 */
-app.setMode = function (mode) {
+app.setMode = function (mode, opts = {}) {
   app.mode = mode === 'simple' ? 'simple' : 'full'
   document.body.classList.toggle('mode-simple', app.mode === 'simple')
   document.body.classList.toggle('mode-full', app.mode === 'full')
   // 语域跟着模式走：简洁模式优先取 key + '.simple' 的大白话文案
   setRegister(app.mode)
-  if (app.mode === 'simple') app.setStamp(null)
+  if (app.mode === 'simple' && app.stamp) app.setStamp(null)
   app.handleResize()
-  app.toast(t(app.mode === 'simple' ? 'mode.toSimple' : 'mode.toFull'))
+  if (!opts.silent) app.toast(t(app.mode === 'simple' ? 'mode.toSimple' : 'mode.toFull'))
 }
 
 /** 选中 / 取消选中一个待放置的图案 */
@@ -185,6 +186,13 @@ app.fitView = function () {
   app.viewport.fit(w, h, app.engine.w, app.engine.h)
   app.dirty = true
   app.updateHud()
+}
+
+// 容器尺寸变化时只重设画布像素，不改动用户的缩放/平移
+app.handleResize = function () {
+  app.renderer.resize()
+  if (app.needsFit) app.fitView()
+  app.dirty = true
 }
 
 /** 记录单代耗时；超过 16ms 触发自动降速 */
@@ -259,7 +267,15 @@ app.intro = createIntro(app)
 document.getElementById('btn-help').addEventListener('click', () => app.intro.open(0))
 app.renderer.setAgingLayers(app.engine.rule.agingLayers)
 app.updateRuleInfo()
+
+// 恢复界面偏好（只有语言、模式、介绍卡看过没有这三样，见 docs/decisions.md D30）
+const savedLang = prefs.get('lang')
+if (savedLang === 'zh' || savedLang === 'en') setLang(savedLang)
+const savedMode = prefs.get('mode')
+if (savedMode === 'simple' || savedMode === 'full') app.setMode(savedMode, { silent: true })
+app.syncSwitches()
 applyStatic()
+app.library.render()
 
 // 切语言：静态文字整棵树重刷，动态生成的部分各自重绘
 onLangChange(() => {
@@ -284,12 +300,6 @@ app.el.seed.value = '4271'
 app.fitView()
 app.setRunning(false)
 
-// 容器尺寸变化时只重设画布像素，不改动用户的缩放/平移
-app.handleResize = function () {
-  app.renderer.resize()
-  if (app.needsFit) app.fitView()
-  app.dirty = true
-}
 new ResizeObserver(() => app.handleResize()).observe(canvas)
 
 // 标签页切到后台自动暂停
@@ -364,11 +374,9 @@ function frame(now) {
 app.chart.draw(app.series, app.renderer.flat)
 requestAnimationFrame(frame)
 
-// 首次进入自动弹出介绍卡。
-// 注意：规格书 1 明确禁用 localStorage / sessionStorage，所以"首次"只能落在
-// "本次打开页面的第一次"这个尺度上 —— 关掉后本次不再自动弹，刷新页面会再弹一次。
-// 想彻底记住"看过了"必须要持久化，那与规格冲突，因此不做。
-app.intro.open(0)
+// 首次进入自动弹出介绍卡。规格修订后（D30）"看过了"会记在 localStorage 里，
+// 所以刷新页面不会再弹；存储不可用时（隐私模式）退化成每次打开都弹一次，不影响使用。
+if (prefs.get('introSeen') !== '1') app.intro.open(0)
 
 // 便于在浏览器控制台里做手工验证
 window.__lab = app

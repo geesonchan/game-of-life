@@ -2,6 +2,7 @@
 import { normalizeSeed, randomSeed } from '../engine/prng.js'
 import { isTyping } from './input.js'
 import { t, setLang, getLang } from '../i18n/index.js'
+import { prefs } from './prefs.js'
 
 const $ = id => document.getElementById(id)
 
@@ -103,19 +104,28 @@ export function setupControls(app) {
   /* ---------- 语言与模式开关 ---------- */
 
   const langSwitch = $('lang-switch')
+  const modeSwitch = $('mode-switch')
+
+  /** 把两个开关的高亮同步到当前状态（开机恢复偏好后也要调一次） */
+  app.syncSwitches = function () {
+    langSwitch.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.lang === getLang()))
+    modeSwitch.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.modeVal === app.mode))
+  }
+
   langSwitch.addEventListener('click', e => {
     const b = e.target.closest('[data-lang]')
     if (!b) return
     setLang(b.dataset.lang)
-    langSwitch.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.lang === getLang()))
+    prefs.set('lang', getLang())     // 用户明确表达的偏好才落盘
+    app.syncSwitches()
   })
 
-  const modeSwitch = $('mode-switch')
   modeSwitch.addEventListener('click', e => {
     const b = e.target.closest('[data-mode-val]')
     if (!b) return
     app.setMode(b.dataset.modeVal)
-    modeSwitch.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.modeVal === app.mode))
+    prefs.set('mode', app.mode)
+    app.syncSwitches()
   })
 
   // 键盘快捷键

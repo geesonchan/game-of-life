@@ -8,6 +8,7 @@ import { Viewport } from '../render/viewport.js'
 import { VisualState } from '../render/visual-state.js'
 import { getPattern, placePattern, centerOrigin } from '../engine/patterns.js'
 import { t } from '../i18n/index.js'
+import { prefs } from './prefs.js'
 
 /** 一块可点、可走一步的迷你棋盘 */
 class MiniBoard {
@@ -100,6 +101,8 @@ export function createIntro(app) {
   function close() {
     stopStage()
     modal.hidden = true
+    // 看过就记住 —— 无论是看完、跳过还是按 Esc 关掉
+    prefs.set('introSeen', '1')
   }
 
   function stopStage() {

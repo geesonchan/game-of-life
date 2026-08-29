@@ -8,6 +8,7 @@ import { presetRule, PRESETS } from '../src/engine/presets.js'
 import { exportRule, importRule } from '../src/engine/rule-io.js'
 import { PATTERNS, getPattern, placePattern, centerOrigin } from '../src/engine/patterns.js'
 import { DICT } from '../src/i18n/dict.js'
+import { createPrefs, PREF_KEYS } from '../src/ui/prefs.js'
 
 /** 把 ASCII 图案（O=活，.=死）画到棋盘上，左上角落在 (ox,oy) */
 export function place(engine, pattern, ox, oy) {
@@ -690,6 +691,87 @@ cases.push(
       t.equal(s3.births, 1, '应该只诞生 1 个，画面不会乱')
       t.equal(s3.alive, 4, '结果应该是个 2×2 方块')
       t.equal(s3.deathsLonely + s3.deathsCrowded, 0, '原来那三个都该活着')
+    }
+  }
+)
+
+/* ================= 规格修订：界面偏好可持久化，游戏数据不可 ================= */
+
+/** 一个够用的假 localStorage */
+function fakeStorage() {
+  const map = new Map()
+  return {
+    map,
+    getItem: k => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => { map.set(k, String(v)) },
+    removeItem: k => { map.delete(k) }
+  }
+}
+
+cases.push(
+  {
+    name: '偏好：白名单恰好是三样界面偏好',
+    run(t) {
+      t.equal(PREF_KEYS.length, 3, '只允许三个键')
+      t.equal(PREF_KEYS.slice().sort().join(','), 'introSeen,lang,mode', '就是这三样')
+    }
+  },
+  {
+    name: '偏好：允许的键正常读写，且带命名空间前缀',
+    run(t) {
+      const st = fakeStorage()
+      const p = createPrefs(st)
+      t.equal(p.get('lang', 'zh'), 'zh', '没存过时回落到默认值')
+      t.ok(p.set('lang', 'en'), '写入应成功')
+      t.equal(p.get('lang', 'zh'), 'en', '读回应是刚写的值')
+      t.ok(p.set('mode', 'simple') && p.set('introSeen', '1'), '另外两个键也能写')
+      // 键必须带前缀，免得和页面上别的东西撞名
+      const keys = [...st.map.keys()]
+      t.equal(keys.length, 3, '存储里应恰好三条')
+      t.ok(keys.every(k => k.indexOf('gol.pref.') === 0), `所有键都应带前缀，实际：${keys.join(', ')}`)
+      p.clear()
+      t.equal(st.map.size, 0, 'clear 应清空自己的键')
+    }
+  },
+  {
+    name: '偏好：任何游戏数据键都会被白名单拒绝',
+    run(t) {
+      const st = fakeStorage()
+      const p = createPrefs(st)
+      // 规格修订只放开了界面偏好；棋盘 / 存档 / 台账 / 快照仍走显式文件导出
+      const forbidden = ['board', 'cells', 'save', 'savefile', 'ledger', 'snapshot', 'snapshots',
+        'seed', 'rule', 'generation', 'pattern', 'history', 'runs']
+      for (const k of forbidden) {
+        let threwOnWrite = false, threwOnRead = false
+        try { p.set(k, 'x') } catch (e) { threwOnWrite = true }
+        try { p.get(k) } catch (e) { threwOnRead = true }
+        t.ok(threwOnWrite, `写入「${k}」应被拒绝`)
+        t.ok(threwOnRead, `读取「${k}」也应被拒绝`)
+        t.ok(!p.isAllowed(k), `「${k}」不应在白名单里`)
+      }
+      t.equal(st.map.size, 0, '被拒绝的写入不应在存储里留下任何东西')
+    }
+  },
+  {
+    name: '偏好：存储不可用或抛异常时应用不受影响',
+    run(t) {
+      // 隐私模式 / 禁用 cookie：探测不到存储
+      const none = createPrefs(null)
+      t.equal(none.available, false, '应如实报告存储不可用')
+      t.equal(none.get('lang', 'zh'), 'zh', '读应回落到默认值')
+      t.equal(none.set('lang', 'en'), false, '写应返回 false 而不是抛异常')
+      none.clear()   // 不该抛
+
+      // 存储存在但每次调用都抛（配额满 / 被策略拦截）
+      const hostile = createPrefs({
+        getItem() { throw new Error('blocked') },
+        setItem() { throw new Error('blocked') },
+        removeItem() { throw new Error('blocked') }
+      })
+      t.equal(hostile.get('mode', 'full'), 'full', '读抛异常时应回落到默认值')
+      t.equal(hostile.set('mode', 'simple'), false, '写抛异常时应返回 false')
+      hostile.clear()   // 不该抛
+      t.ok(true, '全程没有异常逃逸出来')
     }
   }
 )

@@ -2,6 +2,9 @@
 export { LifeEngine } from './board.js'
 export {
   compileRule, parseBS, bsToClauses, lifeRule, toBSNotation,
-  stateName, stateFromName, DEAD, ALIVE
+  reachableStates, bsSetsOf, stateName, stateFromName, DEAD, ALIVE
 } from './rules.js'
+export { validateRule, validateClauses } from './validate.js'
+export { PRESETS, presetRule } from './presets.js'
+export { exportRule, importRule } from './rule-io.js'
 export { mulberry32, randomSeed, normalizeSeed } from './prng.js'

@@ -2,7 +2,10 @@
 // 同时被 Vitest（tests/engine.test.js）与 jsc 运行器（tests/run-jsc.js）复用。
 
 import { LifeEngine } from '../src/engine/board.js'
-import { lifeRule, compileRule, parseBS } from '../src/engine/rules.js'
+import { lifeRule, compileRule, parseBS, bsToClauses } from '../src/engine/rules.js'
+import { validateRule, validateClauses } from '../src/engine/validate.js'
+import { presetRule, PRESETS } from '../src/engine/presets.js'
+import { exportRule, importRule } from '../src/engine/rule-io.js'
 
 /** 把 ASCII 图案（O=活，.=死）画到棋盘上，左上角落在 (ox,oy) */
 export function place(engine, pattern, ox, oy) {
@@ -201,6 +204,237 @@ export const cases = [
     }
   }
 ]
+
+/* ================= 阶段 3：条款规则编辑器 ================= */
+
+cases.push(
+  {
+    name: '手工搭出的 B3/S23 与预设 Life 指纹完全一致',
+    run(t) {
+      const life = presetRule('life')
+      t.equal(life.notation, 'B3/S23', '预设 Life 的记法')
+
+      // 写法一：换成 eq / range，条款数相同
+      const a = compileRule({
+        agingLayers: 0,
+        clauses: [
+          { when: 'dead', neighbors: { op: 'eq', value: 3 }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'range', min: 2, max: 3 }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'any' }, then: 'dead' }
+        ]
+      })
+      t.equal(a.fingerprint, life.fingerprint, 'eq/range 写法应与预设同指纹')
+
+      // 写法二：只写 2 条，靠隐含兜底"维持原状"补齐存活
+      const b = compileRule({
+        agingLayers: 0,
+        clauses: [
+          { when: 'dead', neighbors: { op: 'in', values: [3] }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'not_in', values: [2, 3] }, then: 'dead' }
+        ]
+      })
+      t.equal(b.fingerprint, life.fingerprint, '靠兜底补齐的 2 条写法也应同指纹')
+      t.equal(b.notation, 'B3/S23', '反解记法仍应是 B3/S23')
+
+      // 反例：真的不是 Life 的规则，指纹必须不同
+      const c = compileRule({ agingLayers: 0, clauses: parseBS('B36/S23') })
+      t.ok(c.fingerprint !== life.fingerprint, 'HighLife 指纹应与 Life 不同')
+    }
+  },
+  {
+    name: 'Seeds 预设：任意活细胞下一代必死',
+    run(t) {
+      const seeds = presetRule('seeds')
+      t.equal(seeds.notation, 'B2/S', 'Seeds 记法应为 B2/S')
+      const e = new LifeEngine(60, 60, { rule: seeds, boundary: 'torus' }).randomize(999, 0.3)
+      const before = e.snapshot()
+      e.step()
+      let survivors = 0
+      for (let i = 0; i < before.length; i++) if (before[i] === 1 && e.cur[i] === 1) survivors++
+      t.equal(survivors, 0, '上一代的活细胞不应有任何一个存活到下一代')
+      // 逐个邻居数直接查表确认，不留死角
+      for (let n = 0; n <= 8; n++) {
+        t.equal(seeds.lookup[1 * 9 + n], 0, `活细胞在 ${n} 个邻居下都必须死`)
+      }
+    }
+  },
+  {
+    name: '校验器能标出永不可达的条款（被遮蔽 / 状态不可达）',
+    run(t) {
+      // (a) 被遮蔽：第 2 条能匹配的 n=3 已被第 1 条抢走
+      const shadowed = compileRule({
+        agingLayers: 0,
+        clauses: [
+          { when: 'alive', neighbors: { op: 'in', values: [2, 3] }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'in', values: [3] }, then: 'dead' },
+          { when: 'alive', neighbors: { op: 'any' }, then: 'dead' },
+          { when: 'dead', neighbors: { op: 'in', values: [3] }, then: 'alive' }
+        ]
+      })
+      const rs = validateRule(shadowed)
+      t.equal(rs.clauses[1].status, 'shadowed', '第 2 条应被标为被遮蔽')
+      t.equal(rs.clauses[1].hits, 0, '被遮蔽的条款命中数应为 0')
+      t.equal(rs.clauses[0].status, 'ok', '第 1 条应正常')
+      t.equal(rs.clauses[3].status, 'ok', '第 4 条应正常')
+      // 被遮蔽不改变语义：删掉它指纹不变
+      const without = compileRule({
+        agingLayers: 0,
+        clauses: shadowed.clauses.filter((_, i) => i !== 1)
+      })
+      t.equal(without.fingerprint, shadowed.fingerprint, '删掉永不可达条款不应改变指纹')
+
+      // (b) 状态不可达：没有任何条款产生 aging_2
+      const unreachable = compileRule({
+        agingLayers: 2,
+        clauses: [
+          { when: 'dead', neighbors: { op: 'in', values: [3] }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'in', values: [2, 3] }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'any' }, then: 'aging_1' },
+          { when: 'aging_1', neighbors: { op: 'any' }, then: 'dead' },
+          { when: 'aging_2', neighbors: { op: 'any' }, then: 'dead' }
+        ]
+      })
+      const ru = validateRule(unreachable)
+      t.equal(ru.clauses[4].status, 'unreachable-state', '第 5 条应被标为状态不可达')
+      t.equal(ru.clauses[3].status, 'ok', '第 4 条（aging_1 可达）应正常')
+      t.ok(ru.clauses[4].hits > 0, '状态不可达的条款在表里仍会"命中"，所以必须先判可达性再看命中数')
+
+      // (c) 冗余：结果与维持原状一致
+      const redundant = compileRule({
+        agingLayers: 0,
+        clauses: [
+          { when: 'dead', neighbors: { op: 'in', values: [0, 1] }, then: 'dead' },
+          { when: 'dead', neighbors: { op: 'in', values: [3] }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'in', values: [2, 3] }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'any' }, then: 'dead' }
+        ]
+      })
+      const rr = validateRule(redundant)
+      t.equal(rr.clauses[0].status, 'redundant', '结果等于维持原状的条款应标为冗余')
+      t.equal(redundant.fingerprint, presetRule('life').fingerprint, '冗余条款不改变指纹')
+    }
+  },
+  {
+    name: 'B/S 表达力判定走可达闭包，而不是衰老层数',
+    run(t) {
+      // 层数调到 3，但没有任何条款指向衰老态 ⇒ 仍然可用 B/S 表达
+      const padded = compileRule({ agingLayers: 3, clauses: parseBS('B3/S23') })
+      t.ok(padded.bsExpressible, '衰老态不可达时应判定为可用 B/S 表达')
+      t.equal(padded.notation, 'B3/S23', '应能反解出记法')
+      const vp = validateRule(padded)
+      t.equal(vp.reachable.join(','), 'dead,alive', '可达状态只应有死和活')
+      t.ok(vp.warnings.some(w => w.includes('衰老')), '应提醒有永不出现的衰老层')
+      // 但指纹与 0 层的 Life 不同 —— 查找表尺寸不同，这是对的
+      t.ok(padded.fingerprint !== presetRule('life').fingerprint, '层数不同则查找表不同，指纹应不同')
+
+      // Brian's Brain：衰老态可达 ⇒ 不可表达，且要指出是哪一条条款
+      const brain = presetRule('brain')
+      t.ok(!brain.bsExpressible, "Brian's Brain 不应可用 B/S 表达")
+      t.equal(brain.notation, null, '不可表达时记法应为 null')
+      const vb = validateRule(brain)
+      t.equal(vb.bs.culprit, 1, '应指出第 2 条条款（alive → 衰老 1）是原因')
+      t.ok(vb.bs.reason.includes('衰老'), '置灰原因文案应提到衰老态')
+      t.equal(vb.reachable.length, 3, "Brian's Brain 应有 3 个可达状态")
+    }
+  },
+  {
+    name: '编译表预览正确标出靠隐含兜底决定的格子',
+    run(t) {
+      const v = validateRule(presetRule('life'))
+      const deadRow = v.table.find(r => r.state === 'dead')
+      const aliveRow = v.table.find(r => r.state === 'alive')
+      t.equal(deadRow.cells[3].next, 'alive', '死细胞 3 邻居应出生')
+      t.equal(deadRow.cells[3].fallback, false, '3 邻居这一格由条款显式决定')
+      t.equal(deadRow.cells[0].fallback, true, '死细胞 0 邻居没有条款匹配，靠兜底维持原状')
+      t.equal(deadRow.cells[0].next, 'dead', '兜底结果应是维持原状')
+      t.equal(aliveRow.cells[2].fallback, false, '活细胞 2 邻居由条款显式决定')
+      t.equal(v.table.length, 2, 'Life 只有 2 个可达状态，预览表只列可达状态')
+    }
+  },
+  {
+    name: '结构校验在编译前拦住非法条款',
+    run(t) {
+      const bad = validateClauses([
+        { when: 'aging_3', neighbors: { op: 'any' }, then: 'dead' },
+        { when: 'alive', neighbors: { op: 'in', values: [] }, then: 'dead' },
+        { when: 'alive', neighbors: { op: 'range', min: 5, max: 2 }, then: 'dead' },
+        { when: 'alive', neighbors: { op: 'wat' }, then: 'dead' }
+      ], 1)
+      t.ok(!bad.ok, '应判定为不合法')
+      t.equal(bad.errors.length, 4, '四条问题应各报一条')
+      t.equal(bad.errors[0].clause, 0, '第一条错误应指向第 1 条条款')
+      t.ok(validateClauses(parseBS('B3/S23'), 0).ok, '合法条款应通过')
+      // 为什么必须先跑结构校验：compileRule 对两类非法条款的反应完全不同
+      // (1) then 越界 → 直接抛异常
+      let threw = false
+      try { compileRule({ agingLayers: 1, clauses: [{ when: 'alive', neighbors: { op: 'any' }, then: 'aging_3' }] }) }
+      catch (e) { threw = true }
+      t.ok(threw, 'then 引用越界衰老态时 compileRule 应抛异常')
+      // (2) when 越界 → 静默忽略（没有任何状态叫 aging_3，永远匹配不上）
+      const silent = compileRule({
+        agingLayers: 1,
+        clauses: [
+          { when: 'aging_3', neighbors: { op: 'any' }, then: 'dead' },
+          { when: 'dead', neighbors: { op: 'in', values: [3] }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'in', values: [2, 3] }, then: 'alive' },
+          { when: 'alive', neighbors: { op: 'any' }, then: 'dead' }
+        ]
+      })
+      t.equal(silent.clauseHits[0], 0, 'when 越界的条款会被静默忽略 —— 界面上必须靠结构校验告诉用户，否则它会无声地什么都不做')
+    }
+  },
+  {
+    name: '换规则时棋盘上不可达的状态被清成死亡',
+    run(t) {
+      const e = new LifeEngine(10, 10, { rule: presetRule('brain'), boundary: 'dead' })
+      e.set(5, 5, 2)   // 衰老 1
+      e.set(6, 5, 1)   // 存活
+      t.equal(e.get(5, 5), 2, '先确认棋盘上确实有衰老态细胞')
+      e.setRule(presetRule('life'))
+      t.equal(e.get(5, 5), 0, '换成 Life 后衰老态细胞应被清成死亡')
+      t.equal(e.get(6, 5), 1, '活细胞不受影响')
+      // 换成"层数够但不可达"的规则时同样要清
+      const e2 = new LifeEngine(10, 10, { rule: presetRule('brain'), boundary: 'dead' })
+      e2.set(5, 5, 2)
+      e2.setRule(compileRule({ agingLayers: 3, clauses: parseBS('B3/S23') }))
+      t.equal(e2.get(5, 5), 0, '衰老态在新规则下不可达，也应被清成死亡')
+    }
+  },
+  {
+    name: '规则导出 / 导入往返一致',
+    run(t) {
+      const life = presetRule('life')
+      t.equal(exportRule(life), 'B3/S23', '可表达时应导出 B/S 记法字符串')
+      t.equal(importRule('B3/S23').fingerprint, life.fingerprint, 'B/S 记法导入后指纹应一致')
+      t.equal(importRule('  b3/s23  ').fingerprint, life.fingerprint, '应容忍大小写与空白')
+
+      const brain = presetRule('brain')
+      const text = exportRule(brain)
+      t.equal(text[0], '{', '不可表达时应退化成条款 JSON')
+      t.equal(importRule(text).fingerprint, brain.fingerprint, '条款 JSON 往返后指纹应一致')
+
+      let threw = false
+      try { importRule('B9/S23') } catch (e) { threw = true }
+      t.ok(threw, '非法记法应抛出可读错误')
+    }
+  },
+  {
+    name: '五个内置预设都能编译，记法与声明一致',
+    run(t) {
+      t.equal(PRESETS.length, 5, '应有 5 个预设')
+      for (const p of PRESETS) {
+        const r = presetRule(p.key)
+        t.ok(validateClauses(p.clauses(), p.agingLayers).ok, `${p.name} 的条款应通过结构校验`)
+        if (p.agingLayers === 0) {
+          t.equal(r.notation, p.notation, `${p.name} 反解出的记法应与声明一致`)
+        } else {
+          t.ok(!r.bsExpressible, `${p.name} 有可达衰老态，不应可用 B/S 表达`)
+        }
+        t.ok(validateRule(r).clauses.every(c => c.status === 'ok'), `${p.name} 的条款不应有永不可达或冗余`)
+      }
+    }
+  }
+)
 
 function now() {
   if (typeof performance !== 'undefined' && performance.now) return performance.now()

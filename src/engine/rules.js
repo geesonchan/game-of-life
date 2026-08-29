@@ -91,6 +91,8 @@ export function compileRule(def) {
   aliveMap[ALIVE] = 1
 
   const fp = fnv1a(lookup, fnv1a(new Uint8Array([numStates])))
+  const reachable = reachableStates(lookup, numStates)
+  const notation = toBSNotation(lookup, reachable)
   return {
     lookup,
     numStates,
@@ -98,27 +100,57 @@ export function compileRule(def) {
     aliveMap,
     clauses,
     clauseHits,
+    reachable,                       // Uint8Array(numStates)，1 = 从 {死,活} 出发可达
+    bsExpressible: notation !== null,
     fingerprint: fp.toString(16).padStart(8, '0'),
     name: def.name || '自定义规则',
-    notation: toBSNotation(lookup, numStates)
+    notation
   }
 }
 
 /**
- * 若查找表能用 B/S 记法表达（无衰老态、结果只有生/死），返回记法字符串；否则返回 null。
+ * 可达状态闭包（见 docs/decisions.md D18）。
+ * 从任何棋盘都必然拥有的 {死亡, 存活} 出发，反复把 lookup 的结果并入集合，直到不动点。
+ * @returns {Uint8Array} 长度 numStates，1 表示可达
  */
-export function toBSNotation(lookup, numStates) {
-  if (numStates !== 2) return null
-  const b = []
-  const s = []
-  for (let n = 0; n <= 8; n++) {
-    const fromDead = lookup[DEAD * 9 + n]
-    const fromAlive = lookup[ALIVE * 9 + n]
-    if (fromDead > 1 || fromAlive > 1) return null
-    if (fromDead === ALIVE) b.push(n)
-    if (fromAlive === ALIVE) s.push(n)
+export function reachableStates(lookup, numStates) {
+  const r = new Uint8Array(numStates)
+  r[DEAD] = 1
+  if (numStates > ALIVE) r[ALIVE] = 1
+  for (let round = 0; round < numStates; round++) {
+    let grew = false
+    for (let s = 0; s < numStates; s++) {
+      if (!r[s]) continue
+      for (let n = 0; n <= 8; n++) {
+        const t = lookup[s * 9 + n]
+        if (!r[t]) { r[t] = 1; grew = true }
+      }
+    }
+    if (!grew) break
   }
-  return `B${b.join('')}/S${s.join('')}`
+  return r
+}
+
+/** 从查找表反解出 B/S 的出生集合与存活集合（调用前应确认 bsExpressible） */
+export function bsSetsOf(lookup) {
+  const born = [], survive = []
+  for (let n = 0; n <= 8; n++) {
+    if (lookup[DEAD * 9 + n] === ALIVE) born.push(n)
+    if (lookup[ALIVE * 9 + n] === ALIVE) survive.push(n)
+  }
+  return { born, survive }
+}
+
+/**
+ * 判定查找表能否用 B/S 记法表达，能则返回记法字符串，否则返回 null。
+ * 判据是"可达状态闭包是否越出 {死亡, 存活}"（D18），而不是"衰老层数是否为 0"：
+ * 用户把层数调大又把条款改回两状态时，那些衰老行没人指向，规则实际上仍然是 B/S 规则。
+ * @param {Uint8Array} reachable reachableStates() 的结果
+ */
+export function toBSNotation(lookup, reachable) {
+  for (let s = 2; s < reachable.length; s++) if (reachable[s]) return null
+  const { born, survive } = bsSetsOf(lookup)
+  return `B${born.join('')}/S${survive.join('')}`
 }
 
 /**

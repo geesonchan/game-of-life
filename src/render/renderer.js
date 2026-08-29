@@ -3,7 +3,7 @@
 // 再用 drawImage 整体放大（关闭平滑）；避免几万次 fillRect。
 // 阶段 2 起，每格填什么颜色由 VisualState（年龄 / 余晖）决定 —— 依然全在渲染层。
 
-import { buildAgeColorLUT, buildAgeIndexLUT, buildGlowLUT, flatColor, PALETTES } from './palette.js'
+import { buildAgeColorLUT, buildAgeIndexLUT, buildGlowLUT, buildAgingLUT, flatColor, PALETTES } from './palette.js'
 
 const COLORS = {
   background: [17, 19, 24],   // 画布底色（棋盘外）
@@ -28,6 +28,7 @@ export class Renderer {
     this.ageIdxLUT = buildAgeIndexLUT()
     this.paletteKey = 'emerald'
     this.glowFrames = 4
+    this.agingLayers = 0
     this.rebuildPalette()
     this._viewSig = ''
     this.trailCanvas = null   // 拖尾图层按需创建
@@ -48,9 +49,16 @@ export class Renderer {
     this.glowLUT = buildGlowLUT(this.paletteKey, this.glowFrames, COLORS.boardDead)
   }
 
+  /** 规则变了要跟着重建衰老态配色（层数决定色阶数） */
+  setAgingLayers(n) {
+    this.agingLayers = Math.max(0, Math.min(8, n | 0))
+    this.agingLUT = buildAgingLUT(this.paletteKey, this.agingLayers, COLORS.boardDead)
+  }
+
   rebuildPalette() {
     this.ageColorLUT = buildAgeColorLUT(this.paletteKey)
     this.glowLUT = buildGlowLUT(this.paletteKey, this.glowFrames, COLORS.boardDead)
+    this.agingLUT = buildAgingLUT(this.paletteKey, this.agingLayers, COLORS.boardDead)
     this.flat = flatColor(this.paletteKey)
   }
 
@@ -184,6 +192,7 @@ export class Renderer {
     const ageLUT = this.ageColorLUT
     const idxLUT = this.ageIdxLUT
     const glowLUT = this.glowLUT
+    const agingLUT = this.agingLUT
     const flat = this.flat
     const flat0 = flat[0], flat1 = flat[1], flat2 = flat[2]
 
@@ -192,7 +201,17 @@ export class Renderer {
       const row = y * bw
       for (let x = x0; x < x1; x++) {
         const i = row + x
-        if (cur[i] === 1) {
+        const s = cur[i]
+        if (s > 1) {
+          // 衰老态：用死亡色系着色，亮度压在活细胞之下
+          const k = s * 3
+          if (k + 2 < agingLUT.length) {
+            data[p] = agingLUT[k]; data[p + 1] = agingLUT[k + 1]; data[p + 2] = agingLUT[k + 2]
+            data[p + 3] = 255
+          } else {
+            data[p + 3] = 0
+          }
+        } else if (s === 1) {
           if (ageColoring) {
             let a = ages[i]
             if (a === 0) a = 1

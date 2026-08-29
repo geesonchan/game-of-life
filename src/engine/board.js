@@ -40,12 +40,21 @@ export class LifeEngine {
     this.stats = emptyStats()
   }
 
-  /** 更换规则（已编译的查找表对象） */
+  /**
+   * 更换规则（已编译的查找表对象）。
+   * 棋盘上所有"新规则下不可达"的状态一律清成死亡：既避免查表越界，
+   * 也保证「可达闭包」这个判定对棋盘成立（见 docs/decisions.md D18 的健全性前提）——
+   * 否则旧规则遗留的衰老细胞会一直按衰老行演化，"这条规则等价于某个 B/S 规则"就不再成立。
+   */
   setRule(rule) {
     this.rule = rule
-    // 衰老层数变小时，把越界状态压回死亡，避免查表越界
     const max = rule.numStates - 1
-    for (let i = 0; i < this.cur.length; i++) if (this.cur[i] > max) this.cur[i] = 0
+    const reachable = rule.reachable
+    const cur = this.cur
+    for (let i = 0; i < cur.length; i++) {
+      const s = cur[i]
+      if (s > max || (reachable && !reachable[s])) cur[i] = 0
+    }
   }
 
   setBoundary(b) {

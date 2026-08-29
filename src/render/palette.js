@@ -97,3 +97,21 @@ export function flatColor(paletteKey) {
   const p = PALETTES[paletteKey] || PALETTES.emerald
   return sampleStops(p.stops, 0.25)
 }
+
+/**
+ * 衰老态配色表：索引 = 状态码（2 = 衰老 1，3 = 衰老 2，…）。
+ * 用死亡色作基调（衰老本来就是"正在死"），越深的衰老层越暗，
+ * 亮度整体压在活细胞之下，保证画面主体仍是活细胞。
+ */
+export function buildAgingLUT(paletteKey, layers, boardDead) {
+  const p = PALETTES[paletteKey] || PALETTES.emerald
+  const lut = new Uint8Array((2 + Math.max(0, layers)) * 3)
+  for (let k = 1; k <= layers; k++) {
+    const bright = 0.78 * (1 - 0.62 * (k - 1) / Math.max(1, layers))
+    const i = (1 + k) * 3
+    lut[i] = Math.round(boardDead[0] + (p.death[0] - boardDead[0]) * bright)
+    lut[i + 1] = Math.round(boardDead[1] + (p.death[1] - boardDead[1]) * bright)
+    lut[i + 2] = Math.round(boardDead[2] + (p.death[2] - boardDead[2]) * bright)
+  }
+  return lut
+}

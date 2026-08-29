@@ -110,10 +110,7 @@ export function setupControls(app) {
     else if (k === 'c') { app.clear(); e.preventDefault() }
   })
 
-  // 规则信息（阶段 1–2 固定为 Life）
-  el.lblNotation.textContent = app.engine.rule.notation || '（条款规则）'
-  el.lblFingerprint.textContent = app.engine.rule.fingerprint
-
+  // 规则信息由 app.updateRuleInfo() 统一维护（规则可在编辑器里换）
   return el
 }
 

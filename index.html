@@ -23,7 +23,7 @@
     <aside class="panel">
       <header class="panel-head">
         <h1>生命游戏实验台</h1>
-        <p class="sub">阶段 2 · 视觉增强与统计</p>
+        <p class="sub">阶段 3 · 条款规则编辑器</p>
       </header>
 
       <section class="group">
@@ -116,9 +116,13 @@
 
       <section class="group">
         <h2>规则</h2>
+        <div class="kv"><span>名称</span><b id="lbl-rule-name">Life</b></div>
         <div class="kv"><span>记法</span><b id="lbl-notation">B3/S23</b></div>
         <div class="kv"><span>指纹</span><b id="lbl-fingerprint" class="mono">–</b></div>
-        <p class="note">阶段 1–2 固定为标准生命游戏；条款编辑器在阶段 3 开放。</p>
+        <div class="kv"><span>可达状态</span><b id="lbl-states">2</b></div>
+        <div class="row btn-row">
+          <button id="btn-rule">编辑规则…</button>
+        </div>
       </section>
 
       <section class="group">
@@ -133,6 +137,66 @@
       </section>
     </aside>
   </div>
+  <div class="modal" id="rule-modal" hidden>
+    <div class="modal-backdrop" id="rule-backdrop"></div>
+    <div class="modal-box">
+      <header class="modal-head">
+        <h2>规则编辑器</h2>
+        <span class="tag" id="re-notation">B3/S23</span>
+        <span class="tag mono" id="re-fingerprint">–</span>
+        <button class="icon" id="re-close" title="关闭">✕</button>
+      </header>
+
+      <div class="modal-body">
+        <div class="re-col re-left">
+          <h3>内置预设</h3>
+          <div class="preset-list" id="re-presets"></div>
+
+          <h3>B/S 快捷视图</h3>
+          <div class="bs-grid" id="re-bs"></div>
+          <p class="note" id="re-bs-reason"></p>
+
+          <h3>衰老层数</h3>
+          <label class="field">
+            <span>层数 <b id="re-lbl-aging">0</b> · 0 = 只有生/死两态</span>
+            <input type="range" id="re-aging" min="0" max="8" step="1" value="0" />
+          </label>
+          <button id="re-gen-chain">生成衰老链</button>
+          <p class="note">换成 衰老1 → 衰老2 → … → 死亡 的标准链。</p>
+        </div>
+
+        <div class="re-col re-right">
+          <h3>条款列表 <span class="hint">从上到下匹配，第一条命中生效</span></h3>
+          <div class="clause-list" id="re-clauses"></div>
+          <button id="re-add">＋ 添加条款</button>
+
+          <h3>校验</h3>
+          <div id="re-validation"></div>
+
+          <h3>编译表预览</h3>
+          <div id="re-table"></div>
+        </div>
+      </div>
+
+      <div class="io-panel" id="re-io" hidden>
+        <textarea id="re-io-text" spellcheck="false" rows="6" placeholder="B36/S23 或条款 JSON"></textarea>
+        <p class="note" id="re-io-msg"></p>
+        <button id="re-io-close">收起</button>
+      </div>
+
+      <footer class="modal-foot">
+        <div class="row">
+          <button id="re-export">导出</button>
+          <button id="re-import">导入</button>
+        </div>
+        <div class="row">
+          <button id="re-cancel">取消</button>
+          <button id="re-apply" class="primary">应用规则</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

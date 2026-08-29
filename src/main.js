@@ -9,6 +9,7 @@ import { Chart } from './render/chart.js'
 import { RingSeries } from './data/series.js'
 import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
+import { createRuleEditor } from './ui/rule-editor.js'
 
 const DEFAULT_SIZE = 200
 const HISTORY_LEN = 500   // 折线图窗口：最近 500 代
@@ -91,6 +92,27 @@ app.randomize = function () {
   app.dirty = true
   app.updateHud()
   app.toast(`已用种子 ${seed} · 密度 ${app.density.toFixed(2)} 初始化`)
+}
+
+/** 应用一条新编译的规则（引擎会把不可达状态的细胞清成死亡，见 D18） */
+app.applyRule = function (rule) {
+  app.engine.setRule(rule)
+  app.renderer.setAgingLayers(rule.agingLayers)
+  app.visual.sync(app.engine)   // 被清掉的衰老细胞不该留下年龄或残影
+  app.updateRuleInfo()
+  app.dirty = true
+  app.updateHud()
+  app.toast(`规则已应用 · ${rule.notation || '条款规则'} · 指纹 ${rule.fingerprint}`)
+}
+
+app.updateRuleInfo = function () {
+  const r = app.engine.rule
+  document.getElementById('lbl-rule-name').textContent = r.name
+  document.getElementById('lbl-notation').textContent = r.notation || '条款规则（超出 B/S）'
+  document.getElementById('lbl-fingerprint').textContent = r.fingerprint
+  let n = 0
+  for (let i = 0; i < r.reachable.length; i++) if (r.reachable[i]) n++
+  document.getElementById('lbl-states').textContent = n
 }
 
 app.resizeBoard = function (w, h) {
@@ -179,6 +201,10 @@ app.updateHud = function () {
 
 setupControls(app)
 setupCanvasInput(app)
+app.ruleEditor = createRuleEditor(app)
+document.getElementById('btn-rule').addEventListener('click', () => app.ruleEditor.open())
+app.renderer.setAgingLayers(app.engine.rule.agingLayers)
+app.updateRuleInfo()
 
 app.engine.randomize(4271, app.density)
 app.visual.sync(app.engine)

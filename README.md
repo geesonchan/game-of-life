@@ -3,14 +3,17 @@
 基于浏览器的 Conway 生命游戏实验平台。规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)。
 
-当前进度：**阶段 2（视觉增强）已完成**。
+当前进度：**阶段 3（条款规则编辑器）已完成**。
 
 ## 目录结构
 
 ```
 src/engine/   纯逻辑，零 DOM 依赖，可在 Node 里跑测试
   prng.js       mulberry32 种子化随机
-  rules.js      条款列表 → 查找表的预编译器 + B/S 记法互转
+  rules.js      条款列表 → 查找表的预编译器 + 可达性闭包 + B/S 记法互转
+  validate.js   规则校验器（结构校验 / 永不可达 / 冗余 / B/S 表达力）
+  presets.js    5 个内置规则预设
+  rule-io.js    规则导出导入（B/S 记法 或 条款 JSON）
   board.js      双缓冲棋盘与单代演进
 src/render/   只读引擎状态，负责画
   viewport.js       棋盘坐标 ↔ 屏幕坐标
@@ -21,6 +24,7 @@ src/render/   只读引擎状态，负责画
 src/data/     数据记录
   series.js         定长环形序列
 src/ui/       控件绑定与画布交互
+  rule-editor.js    条款规则编辑器（模态窗）
 src/main.js   装配与主循环
 tests/        验收用例（Vitest 与 jsc 运行器共用）
 ```

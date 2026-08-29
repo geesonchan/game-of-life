@@ -14,6 +14,7 @@
         <span class="hud-item">代数 <b id="hud-gen">0</b></span>
         <span class="hud-item">存活 <b id="hud-alive">0</b></span>
         <span class="hud-item">实速 <b id="hud-gps">0</b> 代/秒</span>
+        <span class="hud-item">帧率 <b id="hud-fps">–</b></span>
         <span class="hud-item muted" id="hud-scale">缩放 4.0×</span>
       </div>
       <div class="toast" id="toast" hidden></div>
@@ -22,7 +23,7 @@
     <aside class="panel">
       <header class="panel-head">
         <h1>生命游戏实验台</h1>
-        <p class="sub">阶段 1 · 引擎 / 渲染 / 基础控制</p>
+        <p class="sub">阶段 2 · 视觉增强与统计</p>
       </header>
 
       <section class="group">
@@ -35,6 +36,43 @@
           <input type="range" id="in-speed" min="1" max="60" step="1" value="10" />
         </label>
         <p class="note" id="throttle-note" hidden>⚠ 单代计算超时，已自动降速</p>
+      </section>
+
+      <section class="group">
+        <h2>本代统计</h2>
+        <div class="stat-grid">
+          <div class="stat"><span>代数</span><b id="st-gen">0</b></div>
+          <div class="stat"><span>存活</span><b id="st-alive">0</b></div>
+          <div class="stat born"><span>出生</span><b id="st-births">0</b></div>
+          <div class="stat"><span>活动区</span><b id="st-area">0</b></div>
+          <div class="stat lonely"><span>孤独死</span><b id="st-lonely">0</b></div>
+          <div class="stat crowded"><span>拥挤死</span><b id="st-crowded">0</b></div>
+        </div>
+        <canvas id="chart" class="chart"></canvas>
+        <p class="note">存活数折线图 · 最近 500 代</p>
+      </section>
+
+      <section class="group">
+        <h2>视觉</h2>
+        <label class="field">
+          <span>色带</span>
+          <select id="in-palette">
+            <option value="emerald" selected>翠绿</option>
+            <option value="lava">熔岩</option>
+            <option value="glacier">冰川</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="in-age" checked /><span>年龄着色（新生亮 → 存活越久越深）</span></label>
+        <label class="check"><input type="checkbox" id="in-glow" checked /><span>死亡余晖</span></label>
+        <label class="field indent">
+          <span>余晖长度 <b id="lbl-glow">4</b> 代</span>
+          <input type="range" id="in-glow-frames" min="3" max="5" step="1" value="4" />
+        </label>
+        <label class="check"><input type="checkbox" id="in-trails" /><span>拖尾模式</span></label>
+        <label class="field indent">
+          <span>拖尾长度 <b id="lbl-trail">中</b></span>
+          <input type="range" id="in-trail-len" min="1" max="20" step="1" value="10" />
+        </label>
       </section>
 
       <section class="group">
@@ -80,7 +118,7 @@
         <h2>规则</h2>
         <div class="kv"><span>记法</span><b id="lbl-notation">B3/S23</b></div>
         <div class="kv"><span>指纹</span><b id="lbl-fingerprint" class="mono">–</b></div>
-        <p class="note">阶段 1 固定为标准生命游戏；条款编辑器在阶段 3 开放。</p>
+        <p class="note">阶段 1–2 固定为标准生命游戏；条款编辑器在阶段 3 开放。</p>
       </section>
 
       <section class="group">

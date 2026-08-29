@@ -3,7 +3,7 @@
 基于浏览器的 Conway 生命游戏实验平台。规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)。
 
-当前进度：**阶段 1（引擎 + 渲染 + 基础控制）已完成**。
+当前进度：**阶段 2（视觉增强）已完成**。
 
 ## 目录结构
 
@@ -13,8 +13,13 @@ src/engine/   纯逻辑，零 DOM 依赖，可在 Node 里跑测试
   rules.js      条款列表 → 查找表的预编译器 + B/S 记法互转
   board.js      双缓冲棋盘与单代演进
 src/render/   只读引擎状态，负责画
-  viewport.js   棋盘坐标 ↔ 屏幕坐标
-  renderer.js   Canvas 渲染（ImageData 放大方案）
+  viewport.js       棋盘坐标 ↔ 屏幕坐标
+  renderer.js       Canvas 渲染（ImageData 放大方案 + 拖尾图层）
+  palette.js        色带与颜色查找表
+  visual-state.js   细胞年龄 / 死亡余晖（渲染层自有缓冲，引擎无感知）
+  chart.js          存活数折线图
+src/data/     数据记录
+  series.js         定长环形序列
 src/ui/       控件绑定与画布交互
 src/main.js   装配与主循环
 tests/        验收用例（Vitest 与 jsc 运行器共用）

@@ -1,20 +1,30 @@
 // 应用装配与主循环。
-// 节拍解耦：引擎按目标速度推进，渲染每帧最多一次（高速时自然跳帧）。
+// 节拍解耦：引擎与视觉状态按代推进（每代必录），渲染每帧最多一次（高速时自然跳帧）。
 import { LifeEngine } from './engine/board.js'
 import { lifeRule } from './engine/rules.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
+import { VisualState } from './render/visual-state.js'
+import { Chart } from './render/chart.js'
+import { RingSeries } from './data/series.js'
 import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
 
 const DEFAULT_SIZE = 200
+const HISTORY_LEN = 500   // 折线图窗口：最近 500 代
 
 const canvas = document.getElementById('board')
+const engine = new LifeEngine(DEFAULT_SIZE, DEFAULT_SIZE, { rule: lifeRule(), boundary: 'torus' })
+
 const app = {
   canvas,
-  engine: new LifeEngine(DEFAULT_SIZE, DEFAULT_SIZE, { rule: lifeRule(), boundary: 'torus' }),
+  engine,
   viewport: new Viewport(),
   renderer: new Renderer(canvas),
+  visual: new VisualState(engine.cur.length),
+  chart: new Chart(document.getElementById('chart')),
+  series: new RingSeries(HISTORY_LEN),
+  visualOpts: { ageColoring: true, glow: true, trails: false, trailAlpha: 0.104 },
   running: false,
   speed: 10,             // 目标代/秒
   density: 0.35,
@@ -26,10 +36,22 @@ const app = {
   gensInWindow: 0,
   windowStart: 0,
   gps: 0,
-  needsFit: false
+  framesInWindow: 0,
+  fpsWindowStart: 0,
+  fps: 0,
+  needsFit: false,
+  chartGen: -1
 }
 
 /* ---------------- 行为 ---------------- */
+
+/** 推进一代：引擎 → 视觉状态 → 数据记录，三者严格同拍 */
+app.tick = function () {
+  const s = app.engine.step()
+  app.visual.advance(app.engine, app.visualOpts.glow ? app.renderer.glowFrames : 0)
+  app.series.push(s.alive)
+  return s
+}
 
 app.setRunning = function (on) {
   app.running = on
@@ -44,7 +66,7 @@ app.setRunning = function (on) {
 
 app.stepOnce = function () {
   const t0 = performance.now()
-  app.engine.step()
+  app.tick()
   app.recordStepCost(performance.now() - t0, 1)
   app.dirty = true
   app.updateHud()
@@ -53,6 +75,8 @@ app.stepOnce = function () {
 app.clear = function () {
   app.setRunning(false)
   app.engine.clear()
+  app.visual.sync(app.engine)
+  app.series.clear()
   app.dirty = true
   app.updateHud()
   app.toast('已清空')
@@ -61,6 +85,9 @@ app.clear = function () {
 app.randomize = function () {
   const seed = readSeedInput(app)
   app.engine.randomize(seed, app.density)
+  app.visual.sync(app.engine)
+  app.series.clear()
+  app.series.push(app.engine.stats.alive)
   app.dirty = true
   app.updateHud()
   app.toast(`已用种子 ${seed} · 密度 ${app.density.toFixed(2)} 初始化`)
@@ -69,6 +96,8 @@ app.randomize = function () {
 app.resizeBoard = function (w, h) {
   app.setRunning(false)
   app.engine.resize(w, h)
+  app.visual.sync(app.engine)
+  app.series.clear()
   app.fitView()
   app.updateHud()
   app.toast(`棋盘 ${w} × ${h}`)
@@ -117,14 +146,33 @@ const hud = {
   gen: document.getElementById('hud-gen'),
   alive: document.getElementById('hud-alive'),
   gps: document.getElementById('hud-gps'),
+  fps: document.getElementById('hud-fps'),
   scale: document.getElementById('hud-scale')
 }
+const st = {
+  gen: document.getElementById('st-gen'),
+  alive: document.getElementById('st-alive'),
+  births: document.getElementById('st-births'),
+  area: document.getElementById('st-area'),
+  lonely: document.getElementById('st-lonely'),
+  crowded: document.getElementById('st-crowded')
+}
+
 app.updateHud = function () {
+  const s = app.engine.stats
   hud.gen.textContent = app.engine.generation
-  hud.alive.textContent = app.engine.stats.alive
+  hud.alive.textContent = s.alive
   hud.gps.textContent = app.running ? app.gps.toFixed(0) : '0'
+  hud.fps.textContent = app.running ? app.fps.toFixed(0) : '–'
   const c = app.hoverCell
   hud.scale.textContent = `缩放 ${app.viewport.scale.toFixed(1)}×` + (c ? ` · 格 (${c.x}, ${c.y})` : '')
+
+  st.gen.textContent = app.engine.generation
+  st.alive.textContent = s.alive
+  st.births.textContent = s.births
+  st.area.textContent = s.activeArea
+  st.lonely.textContent = s.deathsLonely
+  st.crowded.textContent = s.deathsCrowded
 }
 
 /* ---------------- 装配 ---------------- */
@@ -133,6 +181,8 @@ setupControls(app)
 setupCanvasInput(app)
 
 app.engine.randomize(4271, app.density)
+app.visual.sync(app.engine)
+app.series.push(app.engine.stats.alive)
 app.el.seed.value = '4271'
 app.fitView()
 app.setRunning(false)
@@ -172,11 +222,13 @@ function frame(now) {
       acc -= n
       n = Math.min(n, 30) // 单帧步数上限，避免卡顿后疯狂追帧
       const t0 = performance.now()
-      for (let i = 0; i < n; i++) app.engine.step()
+      for (let i = 0; i < n; i++) app.tick()
       app.recordStepCost(performance.now() - t0, n)
       app.gensInWindow += n
       app.dirty = true
     }
+    // 拖尾模式下即使这一帧没换代，也要继续淡出残影
+    if (app.visualOpts.trails) app.dirty = true
     // 每 500ms 统计一次实际代/秒
     if (now - app.windowStart >= 500) {
       app.gps = (app.gensInWindow * 1000) / (now - app.windowStart)
@@ -185,13 +237,30 @@ function frame(now) {
     }
   }
 
+  // 帧率统计（无论是否在跑都记，方便观察渲染负载）
+  app.framesInWindow++
+  if (now - app.fpsWindowStart >= 500) {
+    app.fps = (app.framesInWindow * 1000) / (now - app.fpsWindowStart)
+    app.fpsWindowStart = now
+    app.framesInWindow = 0
+  }
+
   if (app.dirty) {
-    app.renderer.draw(app.engine, app.viewport)
+    app.renderer.draw(app.engine, app.viewport, app.visual, app.visualOpts)
     app.dirty = false
     app.updateHud()
   }
+
+  // 折线图按代数变化重绘，最多每 100ms 一次
+  if (app.engine.generation !== app.chartGen && now - (app.chartAt || 0) >= 100) {
+    app.chart.draw(app.series, app.renderer.flat)
+    app.chartGen = app.engine.generation
+    app.chartAt = now
+  }
+
   requestAnimationFrame(frame)
 }
+app.chart.draw(app.series, app.renderer.flat)
 requestAnimationFrame(frame)
 
 // 便于在浏览器控制台里做手工验证

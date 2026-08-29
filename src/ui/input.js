@@ -101,6 +101,7 @@ export function setupCanvasInput(app) {
       if (e2 <= dx) { err += dx; y0 += sy }
     }
     app.engine.stats.alive = app.engine.countAlive()
+    app.visual.reconcile(app.engine)  // 手绘的格子补上年龄，擦除的不留残影
     app.dirty = true
     app.updateHud()
   }

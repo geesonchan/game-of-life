@@ -569,6 +569,131 @@ function eqSnapshot(a, b) {
   return true
 }
 
+/* ================= 小阶段：文案与引导 ================= */
+
+/** 简洁语域会用到的词条：key + '.simple' 的白话版，加上只在简洁模式露面的世界卡片与三幕卡 */
+function simpleRegisterEntries(table) {
+  const out = {}
+  for (const k of Object.keys(table)) {
+    if (k.endsWith('.simple') || k.startsWith('world.') || k.startsWith('intro.')) out[k] = table[k]
+  }
+  return out
+}
+
+cases.push(
+  {
+    name: '文案：每个 .simple 白话词条都有对应的通用词条兜底',
+    run(t) {
+      // t() 在简洁语域下先找 key+'.simple'，找不到才回落 key。
+      // 若某个 .simple 没有对应的基础 key，说明它在完整模式下压根显示不出来。
+      for (const lang of ['zh', 'en']) {
+        for (const k of Object.keys(DICT[lang])) {
+          if (!k.endsWith('.simple')) continue
+          const base = k.slice(0, -'.simple'.length)
+          t.ok(base in DICT[lang], `${lang} 的 ${k} 缺少基础词条 ${base}`)
+        }
+      }
+    }
+  },
+  {
+    name: '文案：简洁模式与三幕卡里不出现术语',
+    run(t) {
+      // 标准是"跟同学解释"，不是"哄小朋友"：可以有完整句子，但不能有行话。
+      // help.* 是完整模式的参考页，本来就该讲 B/S 记法，所以不在检查范围内。
+      const banned = {
+        zh: ['振荡器', '周期', '密度', '记法', '指纹', '条款', '衰老', '邻居数', '代数', '查找表', '细胞', '种子'],
+        en: ['oscillator', 'period', 'density', 'notation', 'fingerprint', 'clause', 'generation', 'cell', 'seed']
+      }
+      for (const lang of ['zh', 'en']) {
+        const entries = simpleRegisterEntries(DICT[lang])
+        for (const k of Object.keys(entries)) {
+          const v = String(entries[k]).toLowerCase()
+          for (const w of banned[lang]) {
+            t.ok(v.indexOf(w.toLowerCase()) === -1, `${lang} 的 ${k} 里出现了术语「${w}」：${entries[k]}`)
+          }
+        }
+      }
+    }
+  },
+  {
+    name: '文案：三幕卡与两页参考的词条齐全',
+    run(t) {
+      const need = [
+        'intro.step', 'intro.skip', 'intro.next', 'intro.back', 'intro.start', 'intro.close', 'intro.reopen',
+        'intro.act1.title', 'intro.act1.body', 'intro.act1.caption',
+        'intro.act2.title', 'intro.act2.body', 'intro.act2.hint', 'intro.act2.step', 'intro.act2.reset',
+        'intro.act2.lonely', 'intro.act2.lonely.body',
+        'intro.act2.crowded', 'intro.act2.crowded.body',
+        'intro.act2.birth', 'intro.act2.birth.body',
+        'intro.act3.title', 'intro.act3.body', 'intro.act3.caption', 'intro.act3.gift',
+        'help.age.title', 'help.age.body', 'help.age.new', 'help.age.mid', 'help.age.old', 'help.age.dead',
+        'help.bs.title', 'help.bs.body', 'help.bs.born', 'help.bs.survive', 'help.bs.none', 'help.bs.current'
+      ]
+      for (const k of need) {
+        t.ok(k in DICT.zh, `中文缺词条 ${k}`)
+        t.ok(k in DICT.en, `英文缺词条 ${k}`)
+      }
+    }
+  },
+  {
+    name: '文案：每个控件的悬停提示都有词条',
+    run(t) {
+      const need = [
+        'tip.play', 'tip.pause', 'tip.step', 'tip.clear', 'tip.speed', 'tip.random', 'tip.density',
+        'tip.seed', 'tip.boundary', 'tip.torus', 'tip.deadEdge', 'tip.size', 'tip.fit', 'tip.palette',
+        'tip.age', 'tip.glow', 'tip.glowLen', 'tip.trails', 'tip.trailLen', 'tip.rule', 'tip.notation',
+        'tip.fingerprint', 'tip.states', 'tip.chart', 'tip.mode', 'tip.lang', 'tip.help',
+        'tip.pattern', 'tip.world',
+        'tip.stat.gen', 'tip.stat.alive', 'tip.stat.births', 'tip.stat.area', 'tip.stat.lonely', 'tip.stat.crowded'
+      ]
+      for (const k of need) {
+        t.ok(k in DICT.zh, `中文缺提示 ${k}`)
+        t.ok(k in DICT.en, `英文缺提示 ${k}`)
+      }
+      // 完整模式的术语控件必须是「术语 + 一句人话」，中文用破折号、英文用 em dash 连接
+      for (const k of ['tip.boundary', 'tip.torus', 'tip.deadEdge', 'tip.density', 'tip.seed',
+        'tip.size', 'tip.palette', 'tip.age', 'tip.glow', 'tip.trails', 'tip.notation',
+        'tip.fingerprint', 'tip.states']) {
+        t.ok(DICT.zh[k].includes('——'), `中文提示 ${k} 应是「术语 —— 一句人话」的格式：${DICT.zh[k]}`)
+        t.ok(DICT.en[k].includes('—'), `英文提示 ${k} 应是 "term — plain sentence" 的格式：${DICT.en[k]}`)
+      }
+    }
+  },
+  {
+    name: '引导：三条规矩的迷你棋盘演的确实是那三件事',
+    run(t) {
+      // 介绍卡里的三块地不是画死的示意图，走的是真引擎。这里就用引擎把它们各验一遍。
+      const mk = setup => {
+        const e = new LifeEngine(7, 5, { rule: lifeRule(), boundary: 'dead' })
+        for (const [x, y] of setup) e.set(x, y, 1)
+        return e
+      }
+
+      // 朋友太少：两个相邻的格子，各只有 1 个朋友 → 走一步全没
+      const lonely = mk([[2, 2], [3, 2]])
+      const s1 = lonely.step()
+      t.equal(s1.alive, 0, '两个孤零零的格子应该一步之内全没')
+      t.equal(s1.deathsLonely, 2, '两个都应算孤独死')
+      t.equal(s1.births, 0, '不该有新生命')
+
+      // 挤得太满：3×3 实心块，中间那个被闷死，留下一个洞
+      const crowded = mk([[2, 1], [3, 1], [4, 1], [2, 2], [3, 2], [4, 2], [2, 3], [3, 3], [4, 3]])
+      const s2 = crowded.step()
+      t.equal(crowded.get(3, 2), 0, '中间那个应该被闷死，留出一个洞')
+      t.equal(s2.deathsCrowded, 5, '中间 1 个加四条边中点 4 个，共 5 个闷死')
+      t.equal(s2.deathsLonely, 0, '不该有孤独死来抢戏')
+
+      // 刚好三个：空位 (3,2) 旁边刚好 3 个朋友 → 冒出新的，结果是个 2×2 方块
+      const birth = mk([[2, 1], [3, 1], [2, 2]])
+      const s3 = birth.step()
+      t.equal(birth.get(3, 2), 1, '那个空位应该冒出新生命')
+      t.equal(s3.births, 1, '应该只诞生 1 个，画面不会乱')
+      t.equal(s3.alive, 4, '结果应该是个 2×2 方块')
+      t.equal(s3.deathsLonely + s3.deathsCrowded, 0, '原来那三个都该活着')
+    }
+  }
+)
+
 function now() {
   if (typeof performance !== 'undefined' && performance.now) return performance.now()
   return Date.now()

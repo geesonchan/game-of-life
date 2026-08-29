@@ -3,7 +3,7 @@
 基于浏览器的 Conway 生命游戏实验平台。规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)。
 
-当前进度：**阶段 3.5（双语与简洁模式）已完成**。
+当前进度：**小阶段「文案与引导」已完成**（阶段 3.5 之后，阶段 4 之前）。
 
 ## 目录结构
 
@@ -30,6 +30,7 @@ src/i18n/     中英词典与运行时（界面上的每个字都在这里）
 src/ui/       控件绑定与画布交互
   rule-editor.js    条款规则编辑器（模态窗）
   library.js        图案盒子与世界卡片
+  intro.js          三幕介绍卡与规矩实验角
 src/main.js   装配与主循环
 tests/        验收用例（Vitest 与 jsc 运行器共用）
 ```

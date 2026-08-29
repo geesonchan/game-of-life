@@ -25,31 +25,32 @@
         <div class="head-row">
           <h1 data-i18n="app.title">生命游戏实验台</h1>
           <div class="head-switches">
-            <div class="seg" id="mode-switch" role="group">
-              <button data-mode-val="simple" data-i18n="mode.simple">简洁</button>
-              <button data-mode-val="full" class="on" data-i18n="mode.full">完整</button>
+            <button class="help-btn" id="btn-help" data-i18n-title="tip.help">?</button>
+            <div class="seg" id="mode-switch" role="group" data-i18n-title="tip.mode">
+              <button data-mode-val="simple" data-i18n="mode.simpleLabel">简洁</button>
+              <button data-mode-val="full" class="on" data-i18n="mode.fullLabel">完整</button>
             </div>
-            <div class="seg" id="lang-switch" role="group">
+            <div class="seg" id="lang-switch" role="group" data-i18n-title="tip.lang">
               <button data-lang="zh" class="on">中</button>
               <button data-lang="en">EN</button>
             </div>
           </div>
         </div>
-        <p class="sub" data-i18n="app.subtitle">阶段 3.5 · 双语与简洁模式</p>
+        <p class="sub" data-mode="full" data-i18n="app.subtitle">阶段 3.6 · 文案与引导</p>
       </header>
 
       <!-- 主控制：两种模式都在 -->
       <section class="group">
         <div class="row btn-row">
-          <button id="btn-play" class="primary" data-i18n="ctrl.play">▶ 播放</button>
-          <button id="btn-step" data-i18n="ctrl.step">单步</button>
+          <button id="btn-play" class="primary" data-i18n="ctrl.play" data-i18n-title="tip.play">▶ 播放</button>
+          <button id="btn-step" data-i18n="ctrl.step" data-i18n-title="tip.step">单步</button>
         </div>
-        <label class="field">
+        <label class="field" data-i18n-title="tip.speed">
           <span><span data-i18n="ctrl.speed">速度</span> <b id="lbl-speed">10</b> <span data-i18n="unit.gps">代/秒</span></span>
           <input type="range" id="in-speed" min="1" max="60" step="1" value="10" />
         </label>
         <div class="row btn-row">
-          <button id="btn-clear" data-i18n="ctrl.clear">清空</button>
+          <button id="btn-clear" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
         </div>
         <p class="note" id="throttle-note" hidden data-i18n="ctrl.throttled">⚠ 单代计算超时，已自动降速</p>
       </section>
@@ -71,20 +72,20 @@
       <section class="group" data-mode="full">
         <h2 data-i18n="stat.section">本代统计</h2>
         <div class="stat-grid">
-          <div class="stat"><span data-i18n="stat.gen">代数</span><b id="st-gen">0</b></div>
-          <div class="stat"><span data-i18n="stat.alive">存活</span><b id="st-alive">0</b></div>
-          <div class="stat born"><span data-i18n="stat.births">出生</span><b id="st-births">0</b></div>
-          <div class="stat"><span data-i18n="stat.area">活动区</span><b id="st-area">0</b></div>
-          <div class="stat lonely"><span data-i18n="stat.lonely">孤独死</span><b id="st-lonely">0</b></div>
-          <div class="stat crowded"><span data-i18n="stat.crowded">拥挤死</span><b id="st-crowded">0</b></div>
+          <div class="stat" data-i18n-title="tip.stat.gen"><span data-i18n="stat.gen">代数</span><b id="st-gen">0</b></div>
+          <div class="stat" data-i18n-title="tip.stat.alive"><span data-i18n="stat.alive">存活</span><b id="st-alive">0</b></div>
+          <div class="stat born" data-i18n-title="tip.stat.births"><span data-i18n="stat.births">出生</span><b id="st-births">0</b></div>
+          <div class="stat" data-i18n-title="tip.stat.area"><span data-i18n="stat.area">活动区</span><b id="st-area">0</b></div>
+          <div class="stat lonely" data-i18n-title="tip.stat.lonely"><span data-i18n="stat.lonely">孤独死</span><b id="st-lonely">0</b></div>
+          <div class="stat crowded" data-i18n-title="tip.stat.crowded"><span data-i18n="stat.crowded">拥挤死</span><b id="st-crowded">0</b></div>
         </div>
-        <canvas id="chart" class="chart"></canvas>
+        <canvas id="chart" class="chart" data-i18n-title="tip.chart"></canvas>
         <p class="note" data-i18n="stat.chartNote">存活数折线图 · 最近 500 代</p>
       </section>
 
       <section class="group" data-mode="full">
         <h2 data-i18n="vis.section">视觉</h2>
-        <label class="field">
+        <label class="field" data-i18n-title="tip.palette">
           <span data-i18n="vis.palette">色带</span>
           <select id="in-palette">
             <option value="emerald" data-i18n="vis.palette.emerald">翠绿</option>
@@ -92,14 +93,14 @@
             <option value="glacier" data-i18n="vis.palette.glacier">冰川</option>
           </select>
         </label>
-        <label class="check"><input type="checkbox" id="in-age" checked /><span data-i18n="vis.age">年龄着色（新生亮 → 存活越久越深）</span></label>
-        <label class="check"><input type="checkbox" id="in-glow" checked /><span data-i18n="vis.glow">死亡余晖</span></label>
-        <label class="field indent">
+        <label class="check" data-i18n-title="tip.age"><input type="checkbox" id="in-age" checked /><span data-i18n="vis.age">年龄着色（新生亮 → 存活越久越深）</span></label>
+        <label class="check" data-i18n-title="tip.glow"><input type="checkbox" id="in-glow" checked /><span data-i18n="vis.glow">死亡余晖</span></label>
+        <label class="field indent" data-i18n-title="tip.glowLen">
           <span><span data-i18n="vis.glowLen">余晖长度</span> <b id="lbl-glow">4</b> <span data-i18n="unit.gen">代</span></span>
           <input type="range" id="in-glow-frames" min="3" max="5" step="1" value="4" />
         </label>
-        <label class="check"><input type="checkbox" id="in-trails" /><span data-i18n="vis.trails">拖尾模式</span></label>
-        <label class="field indent">
+        <label class="check" data-i18n-title="tip.trails"><input type="checkbox" id="in-trails" /><span data-i18n="vis.trails">拖尾模式</span></label>
+        <label class="field indent" data-i18n-title="tip.trailLen">
           <span><span data-i18n="vis.trailLen">拖尾长度</span> <b id="lbl-trail">中</b></span>
           <input type="range" id="in-trail-len" min="1" max="20" step="1" value="10" />
         </label>
@@ -107,29 +108,29 @@
 
       <section class="group" data-mode="full">
         <h2 data-i18n="init.section">初始化</h2>
-        <label class="field">
+        <label class="field" data-i18n-title="tip.density">
           <span><span data-i18n="init.density">密度</span> <b id="lbl-density">0.35</b></span>
           <input type="range" id="in-density" min="0" max="1" step="0.01" value="0.35" />
         </label>
-        <label class="field">
+        <label class="field" data-i18n-title="tip.seed">
           <span data-i18n="init.seed">种子（留空则随机生成）</span>
           <input type="text" id="in-seed" data-i18n-placeholder="init.seedPlaceholder" placeholder="例如 4271" />
         </label>
         <div class="row btn-row">
-          <button id="btn-random" data-i18n="ctrl.random">随机填充</button>
+          <button id="btn-random" data-i18n="ctrl.random" data-i18n-title="tip.random">随机填充</button>
         </div>
       </section>
 
       <section class="group" data-mode="full">
         <h2 data-i18n="board.section">棋盘</h2>
-        <label class="field">
+        <label class="field" data-i18n-title="tip.boundary">
           <span data-i18n="board.boundary">边界</span>
           <select id="in-boundary">
-            <option value="torus" selected data-i18n="board.torus">环形（对侧相连）</option>
-            <option value="dead" data-i18n="board.dead">死边界（界外恒死）</option>
+            <option value="torus" selected data-i18n="board.torus" data-i18n-title="tip.torus">环形（对侧相连）</option>
+            <option value="dead" data-i18n="board.dead" data-i18n-title="tip.deadEdge">死边界（界外恒死）</option>
           </select>
         </label>
-        <label class="field">
+        <label class="field" data-i18n-title="tip.size">
           <span data-i18n="board.size">尺寸</span>
           <select id="in-size">
             <option value="100">100 × 100</option>
@@ -139,18 +140,18 @@
           </select>
         </label>
         <div class="row btn-row">
-          <button id="btn-fit" data-i18n="ctrl.fit">适配视图</button>
+          <button id="btn-fit" data-i18n="ctrl.fit" data-i18n-title="tip.fit">适配视图</button>
         </div>
       </section>
 
       <section class="group" data-mode="full">
         <h2 data-i18n="rule.section">规则</h2>
         <div class="kv"><span data-i18n="rule.name">名称</span><b id="lbl-rule-name">Life</b></div>
-        <div class="kv"><span data-i18n="rule.notation">记法</span><b id="lbl-notation">B3/S23</b></div>
-        <div class="kv"><span data-i18n="rule.fingerprint">指纹</span><b id="lbl-fingerprint" class="mono">–</b></div>
-        <div class="kv"><span data-i18n="rule.states">可达状态</span><b id="lbl-states">2</b></div>
+        <div class="kv" data-i18n-title="tip.notation"><span data-i18n="rule.notation">记法</span><b id="lbl-notation">B3/S23</b></div>
+        <div class="kv" data-i18n-title="tip.fingerprint"><span data-i18n="rule.fingerprint">指纹</span><b id="lbl-fingerprint" class="mono">–</b></div>
+        <div class="kv" data-i18n-title="tip.states"><span data-i18n="rule.states">可达状态</span><b id="lbl-states">2</b></div>
         <div class="row btn-row">
-          <button id="btn-rule" data-i18n="rule.edit">编辑规则…</button>
+          <button id="btn-rule" data-i18n="rule.edit" data-i18n-title="tip.rule">编辑规则…</button>
         </div>
       </section>
 
@@ -166,6 +167,23 @@
         </ul>
       </section>
     </aside>
+  </div>
+
+  <div class="modal" id="intro-modal" hidden>
+    <div class="modal-backdrop" id="intro-backdrop"></div>
+    <div class="modal-box intro-box">
+      <header class="intro-head">
+        <span class="intro-step" id="intro-step"></span>
+        <button class="linkish" id="intro-skip" data-i18n="intro.skip"></button>
+      </header>
+      <div class="intro-body" id="intro-body"></div>
+      <footer class="intro-foot">
+        <button id="intro-back" data-i18n="intro.back"></button>
+        <span class="dots" id="intro-dots"></span>
+        <button id="intro-more" class="ghost" hidden></button>
+        <button id="intro-next" class="primary" data-i18n="intro.next"></button>
+      </footer>
+    </div>
   </div>
 
   <div class="modal" id="rule-modal" hidden>

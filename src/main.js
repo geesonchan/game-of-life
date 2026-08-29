@@ -11,8 +11,9 @@ import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
+import { createIntro } from './ui/intro.js'
 import { placePattern, centerOrigin } from './engine/patterns.js'
-import { t, applyStatic, onLangChange, getLang } from './i18n/index.js'
+import { t, applyStatic, onLangChange, setRegister } from './i18n/index.js'
 
 const DEFAULT_SIZE = 200
 const HISTORY_LEN = 500   // 折线图窗口：最近 500 代
@@ -63,6 +64,7 @@ app.setRunning = function (on) {
   app.running = on
   app.autoPaused = false
   app.el.play.textContent = t(on ? 'ctrl.pause' : 'ctrl.play')
+  app.el.play.title = t(on ? 'tip.pause' : 'tip.play')
   app.el.play.classList.toggle('primary', !on)
   app.windowStart = performance.now()
   app.gensInWindow = 0
@@ -138,6 +140,8 @@ app.setMode = function (mode) {
   app.mode = mode === 'simple' ? 'simple' : 'full'
   document.body.classList.toggle('mode-simple', app.mode === 'simple')
   document.body.classList.toggle('mode-full', app.mode === 'full')
+  // 语域跟着模式走：简洁模式优先取 key + '.simple' 的大白话文案
+  setRegister(app.mode)
   if (app.mode === 'simple') app.setStamp(null)
   app.handleResize()
   app.toast(t(app.mode === 'simple' ? 'mode.toSimple' : 'mode.toFull'))
@@ -251,6 +255,8 @@ app.ruleEditor = createRuleEditor(app)
 document.getElementById('btn-rule').addEventListener('click', () => app.ruleEditor.open())
 app.library = setupLibrary(app)
 app.library.render()
+app.intro = createIntro(app)
+document.getElementById('btn-help').addEventListener('click', () => app.intro.open(0))
 app.renderer.setAgingLayers(app.engine.rule.agingLayers)
 app.updateRuleInfo()
 applyStatic()
@@ -265,6 +271,7 @@ onLangChange(() => {
   app.updateHud()
   app.chart.draw(app.series, app.renderer.flat)
   app.ruleEditor.relocalize()
+  app.intro.relocalize()
 })
 function trailLabelOf(v) {
   return t(v <= 6 ? 'vis.trail.short' : v <= 13 ? 'vis.trail.mid' : 'vis.trail.long')
@@ -356,6 +363,12 @@ function frame(now) {
 }
 app.chart.draw(app.series, app.renderer.flat)
 requestAnimationFrame(frame)
+
+// 首次进入自动弹出介绍卡。
+// 注意：规格书 1 明确禁用 localStorage / sessionStorage，所以"首次"只能落在
+// "本次打开页面的第一次"这个尺度上 —— 关掉后本次不再自动弹，刷新页面会再弹一次。
+// 想彻底记住"看过了"必须要持久化，那与规格冲突，因此不做。
+app.intro.open(0)
 
 // 便于在浏览器控制台里做手工验证
 window.__lab = app

@@ -92,7 +92,9 @@ export function setupCanvasInput(app) {
   // 空格键按住 = 临时平移模式；Esc 取消图案选择
   window.addEventListener('keydown', e => {
     if (e.code === 'Space' && !isTyping(e.target)) { spaceHeld = true; e.preventDefault() }
-    else if (e.key === 'Escape' && app.stamp && document.getElementById('rule-modal').hidden) {
+    else if (e.key === 'Escape' && app.stamp
+      && document.getElementById('rule-modal').hidden
+      && document.getElementById('intro-modal').hidden) {
       app.setStamp(null); e.preventDefault()
     }
   })

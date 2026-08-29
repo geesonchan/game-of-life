@@ -5,11 +5,35 @@ import { DICT } from './dict.js'
 
 const listeners = []
 let lang = 'zh'
+let register = 'full'   // 'simple' 时优先取 key + '.simple' 的白话版本
+
+/**
+ * 语域（简洁 / 完整）。简洁模式下同一个 key 可以有一份大白话文案：
+ * 只需在词典里加 `key + '.simple'`，没加的自动沿用通用词条，
+ * 不必为每个 key 都写两遍。
+ *
+ * 约定：`.simple` 后缀被这套机制征用了，所以**不要**给普通词条起以 `.simple` 结尾的名字
+ * （模式开关的按钮文字就因此叫 `mode.simpleLabel` 而不是 `mode.simple`）。
+ * 有一条测试盯着这件事：每个 `X.simple` 都必须存在对应的基础词条 `X`。
+ */
+export function setRegister(next) {
+  if (next === register) return
+  register = next
+  applyStatic()
+  for (const f of listeners) f(lang)
+}
+
+export function getRegister() { return register }
 
 /** 取词并替换 {占位符}；缺词时回落中文，再缺就把 key 原样吐出来（方便一眼看出漏翻） */
 export function t(key, params) {
   const table = DICT[lang] || DICT.zh
-  let s = table[key]
+  let s
+  if (register === 'simple') {
+    s = table[key + '.simple']
+    if (s === undefined) s = DICT.zh[key + '.simple']
+  }
+  if (s === undefined) s = table[key]
   if (s === undefined) s = DICT.zh[key]
   if (s === undefined) return key
   if (params) {

@@ -20,7 +20,7 @@ export function setupLibrary(app) {
 
   function renderPatterns() {
     patternList.innerHTML = PATTERNS.map(p => `
-      <button class="card ${app.stamp && app.stamp.key === p.key ? 'on' : ''}" data-pattern="${p.key}">
+      <button class="card ${app.stamp && app.stamp.key === p.key ? 'on' : ''}" data-pattern="${p.key}" title="${t('tip.pattern')}">
         ${miniArt(p)}
         <span class="card-text">
           <b>${t('pattern.' + p.key)}</b>
@@ -33,7 +33,7 @@ export function setupLibrary(app) {
   function renderWorlds() {
     const fp = app.engine.rule.fingerprint
     worldList.innerHTML = PRESETS.map(p => `
-      <button class="card world ${worldFingerprints.get(p.key) === fp ? 'on' : ''}" data-world="${p.key}">
+      <button class="card world ${worldFingerprints.get(p.key) === fp ? 'on' : ''}" data-world="${p.key}" title="${t('tip.world')}">
         <span class="card-text">
           <b>${t('world.' + p.key)}</b>
           <em>${t('world.' + p.key + '.desc')}</em>

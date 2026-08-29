@@ -636,3 +636,50 @@ body.mode-full [data-mode="simple"] { display: none !important; }
   .toolrail .card-art { width: 26px; height: 26px; }
   .toolrail .card-text b { font-size: 10px; }
 }
+
+/* ---------- 阶段 4：编年史 / 台账 / 总结卡片 ---------- */
+
+.timeline { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.tl-item {
+  display: flex; gap: 8px;
+  padding: 5px 0 5px 9px;
+  border-left: 2px solid var(--line);
+  font-size: 11px; line-height: 1.5;
+}
+.tl-item + .tl-item { margin-top: 1px; }
+.tl-gen { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 48px; }
+.tl-body { color: var(--muted); min-width: 0; }
+.tl-body b { color: var(--text); font-weight: 600; }
+.tl-start { border-left-color: #4a5568; }
+.tl-peak { border-left-color: var(--accent); }
+.tl-collapse { border-left-color: #f08a5d; }
+.tl-quiet { border-left-color: #7fb2ff; }
+.tl-end { border-left-color: #e3b341; }
+.tl-empty { padding: 4px 0; font-size: 11px; color: var(--muted); list-style: none; }
+
+.ledger { max-height: 260px; overflow-y: auto; }
+.led-row {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px;
+  padding: 7px 8px; margin-bottom: 6px;
+}
+.led-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 12px; }
+.led-head span { font-size: 10px; color: var(--muted); }
+.led-meta { font-size: 10px; color: var(--muted); margin: 3px 0 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.led-note {
+  width: 100%; padding: 4px 6px; font-size: 11px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 5px;
+}
+
+.summary-box { width: min(520px, 94vw); height: auto; max-height: 92vh; }
+.sum-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 14px 0 4px; }
+.sum-cell {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px;
+  padding: 7px 9px; min-width: 0;
+}
+.sum-cell span { display: block; font-size: 10px; color: var(--muted); }
+.sum-cell b {
+  display: block; font-size: 15px; font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body.mode-simple .sum-grid { grid-template-columns: repeat(3, 1fr); }

@@ -4,7 +4,7 @@
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)，
 用户反馈记录见 [docs/feedback.md](./docs/feedback.md)。
 
-当前进度：**插入阶段「布局微调」已完成**（阶段 4 之前）。
+当前进度：**阶段 4（数据记录与编年史）已完成**。
 
 ## 目录结构
 
@@ -23,8 +23,13 @@ src/render/   只读引擎状态，负责画
   palette.js        色带与颜色查找表
   visual-state.js   细胞年龄 / 死亡余晖（渲染层自有缓冲，引擎无感知）
   chart.js          存活数折线图
-src/data/     数据记录
-  series.js         定长环形序列
+src/data/     数据记录，纯逻辑零 DOM
+  series.js         定长环形序列（折线图用）
+  snapshots.js      每代快照表，按规格 3.3 抽稀
+  detector.js       终止检测：全灭 / 静止 / 循环 / 代数上限，Map 查重
+  chronicle.js      事件编年史
+  ledger.js         实验台账
+  csv.js            CSV 生成
 src/i18n/     中英词典与运行时（界面上的每个字都在这里）
   dict.js           中英对照表
   index.js          t() 取词、data-i18n 整树重刷、语言切换广播
@@ -32,6 +37,7 @@ src/ui/       控件绑定与画布交互
   rule-editor.js    条款规则编辑器（模态窗）
   library.js        图案盒子与世界卡片
   intro.js          三幕介绍卡与规矩实验角
+  records.js        记录面板、总结卡片与 CSV 导出
 src/main.js   装配与主循环
 tests/        验收用例（Vitest 与 jsc 运行器共用）
 ```

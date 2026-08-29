@@ -164,12 +164,50 @@
           </div>
         </section>
 
-        <!-- 阶段 4 预留：实验台账 / 事件编年史面板挂在这里。
-             位置定在统计与规则之后、操作提示之前 —— 都属于"读"的内容，连在一起。 -->
-        <section class="group" data-mode="full" id="slot-records" hidden>
-          <h2 class="group-head"><span></span></h2>
-          <div class="group-body"></div>
-        </section>
+        <!-- 阶段 4：记录 / 编年史 / 台账。位置就是当初预留的 #slot-records。 -->
+        <div id="slot-records">
+          <section class="group" data-mode="full">
+            <h2 class="group-head"><span data-i18n="rec.section">记录与终止</span></h2>
+            <div class="group-body">
+              <p class="note" data-i18n="rec.detect">终止检测</p>
+              <label class="check"><input type="checkbox" id="det-extinction" checked /><span data-i18n="end.extinction">全灭</span></label>
+              <label class="check"><input type="checkbox" id="det-still" checked /><span data-i18n="end.still">静止</span></label>
+              <label class="check"><input type="checkbox" id="det-cycle" checked /><span data-i18n="end.cycle">循环</span></label>
+              <label class="check"><input type="checkbox" id="det-capped" checked /><span data-i18n="end.capped">代数上限</span></label>
+              <label class="field indent">
+                <span data-i18n="rec.genLimit">代数上限</span>
+                <input type="text" id="in-gen-limit" value="10000" inputmode="numeric" />
+              </label>
+              <div class="kv"><span data-i18n="rec.snapshots">每代快照</span><b id="lbl-snapshots">0</b></div>
+              <p class="note" id="lbl-snapshot-info"></p>
+              <p class="note" id="lbl-hash-info"></p>
+              <div class="row btn-row">
+                <button id="btn-export-snapshots" data-i18n="rec.exportSnapshots">导出快照 CSV</button>
+              </div>
+              <div class="row btn-row">
+                <button id="btn-stop-run" data-i18n="rec.stop">结束本局</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="group" data-mode="full">
+            <h2 class="group-head"><span data-i18n="chron.section">事件编年史</span></h2>
+            <div class="group-body">
+              <ol class="timeline" id="chronicle-list"></ol>
+            </div>
+          </section>
+
+          <section class="group" data-mode="full">
+            <h2 class="group-head"><span data-i18n="led.section">实验台账</span></h2>
+            <div class="group-body">
+              <div class="ledger" id="ledger-list"></div>
+              <div class="row btn-row">
+                <button id="btn-export-ledger" data-i18n="led.export">导出台账 CSV</button>
+                <button id="btn-clear-ledger" data-i18n="led.clear">清空台账</button>
+              </div>
+            </div>
+          </section>
+        </div>
 
         <section class="group">
           <h2 class="group-head"><span data-i18n="tips.section">操作提示</span></h2>
@@ -207,6 +245,31 @@
         <span class="dots" id="intro-dots"></span>
         <button id="intro-more" class="ghost" hidden></button>
         <button id="intro-next" class="primary" data-i18n="intro.next"></button>
+      </footer>
+    </div>
+  </div>
+
+  <div class="modal" id="summary-modal" hidden>
+    <div class="modal-backdrop" id="summary-backdrop"></div>
+    <div class="modal-box summary-box">
+      <header class="intro-head">
+        <span class="intro-step" id="summary-kicker"></span>
+      </header>
+      <div class="intro-body">
+        <h3 id="summary-title"></h3>
+        <p class="lead" id="summary-line"></p>
+        <div class="sum-grid" id="summary-grid"></div>
+        <label class="field" data-mode="full">
+          <span data-i18n="led.note">备注</span>
+          <input type="text" id="summary-note" data-i18n-placeholder="led.notePlaceholder" />
+        </label>
+        <p class="note" data-mode="full" id="summary-saved"></p>
+      </div>
+      <footer class="intro-foot">
+        <button id="summary-again"></button>
+        <span class="dots"></span>
+        <button id="summary-continue" class="ghost"></button>
+        <button id="summary-close" class="primary"></button>
       </footer>
     </div>
   </div>

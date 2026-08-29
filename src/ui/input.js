@@ -119,6 +119,7 @@ export function setupCanvasInput(app) {
     }
     app.engine.stats.alive = app.engine.countAlive()
     app.visual.reconcile(app.engine)  // 手绘的格子补上年龄，擦除的不留残影
+    app.records.noteEdit()            // 轨迹变了，之前攒的哈希作废
     app.dirty = true
     app.updateHud()
   }

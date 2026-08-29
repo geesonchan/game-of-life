@@ -12,6 +12,7 @@ import { setupCanvasInput } from './ui/input.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
+import { setupRecords } from './ui/records.js'
 import { placePattern, centerOrigin } from './engine/patterns.js'
 import { t, applyStatic, onLangChange, setRegister, setLang, getLang } from './i18n/index.js'
 import { prefs } from './ui/prefs.js'
@@ -54,11 +55,12 @@ const app = {
 /* ---------------- 行为 ---------------- */
 
 /** 推进一代：引擎 → 视觉状态 → 数据记录，三者严格同拍 */
+/** 推进一代：引擎 → 视觉状态 → 数据记录，三者严格同拍。返回终止信息（没终止则为 null） */
 app.tick = function () {
   const s = app.engine.step()
   app.visual.advance(app.engine, app.visualOpts.glow ? app.renderer.glowFrames : 0)
   app.series.push(s.alive)
-  return s
+  return app.records ? app.records.onGeneration(s) : null
 }
 
 app.setRunning = function (on) {
@@ -86,6 +88,7 @@ app.clear = function () {
   app.engine.clear()
   app.visual.sync(app.engine)
   app.series.clear()
+  app.records.startRun()
   app.dirty = true
   app.updateHud()
   app.toast(t('toast.cleared'))
@@ -97,6 +100,7 @@ app.randomize = function () {
   app.visual.sync(app.engine)
   app.series.clear()
   app.series.push(app.engine.stats.alive)
+  app.records.startRun()
   app.dirty = true
   app.updateHud()
   app.toast(t('toast.randomized', { seed, density: app.density.toFixed(2) }))
@@ -107,6 +111,7 @@ app.applyRule = function (rule, message) {
   app.engine.setRule(rule)
   app.renderer.setAgingLayers(rule.agingLayers)
   app.visual.sync(app.engine)   // 被清掉的衰老细胞不该留下年龄或残影
+  app.records.startRun()        // 换了规则就是另一局，之前攒的哈希不再适用
   app.updateRuleInfo()
   if (app.library) app.library.renderWorlds()
   app.dirty = true
@@ -131,6 +136,7 @@ app.resizeBoard = function (w, h) {
   app.engine.resize(w, h)
   app.visual.sync(app.engine)
   app.series.clear()
+  app.records.startRun()
   app.fitView()
   app.updateHud()
   app.toast(t('toast.resized', { w, h }))
@@ -172,6 +178,7 @@ app.placeStampAt = function (cell) {
   placePattern(app.engine, p, o.x, o.y)
   app.engine.stats.alive = app.engine.countAlive()
   app.visual.reconcile(app.engine)
+  app.records.noteEdit()
   app.dirty = true
   app.updateHud()
   app.toast(t('pattern.placed', { name: t('pattern.' + p.key) }))
@@ -275,6 +282,7 @@ setupControls(app)
 setupCanvasInput(app)
 app.ruleEditor = createRuleEditor(app)
 document.getElementById('btn-rule').addEventListener('click', () => app.ruleEditor.open())
+app.records = setupRecords(app)
 app.library = setupLibrary(app)
 app.library.render()
 app.intro = createIntro(app)
@@ -302,6 +310,7 @@ onLangChange(() => {
   app.chart.draw(app.series, app.renderer.flat)
   app.ruleEditor.relocalize()
   app.intro.relocalize()
+  app.records.relocalize()
   app.refreshTabHint()
 })
 function trailLabelOf(v) {
@@ -311,6 +320,7 @@ function trailLabelOf(v) {
 app.engine.randomize(4271, app.density)
 app.visual.sync(app.engine)
 app.series.push(app.engine.stats.alive)
+app.records.startRun()
 app.el.seed.value = '4271'
 app.fitView()
 app.setRunning(false)
@@ -344,9 +354,10 @@ function frame(now) {
       acc -= n
       n = Math.min(n, 30) // 单帧步数上限，避免卡顿后疯狂追帧
       const t0 = performance.now()
-      for (let i = 0; i < n; i++) app.tick()
-      app.recordStepCost(performance.now() - t0, n)
-      app.gensInWindow += n
+      let done = 0
+      for (let i = 0; i < n; i++) { done++; if (app.tick()) break }
+      app.recordStepCost(performance.now() - t0, done)
+      app.gensInWindow += done
       app.dirty = true
     }
     // 拖尾模式下即使这一帧没换代，也要继续淡出残影
@@ -382,6 +393,11 @@ function frame(now) {
     app.chart.draw(app.series, app.renderer.flat)
     app.chartGen = app.engine.generation
     app.chartAt = now
+  }
+  // 记录面板变动频繁但没人盯着看，压到每 250ms 一次
+  if (app.records.needsPanel && now - (app.recAt || 0) >= 250) {
+    app.records.renderPanel()
+    app.recAt = now
   }
 
   requestAnimationFrame(frame)

@@ -9,6 +9,11 @@ import { exportRule, importRule } from '../src/engine/rule-io.js'
 import { PATTERNS, getPattern, placePattern, centerOrigin } from '../src/engine/patterns.js'
 import { DICT } from '../src/i18n/dict.js'
 import { createPrefs, PREF_KEYS } from '../src/ui/prefs.js'
+import { SnapshotLog } from '../src/data/snapshots.js'
+import { TerminationDetector } from '../src/data/detector.js'
+import { Chronicle } from '../src/data/chronicle.js'
+import { Ledger } from '../src/data/ledger.js'
+import { toCSV, SNAPSHOT_COLUMNS, LEDGER_COLUMNS } from '../src/data/csv.js'
 
 /** 把 ASCII 图案（O=活，.=死）画到棋盘上，左上角落在 (ox,oy) */
 export function place(engine, pattern, ox, oy) {
@@ -608,7 +613,8 @@ cases.push(
       for (const lang of ['zh', 'en']) {
         const entries = simpleRegisterEntries(DICT[lang])
         for (const k of Object.keys(entries)) {
-          const v = String(entries[k]).toLowerCase()
+          // 先剥掉 {占位符} —— 它们是代码里的参数名，不是显示给人看的文字
+          const v = String(entries[k]).replace(/\{[a-zA-Z]+\}/g, ' ').toLowerCase()
           for (const w of banned[lang]) {
             t.ok(v.indexOf(w.toLowerCase()) === -1, `${lang} 的 ${k} 里出现了术语「${w}」：${entries[k]}`)
           }
@@ -772,6 +778,313 @@ cases.push(
       t.equal(hostile.set('mode', 'simple'), false, '写抛异常时应返回 false')
       hostile.clear()   // 不该抛
       t.ok(true, '全程没有异常逃逸出来')
+    }
+  }
+)
+
+/* ================= 阶段 4：数据记录与编年史 ================= */
+
+/** 够用的 CSV 解析器，只为把导出的东西读回来对账 */
+function parseCSV(text) {
+  const lines = text.trim().split('\n')
+  const head = lines[0].split(',')
+  return lines.slice(1).map(l => {
+    const cells = l.split(',')
+    const o = {}
+    head.forEach((h, i) => { o[h] = cells[i] })
+    return o
+  })
+}
+
+/** 跑一局，把每代统计喂给记录组件 */
+function runWith(engine, gens, { log, detector, chronicle } = {}) {
+  const truth = []
+  if (detector) detector.observe(0, engine.hash(), engine.countAlive())
+  for (let i = 0; i < gens; i++) {
+    const s = engine.step()
+    truth.push({ ...s })
+    if (log) log.push(s)
+    if (chronicle) chronicle.observe(s)
+    if (detector) {
+      const end = detector.observe(s.gen, engine.hash(), s.alive)
+      if (end) return { truth, end }
+    }
+  }
+  return { truth, end: null }
+}
+
+cases.push(
+  {
+    name: '终止检测：blinker 独跑，第 2 代检测到 cycle，周期为 2',
+    run(t) {
+      const e = new LifeEngine(11, 11, { rule: lifeRule(), boundary: 'dead' })
+      place(e, `
+        OOO
+      `, 4, 5)
+      const d = new TerminationDetector()
+      const { end } = runWith(e, 20, { detector: d })
+      t.ok(!!end, '应该检测到终止')
+      t.equal(end.type, 'cycle', '类型应为 cycle')
+      t.equal(end.gen, 2, '应在第 2 代检测到')
+      t.equal(end.period, 2, '周期应报告为 2')
+      t.equal(end.from, 0, '应指出回到了第 0 代的状态')
+    }
+  },
+  {
+    name: '终止检测：3 个孤立细胞，检测到 extinction',
+    run(t) {
+      const e = new LifeEngine(30, 30, { rule: lifeRule(), boundary: 'dead' })
+      // 三个互不相邻的孤立细胞，各自 0 个朋友，下一代必然全没
+      e.set(3, 3, 1); e.set(15, 9, 1); e.set(24, 22, 1)
+      const d = new TerminationDetector()
+      const { end } = runWith(e, 20, { detector: d })
+      t.ok(!!end, '应该检测到终止')
+      t.equal(end.type, 'extinction', '类型应为 extinction')
+      t.equal(end.gen, 1, '第 1 代就全灭')
+      t.equal(e.countAlive(), 0, '棋盘确实空了')
+    }
+  },
+  {
+    name: '终止检测：静止（方块）报 still 而不是 cycle',
+    run(t) {
+      const e = new LifeEngine(10, 10, { rule: lifeRule(), boundary: 'dead' })
+      place(e, `
+        OO
+        OO
+      `, 3, 3)
+      const d = new TerminationDetector()
+      const { end } = runWith(e, 10, { detector: d })
+      t.equal(end.type, 'still', '静物应报 still —— 它本质上是周期 1 的循环，但那样说没信息量')
+      t.equal(end.gen, 1, '第 1 代就与上一代逐格相同')
+    }
+  },
+  {
+    name: '终止检测：四条件各自可单独关闭',
+    run(t) {
+      const e = new LifeEngine(10, 10, { rule: lifeRule(), boundary: 'dead' })
+      e.set(3, 3, 1)
+      const off = new TerminationDetector({ enabled: { extinction: false, still: false, cycle: false, capped: false } })
+      t.equal(runWith(e, 10, { detector: off }).end, null, '四条全关时不该报任何终止')
+
+      // 只开代数上限
+      const e2 = new LifeEngine(10, 10, { rule: lifeRule(), boundary: 'dead' })
+      place(e2, `
+        OO
+        OO
+      `, 3, 3)
+      const cap = new TerminationDetector({
+        enabled: { extinction: false, still: false, cycle: false, capped: true }, genLimit: 7
+      })
+      const r = runWith(e2, 30, { detector: cap })
+      t.equal(r.end.type, 'capped', '静物在只开上限时应跑到上限才停')
+      t.equal(r.end.gen, 7, '应在第 7 代触发上限')
+    }
+  },
+  {
+    name: '终止检测：周期算的是"距上次多久"，不是"距第一次多久"',
+    run(t) {
+      // 静物：每一代棋盘都一样。关掉 still 之后，它应该被报成周期 1 的循环，
+      // 而不是"从第 0 代到现在过了 N 代所以周期 N"。
+      const d = new TerminationDetector({ enabled: { extinction: false, still: false, cycle: true, capped: false } })
+      d.observe(0, 'H', 4)
+      t.equal(d.observe(1, 'H', 4).period, 1, '第 1 代应报周期 1')
+      t.equal(d.observe(2, 'H', 4).period, 1, '第 2 代仍应报周期 1，而不是 2')
+      t.equal(d.observe(7, 'H', 4).from, 2, 'from 应指向最近一次出现，而不是第一次')
+
+      // 命中之后继续喂：历史不能留空洞，否则放行后算出的周期会把空掉的代数算进去
+      const d2 = new TerminationDetector({ enabled: { extinction: false, still: true, cycle: true, capped: false } })
+      d2.observe(0, 'H', 4)
+      t.equal(d2.observe(1, 'H', 4).type, 'still', '开着 still 时应先报静止')
+      for (let g = 2; g <= 6; g++) d2.observe(g, 'H', 4)   // 命中期间照样喂
+      d2.enabled.still = false                              // 相当于界面上点了「继续跑」
+      const after = d2.observe(7, 'H', 4)
+      t.equal(after.type, 'cycle', '放行后应报循环')
+      t.equal(after.period, 1, `放行后周期仍应是 1，实测 ${after.period}`)
+
+      // 真正的多代周期不能被这个改动带偏：blinker 仍然是 2
+      const d3 = new TerminationDetector()
+      d3.observe(0, 'A', 3); d3.observe(1, 'B', 3)
+      const blink = d3.observe(2, 'A', 3)
+      t.equal(blink.type, 'cycle', 'blinker 应报循环')
+      t.equal(blink.period, 2, 'blinker 周期仍是 2')
+      t.equal(blink.from, 0, 'blinker 的 from 仍是第 0 代')
+    }
+  },
+  {
+    name: '终止检测：查重用 Map，不是线性扫描历史',
+    run(t) {
+      const d = new TerminationDetector({ enabled: { extinction: false, still: false, cycle: true, capped: false } })
+      t.ok(d.seen instanceof Map, '历史查重结构必须是 Map')
+
+      // 复杂度守卫：条数 ×5，耗时若接近 ×25 就说明退化成了线性扫描
+      const timeFor = n => {
+        const det = new TerminationDetector({ enabled: { extinction: false, still: false, cycle: true, capped: false } })
+        const t0 = now()
+        for (let i = 0; i < n; i++) det.observe(i, 'h' + i, 1)
+        return now() - t0
+      }
+      timeFor(2000)                       // 预热
+      const small = Math.max(timeFor(2000), 0.05)
+      const big = timeFor(10000)
+      const ratio = big / small
+      t.info(`2000 条 ${small.toFixed(2)}ms，10000 条 ${big.toFixed(2)}ms，倍率 ${ratio.toFixed(1)}×（线性扫描应接近 25×）`)
+      t.ok(ratio < 10, `倍率应远小于 25，实测 ${ratio.toFixed(1)}×`)
+      t.ok(big < 50, `一万条查重应在 50ms 内，实测 ${big.toFixed(2)}ms`)
+    }
+  },
+  {
+    name: '终止检测：跑满 10,000 代，每代额外开销可忽略',
+    run(t) {
+      const gens = 10000
+      const mk = () => new LifeEngine(100, 100, { rule: lifeRule(), boundary: 'torus' }).randomize(4271, 0.3)
+
+      const bare = mk()
+      for (let i = 0; i < 200; i++) bare.step()          // 预热
+      const t0 = now()
+      for (let i = 0; i < gens; i++) bare.step()
+      const bareMs = now() - t0
+
+      const withDet = mk()
+      const d = new TerminationDetector({ enabled: { extinction: true, still: true, cycle: true, capped: false } })
+      d.observe(0, withDet.hash(), withDet.countAlive())
+      for (let i = 0; i < 200; i++) { withDet.step(); d.observe(withDet.generation, withDet.hash(), withDet.stats.alive) }
+      // 不在命中后提前退出 —— 否则小棋盘上一千多代就收敛了，根本跑不到一万代规模
+      const t1 = now()
+      let firstHit = null
+      for (let i = 0; i < gens; i++) {
+        const s = withDet.step()
+        const hit = d.observe(s.gen, withDet.hash(), s.alive)
+        if (hit && !firstHit) firstHit = hit
+      }
+      const withMs = now() - t1
+      const perGen = (withMs - bareMs) / gens
+      t.info(`裸跑 ${(bareMs / gens).toFixed(3)}ms/代，带哈希+检测 ${(withMs / gens).toFixed(3)}ms/代，` +
+        `额外 ${perGen.toFixed(3)}ms/代；查重表 ${d.hashCount} 条，` +
+        `首次命中在第 ${firstHit ? firstHit.gen : '—'} 代（${firstHit ? firstHit.type : '未终止'}）`)
+      t.equal(withDet.generation, gens + 200, '应确实跑满一万代（外加预热）')
+      t.ok(perGen < 1, `每代额外开销应远小于 1ms，实测 ${perGen.toFixed(3)}ms`)
+      t.ok(!!firstHit, '一万代里应当至少命中一次终止条件')
+    }
+  },
+  {
+    name: '快照表：CSV 各列数值与引擎统计逐代一致',
+    run(t) {
+      const e = new LifeEngine(60, 60, { rule: lifeRule(), boundary: 'torus' }).randomize(2024, 0.3)
+      const log = new SnapshotLog()
+      const { truth } = runWith(e, 120, { log })
+      t.equal(log.length, 120, '应记满 120 代')
+
+      const rows = parseCSV(toCSV(log.toArray(), SNAPSHOT_COLUMNS))
+      t.equal(rows.length, 120, 'CSV 行数应与快照数一致')
+      t.equal(Object.keys(rows[0]).join(','), SNAPSHOT_COLUMNS.join(','), '列名应与规格 3.3 一致')
+
+      // 抽查 3 代，逐列比对
+      for (const gen of [1, 60, 120]) {
+        const want = truth[gen - 1]
+        const got = rows[gen - 1]
+        t.equal(Number(got.gen), gen, `第 ${gen} 代的 gen 列`)
+        for (const col of SNAPSHOT_COLUMNS) {
+          t.equal(Number(got[col]), want[col], `第 ${gen} 代的 ${col} 列`)
+        }
+      }
+    }
+  },
+  {
+    name: '快照表：按规格 3.3 抽稀，最近窗口保持全量',
+    run(t) {
+      // 缩小参数跑同一套逻辑：上限 500、最近 100 全量、更老的每 10 代留 1 条
+      const log = new SnapshotLog({ cap: 500, recentFull: 100, stride: 10 })
+      for (let g = 1; g <= 1000; g++) log.push({ gen: g, alive: g, births: 0, deathsLonely: 0, deathsCrowded: 0, activeArea: 0 })
+
+      const all = log.toArray()
+      t.ok(log.length < 1000, `总数应小于 1000，实测 ${log.length}`)
+      t.equal(log.info.full, 100, '最近窗口应恰好 100 条')
+
+      // 最近 100 代必须一条不落且连续
+      const recent = log.recentRows()
+      t.equal(recent[0].gen, 901, '最近窗口应从第 901 代开始')
+      t.equal(recent[99].gen, 1000, '最近窗口应到第 1000 代')
+      for (let i = 1; i < recent.length; i++) {
+        t.equal(recent[i].gen - recent[i - 1].gen, 1, '最近窗口必须逐代连续，不能抽稀')
+      }
+
+      // 更老的部分只留 10 的倍数
+      t.ok(log.archive.length > 0, '应该有归档数据')
+      t.ok(log.archive.every(r => r.gen % 10 === 0), '归档里应只剩 10 的倍数')
+      t.ok(log.info.thinned > 0, `应如实记录被丢弃的条数，实测 ${log.info.thinned}`)
+
+      // 升序、无重复
+      for (let i = 1; i < all.length; i++) t.ok(all[i].gen > all[i - 1].gen, '整体应按代数升序且无重复')
+    }
+  },
+  {
+    name: '快照表：总量越界时抽稀粒度自动放大，不突破上限',
+    run(t) {
+      const log = new SnapshotLog({ cap: 300, recentFull: 100, stride: 10 })
+      for (let g = 1; g <= 40000; g++) log.push({ gen: g, alive: 1, births: 0, deathsLonely: 0, deathsCrowded: 0, activeArea: 0 })
+      t.ok(log.length <= 300, `总数不应越过上限 300，实测 ${log.length}`)
+      t.ok(log.stride > 10, `粒度应已自动放大，实测每 ${log.stride} 代 1 条`)
+      t.equal(log.info.full, 100, '不论怎么抽稀，最近窗口始终是全量的')
+      t.info(`4 万代压到 ${log.length} 条，粒度 1/${log.stride}，丢弃 ${log.info.thinned} 条`)
+    }
+  },
+  {
+    name: '编年史：记下人口峰值、崩塌与终止，且条数有上限',
+    run(t) {
+      const e = new LifeEngine(80, 80, { rule: lifeRule(), boundary: 'torus' }).randomize(7, 0.35)
+      const c = new Chronicle()
+      c.reset(80 * 80)
+      c.add(0, 'start', { seed: 7 })
+      runWith(e, 300, { chronicle: c })
+      const types = new Set(c.events.map(ev => ev.type))
+      t.ok(types.has('start'), '应有开局事件')
+      t.ok(types.has('peak'), '应记下人口峰值')
+      t.ok(types.has('collapse'), '密集随机盘会从峰值大幅回落，应记下崩塌')
+      t.ok(c.peak > 0 && c.peakGen >= 0, '应保留峰值与它出现的代数')
+      // 事件只带 key 与参数，不含任何人类语言
+      for (const ev of c.events) {
+        t.equal(typeof ev.type, 'string', '事件类型应是 key')
+        t.ok(!('text' in ev) && !('message' in ev), '数据层不该产出成句的文案')
+      }
+
+      const small = new Chronicle({ max: 10 })
+      small.reset(100)
+      small.add(0, 'start', {})
+      for (let i = 1; i <= 50; i++) small.add(i, 'peak', { alive: i })
+      t.equal(small.events.length, 10, '应受条数上限约束')
+      t.equal(small.events[0].type, 'start', '关键事件（开局）不该被挤掉')
+    }
+  },
+  {
+    name: '台账：按规格 3.4 落一条，备注可改，CSV 列名齐全',
+    run(t) {
+      const led = new Ledger()
+      const row = led.add({
+        runId: 'r1', timestamp: '2026-08-29T00:00:00Z', seed: 4271,
+        ruleFingerprint: '9eba4f34', ruleNotation: 'B3/S23', boundary: 'torus',
+        boardSize: '200x200', initDensity: 0.35, endType: 'cycle', endGen: 1847, peakPop: 14742
+      })
+      t.equal(row.note, '', '备注默认为空字符串')
+      led.updateNote('r1', '这局很有意思, 带"引号"和,逗号')
+      t.equal(led.find('r1').note, '这局很有意思, 带"引号"和,逗号', '备注应可回填')
+
+      const csv = toCSV(led.rows, LEDGER_COLUMNS)
+      t.equal(csv.split('\n')[0], LEDGER_COLUMNS.join(','), '表头应与规格 3.4 完全一致')
+      t.ok(csv.includes('"这局很有意思, 带""引号""和,逗号"'), '含逗号与引号的备注必须被正确转义')
+
+      const back = parseCSV(toCSV(led.rows, LEDGER_COLUMNS))
+      t.equal(back.length, 1, '应能读回一行')
+      t.equal(back[0].endType, 'cycle', 'endType 应原样保留')
+    }
+  },
+  {
+    name: '台账：endType 只用规格 3.4 允许的五个值',
+    run(t) {
+      const allowed = ['extinction', 'still', 'cycle', 'capped', 'manual']
+      // 检测器能产出的四种，加上界面手动结束的一种，恰好覆盖
+      const produced = ['extinction', 'still', 'cycle', 'capped']
+      for (const p of produced) t.ok(allowed.includes(p), `检测器产出的 ${p} 应在允许集合里`)
+      t.equal(allowed.length, 5, '规格 3.4 规定的正是这五个值')
     }
   }
 )

@@ -29,6 +29,7 @@ export const DICT = {
     'ctrl.clear': '清空',
     'ctrl.random': '随机填充',
     'ctrl.fit': '适配视图',
+    'ctrl.fitShort': '适配',
     'ctrl.throttled': '⚠ 单代计算超时，已自动降速',
 
     /* ---- 统计 ---- */
@@ -239,6 +240,7 @@ export const DICT = {
     'ctrl.pause.simple': '⏸ 停一下',
     'ctrl.step.simple': '走一步',
     'ctrl.clear.simple': '全部擦掉',
+    'ctrl.fitShort.simple': '找回',
     'ctrl.speed.simple': '走多快',
     'unit.gps.simple': '步/秒',
     'hud.gen.simple': '走了',
@@ -604,6 +606,7 @@ export const DICT = {
     'ctrl.clear': 'Clear',
     'ctrl.random': 'Randomize',
     'ctrl.fit': 'Fit view',
+    'ctrl.fitShort': 'Fit',
     'ctrl.throttled': '⚠ Generation took too long — speed reduced automatically',
 
     'stat.section': 'This generation',
@@ -801,6 +804,7 @@ export const DICT = {
     'ctrl.pause.simple': '⏸ Hold on',
     'ctrl.step.simple': 'One step',
     'ctrl.clear.simple': 'Wipe it all',
+    'ctrl.fitShort.simple': 'Find it',
     'ctrl.speed.simple': 'How fast',
     'unit.gps.simple': 'steps/s',
     'hud.gen.simple': 'Steps',

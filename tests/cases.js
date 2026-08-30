@@ -1502,6 +1502,70 @@ cases.push(
     }
   },
   {
+    name: '手机控制区：六行结构与主次比（D74）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      const html = readSrc('index.html')
+
+      // ---- 行结构：每一行都在它该在的网格行，且都铺满两列 ----
+      const atRow = (re, n, what) =>
+        t.ok(re.test(css), `${what} 应当在第 ${n} 行且 grid-column: 1 / -1 铺满`)
+      atRow(/\.stage \{[^}]*grid-row:\s*2;\s*grid-column:\s*1 \/ -1/, 2, '棋盘')
+      atRow(/\.tb-run \{[^}]*grid-row:\s*3;\s*grid-column:\s*1 \/ -1/, 3, '主控排')
+      atRow(/\.tb-left \{[^}]*grid-row:\s*4;\s*grid-column:\s*1 \/ -1/, 4, '配角排')
+      t.ok(/\.toolrail, \.toolrail\[hidden\][^{]*\{[^}]*grid-row:\s*5;\s*grid-column:\s*1 \/ -1/.test(css),
+        '玩具盒在第 5 行且铺满')
+      t.ok(/grid-template-rows:\s*auto 1fr auto auto auto/.test(css),
+        '余量必须给棋盘（第 2 行 1fr），不给玩具盒 —— 列表拿到非整数行必然截断')
+
+      // ---- 桌面遗留属性：那句 margin-left:auto 必须被显式清掉 ----
+      // 它是"运行排左侧 8px 黑缺口"的成因：网格项带 auto 外边距会缩成内容宽并右推。
+      const runRule = /\.tb-run \{([\s\S]*?)\}/g
+      let m, cleared = false
+      while ((m = runRule.exec(css)) !== null) if (/margin:\s*0/.test(m[1])) cleared = true
+      t.ok(cleared, '.tb-run 在窄屏必须显式 margin: 0，否则桌面的 margin-left:auto 会漏进来')
+
+      // ---- 主次比：配角必须窄于主键 ----
+      // 宽度由 flex 比例决定，可以直接算：
+      //   主控排 = 播放 flex 62 : 速度 flex 38，间距 8
+      //   配角排 = 三等分，两个间距 8
+      const PAD = 12, GAP = 8
+      t.ok(/#btn-play \{[^}]*flex:\s*62 1 0/.test(css), '播放占 flex 62')
+      t.ok(/\.tb-speed \{[^}]*flex:\s*38 1 0/.test(css), '速度占 flex 38')
+      t.ok(/\.tb-left > button \{[^}]*flex:\s*1 1 0/.test(css), '三个配角等宽')
+      for (const W of [320, 375, 390, 430]) {
+        const avail = W - PAD * 2
+        const play = (avail - GAP) * 62 / 100
+        const secondary = (avail - GAP * 2) / 3
+        const ratio = secondary / play
+        t.ok(ratio < 1, `${W}px 下配角/主键宽比应 <1，算得 ${ratio.toFixed(3)}`)
+        t.ok(ratio < 0.75, `${W}px 下差距要够明显（<0.75），算得 ${ratio.toFixed(3)}`)
+      }
+      // 主角在高度上也要拉开
+      t.ok(/#btn-play \{[^}]*min-height:\s*56px/.test(css), '主键 56px')
+      t.ok(/\.tb-left > button \{[^}]*min-height:\s*44px/.test(css), '配角 44px，且不缩水')
+
+      // ---- 玩具盒高度必须是整数张卡片，不许再取 1fr ----
+      t.ok(/\.toolrail, \.toolrail\[hidden\][^{]*\{[^}]*height:\s*77px/.test(css),
+        '矮屏一排：77px（60 卡片 + 16 内边距 + 1 上边框）')
+      t.ok(/min-height:\s*750px\)\s*\{[\s\S]*?height:\s*153px/.test(css),
+        '高屏两排：153px。两档都是整行，任何机型都不露半排')
+
+      // ---- 配角排是纯文案，不用 emoji（跨机型渲染不一致） ----
+      const secBlock = /<button id="btn-step-m"[\s\S]*?<button id="btn-clear"[^>]*>[^<]*<\/button>/.exec(html)
+      t.ok(!!secBlock, '配角排三颗按钮应当挨在一起')
+      t.ok(!/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(secBlock[0]),
+        `配角排不许出现 emoji：${secBlock[0].replace(/\s+/g, ' ').slice(0, 120)}`)
+
+      // ---- 短文案：配角用两字，且中英两语两语域齐备 ----
+      for (const lang of ['zh', 'en']) {
+        t.ok(typeof DICT[lang]['ctrl.fitShort'] === 'string', `${lang} 缺 ctrl.fitShort`)
+        t.ok(typeof DICT[lang]['ctrl.fitShort.simple'] === 'string', `${lang} 缺 ctrl.fitShort.simple`)
+      }
+      t.equal(DICT.zh['ctrl.fitShort'], '适配', '中文配角短文案两字')
+    }
+  },
+  {
     name: '样式：按钮一律不折行，且多行卡片有例外（D73）',
     run(t) {
       // 「停一下」被断成两行（外部用户实测）：中文没有空格，浏览器可在任意两字间断行。

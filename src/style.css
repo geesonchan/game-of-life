@@ -910,8 +910,8 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
 /* 这两个按钮只为窄屏存在，桌面完全不出现 */
 .tb-more, .drawer-handle, .more-note { display: none; }
-/* 窄屏专用的那颗「适配视图」：桌面上侧栏已有一颗，这里不出现 */
-#btn-fit-m { display: none; }
+/* 窄屏专用的两颗复本：桌面上各有原件在位，这里不出现 */
+#btn-fit-m, #btn-step-m { display: none; }
 /* 第零幕卡片里的那条窄屏说明：.pick-card em 的特异度(0,1,1)压得过 .more-note(0,1,0)，
    所以这里得用同样具体的选择器把它按住，否则桌面上也会冒出来。 */
 .pick-card .more-note { display: none; }
@@ -924,8 +924,9 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
     grid-template-columns: 1fr auto;
     /* 顶栏 / 棋盘 / 运行控件 / 玩具盒 / 余量。余量放在最后 ——
        棋盘顶到视口上部，运行控件紧贴其下，两者之间不留空档。 */
-    /* 顶栏 / 棋盘 / 运行控件 / 救援排 / 玩具盒 */
-    grid-template-rows: auto auto auto auto 1fr;
+    /* 顶栏 / 棋盘（拿全部余量）/ 主控排 / 配角排 / 玩具盒。
+       余量给棋盘，不给玩具盒 —— 列表拿到非整数行的高度必然截断（D74）。 */
+    grid-template-rows: auto 1fr auto auto auto;
     height: 100dvh;
     padding-bottom: 46px;         /* 给底部露头的抽屉把手让位 */
   }
@@ -951,58 +952,75 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
      上下会各留一条死区，白占掉最值钱的屏幕。 */
   .stage {
     grid-row: 2; grid-column: 1 / -1;
-    aspect-ratio: 1 / 1; max-height: 62dvh;
-    min-height: 0; border-top: 1px solid var(--line);
+    min-height: 0;                  /* 网格项默认 min-height:auto 会撑破布局 */
   }
 
-  /* ---- 第 4 行：玩具盒改横向滚动条（竖排吃的是最稀缺的宽度） ----
-     手机上常驻显示，不受顶栏那个标签控制：运行控件下方本来就是块空地，
-     而玩具盒是手机上最值得常摆出来的东西，正好填上。 */
-  .toolrail, .toolrail[hidden] {
-    display: block;
-    grid-row: 5; grid-column: 1 / -1;
-    width: auto; border-right: none; border-top: 1px solid var(--line);
-    overflow-x: auto; overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    padding: 8px;
-  }
-  /* 换行铺开：空间够就把 6 个图案一屏摆全，不够就纵向滚。
-     比强行单行横滑好 —— 横滑藏起来的东西，手机上很少有人去翻。 */
-  .toolrail { overflow-x: hidden; overflow-y: auto; align-content: start; }
-  .toolrail .rail-list { display: flex; flex-flow: row wrap; gap: 8px; }
-  .toolrail .card { flex: 0 0 auto; width: calc(25% - 6px); min-width: 68px; padding: 6px 4px; }
-  .toolrail .card-art { width: 28px; height: 28px; }
-  .rail-hint { display: none; }        /* 横条上没地方摆说明，走 title */
+  /* ================= 控制区（行结构见 docs/decisions.md D74）=================
+     统一栅格：左右边距 12px，同排间距 8px；每行都 grid-column: 1 / -1 铺满，零缺口。
 
-  /* ---- 第 3 行：运行控件 + 清空，紧贴棋盘正下方的拇指区 ----
-     清空不进「更多」：手机上误画频繁，它是高频动作，藏两层下面等于没有。
-     摆在这一排的右端而不是紧挨播放 —— 它是破坏性操作，别和最常按的键做邻居。 */
+     桌面遗留属性逐类清理（D74 第七节的承诺）—— 控制区涉及的每个类都过一遍：
+       .tb-run        margin-left: auto  → 归零。网格项带 auto 外边距会缩成内容宽并右推，
+                                           这正是"运行排左侧黑色缺口 8px"的成因。
+       .tb-seg        gap:6px / flex:none → 各行自己写 gap；flex:none 对网格项无效，列此备查。
+       .topbar button padding/font-size   → 各行自己写，否则沿用桌面的 6px 内边距。
+       .tb-speed      input width:108px   → 改 100%，否则滑块不跟随分栏宽度。
+       .tb-seg        order: 2 / 4        → 网格里按 grid-row 定位，order 不参与，无需清。
+     ========================================================================= */
+
+  /* ---- 第 3 行：主控排 —— 播放是唯一主角；速度与它同排（不是按钮，不争主次） ---- */
   .tb-run {
     grid-row: 3; grid-column: 1 / -1;
-    display: flex; align-items: center; gap: 10px;
-    padding: 8px 12px; background: var(--panel);
+    margin: 0;                      /* ← 清掉桌面的 margin-left: auto */
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px 0;
+    background: var(--panel);
     border-top: 1px solid var(--line);
     min-width: 0;
   }
-  /* 救援排：紧挨运行控件下方，仍在拇指区。
-     375px 上五个控件挤一排会折行错位 —— 与其把「适配视图」塞进缝里，
-     不如给它一整排：它本来就是"棋盘飞出去了、找不回来"时按的键，
-     那种时刻最不该让人去缝里找按钮。 */
-  .tb-left {
-    display: flex; grid-row: 4; grid-column: 1 / -1;
-    align-items: center; gap: 8px;
-    padding: 0 12px 8px; background: var(--panel);
+  .tb-run #btn-step { display: none; }   /* 窄屏改由配角排的复本承担 */
+  .tb-run #btn-play {
+    flex: 62 1 0; min-width: 0;
+    min-height: 56px;               /* 比配角高 12px —— 主角在高度上也拉开 */
+    font-size: 17px; font-weight: 700; padding: 0 8px;
   }
-  .tb-left #btn-fit-m { flex: 1; }        /* 高频的那个占宽 */
-  .tb-left #btn-clear { flex: 0 0 auto; } /* 破坏性的那个不占，也不与播放做邻居 */
-  .tb-left #btn-clear,
-  .tb-left #btn-fit-m { display: block; min-height: 44px; padding: 0 12px; font-size: 14px; }
-  .tb-left { gap: 6px; }
-  .tb-run #btn-play { flex: 1; }
-  .tb-run button { min-height: 44px; font-size: 15px; padding: 0 18px; }
-  .tb-speed { flex: 1.2; gap: 8px; }
+  .tb-speed { flex: 38 1 0; min-width: 0; gap: 8px; }
   .tb-speed input[type="range"] { width: 100%; min-width: 0; }
-  .tb-speed > span { display: none; }  /* 「速度」二字省掉，滑块本身够自明 */
+  .tb-speed > span { display: none; }    /* 「速度」二字省掉，滑块本身够自明 */
+
+  /* ---- 第 4 行：配角排 —— 三等分等宽，纯短文案（不用 emoji，跨机型渲染不一致） ---- */
+  .tb-left {
+    grid-row: 4; grid-column: 1 / -1;
+    display: flex; align-items: stretch; gap: 8px;
+    padding: 8px 12px 10px;
+    background: var(--panel);
+  }
+  .tb-left > button {
+    flex: 1 1 0; min-width: 0;
+    min-height: 44px; padding: 0 8px; font-size: 14px;
+  }
+  /* 必须用 id 选择器把基础那条 #btn-fit-m,#btn-step-m{display:none} 顶回去 ——
+     ID 特异度 (1,0,0) 压得过 .tb-left > button (0,2,1)，同写在媒体查询里也不管用。 */
+  #btn-fit-m, #btn-step-m { display: block; }
+
+  /* ---- 第 5 行：玩具盒 —— 高度永远是整数张卡片，绝不取"剩多少给多少" ----
+     矮屏一排 + 横滑；高屏两排（见文件末尾的 min-height 分支）。
+     两档都是整行，任何机型都不会露半排。余量给棋盘，不给这里。 */
+  .toolrail, .toolrail[hidden] {
+    display: block;
+    grid-row: 5; grid-column: 1 / -1;
+    /* 77 而不是 76：border-box 下那条 1px 上边框要占掉内容高，
+       差这 1px 就会多出一条无谓的滚动 */
+    width: auto; height: 77px;
+    border-right: none; border-top: 1px solid var(--line);
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 12px;
+  }
+  .toolrail .rail-list { display: flex; flex-flow: row nowrap; gap: 8px; align-items: flex-start; }
+  .toolrail .card { flex: 0 0 auto; width: 84px; height: 60px; padding: 4px 3px; gap: 3px; }
+  .toolrail .card-art { width: 22px; height: 22px; }
+  .toolrail .card-text b { font-size: 10px; line-height: 1.2; }
+  .rail-hint { display: none; }          /* 横条上没地方摆说明，走 title */
 
   /* ---- 「更多」浮层：一个真容器，三段在里面自然纵向排开 ----
      不用写死 top 去堆三个 fixed 元素 —— 那种做法在真机字体度量或英文标签下必然错位。 */
@@ -1099,3 +1117,9 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
    而「A little guy that walks」这类名字必须折行才放得下。
    一刀切的 nowrap 会把它们变成横向溢出 —— 从"难看"换成"看不全"，更糟。 */
 .card, .pick-card { white-space: normal; }
+
+/* 高屏（≥750px）玩具盒排两行 —— 仍是整数张卡片，不会露半排（D74 第四节） */
+@media (max-width: 767px) and (min-height: 750px) {
+  .toolrail, .toolrail[hidden] { height: 153px; overflow-x: hidden; overflow-y: auto; }
+  .toolrail .rail-list { flex-flow: row wrap; }
+}

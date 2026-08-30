@@ -24,7 +24,12 @@
       <div class="tb-seg tb-left">
         <!-- 窄屏专用的「适配视图」：桌面那颗在侧栏原位不动，两颗共用同一批词条。
              双指操作后棋盘容易飞出视野，找回视图是高频救援动作（外部用户反馈） -->
-        <button id="btn-fit-m" class="rescue" data-i18n="ctrl.fit" data-i18n-title="tip.fit">适配视图</button>
+        <!-- 配角排：单步 / 适配 / 擦掉，三等分等宽。纯文案，不用 emoji ——
+             emoji 跨机型渲染不一致，为一个按钮引入那种不确定性不值当。
+             单步和适配是窄屏专用的复本（桌面那两颗各在原位不动），
+             这样两行各自是一个独立的 flex 容器，不必去动已验收的桌面顶栏结构。 -->
+        <button id="btn-step-m" data-i18n="ctrl.step" data-i18n-title="tip.step">单步</button>
+        <button id="btn-fit-m" class="rescue" data-i18n="ctrl.fitShort" data-i18n-title="tip.fit">适配</button>
         <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
       </div>
 

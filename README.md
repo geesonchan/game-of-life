@@ -31,6 +31,8 @@ run yourself has not even that.
 | 规则勘探器 · Rule explorer | 后台批量跑规则，按"持续复杂"排序，一键跳回主界面复现 |
 | 记录与台账 · Records | 人口曲线、死因统计、编年史、CSV 导出、存档与 RLE 互通 |
 
+玩具盒里的图案与「怎么亲手喂吞食者一次」见 [docs/patterns.md](./docs/patterns.md)。
+
 规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)，
 用户反馈记录见 [docs/feedback.md](./docs/feedback.md)，

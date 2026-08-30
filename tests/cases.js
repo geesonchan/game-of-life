@@ -514,12 +514,13 @@ cases.push(
     }
   },
   {
-    name: '图案库：6 个内置图案的尺寸与活细胞数正确',
+    name: '图案库：7 个内置图案的尺寸与活细胞数正确',
     run(t) {
-      t.equal(PATTERNS.length, 6, '应有 6 个内置图案')
+      t.equal(PATTERNS.length, 7, '应有 7 个内置图案')
       const expect = {
         glider: [3, 3, 5], gun: [36, 9, 36], pulsar: [13, 13, 48], lwss: [5, 4, 9], rpentomino: [3, 3, 5],
-        matt: [3, 4, 5]   // 用户注册图案，包围盒 3×4：末行那个孤立格把高度撑到 4
+        matt: [3, 4, 5],  // 用户注册图案，包围盒 3×4：末行那个孤立格把高度撑到 4
+        eater: [4, 4, 7]  // 社区经典 Eater 1，4×4 的 7 格静物
       }
       for (const key of Object.keys(expect)) {
         const p = getPattern(key)
@@ -534,14 +535,75 @@ cases.push(
     name: '图案库：Matt 排在 R-五连体之后，是第一个用户注册图案',
     run(t) {
       const keys = PATTERNS.map(p => p.key)
-      t.equal(keys.join(','), 'glider,gun,pulsar,lwss,rpentomino,matt',
-        `内置 5 个在前、用户注册图案在后，实测顺序 ${keys.join(',')}`)
+      t.equal(keys.join(','), 'glider,gun,pulsar,lwss,rpentomino,matt,eater',
+        `内置 5 个在前、注册图案按登记先后在后，实测顺序 ${keys.join(',')}`)
 
       // 名称不翻译：中英两语、两个语域都得是「Matt」本身
       t.equal(DICT.zh['pattern.matt'], 'Matt', '中文名不翻译')
       t.equal(DICT.en['pattern.matt'], 'Matt', '英文名一致')
       t.equal(DICT.zh['pattern.matt.simple'], 'Matt', '简洁语域中文名也是 Matt')
       t.equal(DICT.en['pattern.matt.simple'], 'Matt', '简洁语域英文名也是 Matt')
+    }
+  },
+  {
+    name: '图案库：吞食者独放是静物（7 格直柱，20 代纹丝不动）',
+    run(t) {
+      const p = getPattern('eater')
+      t.equal(p.cells.length, 7, '7 格')
+      const e = new LifeEngine(40, 40, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of p.cells) e.set(10 + x, 10 + y, 1)
+      e.stats.alive = e.countAlive()
+      const snap = () => {
+        const live = []
+        for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) if (e.get(x, y)) live.push(x + ',' + y)
+        return live.join('|')
+      }
+      const before = snap()
+      for (let i = 0; i < 20; i++) {
+        e.step()
+        t.equal(snap(), before, `第 ${i + 1} 代应当与第 0 代逐格相同 —— 它是静物`)
+      }
+      t.equal(e.stats.alive, 7, '20 代后仍是 7 格')
+    }
+  },
+  {
+    name: '图案库：吞食者的本职 —— 吃掉一架滑翔机后原地复原（互动型生平，D64）',
+    run(t) {
+      // 注册标准为「互动型图案」扩的那一档：生平必须含至少一个标准互动场景。
+      // 这个场景的摆位与代数是文档里写给用户照做的（docs/patterns.md），
+      // 所以它必须是断言而不是文案 —— 摆位一变、代数一变，这里先红。
+      const EATER = getPattern('eater').cells
+      // 滑翔机的相位与朝向不是随便挑的：是搜遍 8 种朝向 × 4 个相位 × 偏移窗口
+      // 找出来的 48 组可行摆位里，飞行距离最长、最"看得见它飞过来"的那一组。
+      const GLIDER = [[1, 0], [2, 0], [0, 1], [1, 1], [2, 2]]
+      const DX = 10, DY = 10                                     // 滑翔机相对吞食者的偏移
+      const N = 40, OX = 6, OY = 6
+      const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of EATER) e.set(OX + x, OY + y, 1)
+      for (const [x, y] of GLIDER) e.set(OX + DX + x, OY + DY + y, 1)
+      e.stats.alive = e.countAlive()
+      t.equal(e.stats.alive, 12, '开局 7 + 5 = 12 格')
+
+      const eaterKey = EATER.map(c => (OX + c[0]) + ',' + (OY + c[1])).sort().join('|')
+      const liveKey = () => {
+        const live = []
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (e.get(x, y)) live.push(x + ',' + y)
+        return live.sort().join('|')
+      }
+
+      let ateAt = -1
+      for (let gen = 1; gen <= 40; gen++) {
+        e.step()
+        if (e.stats.alive === 7 && liveKey() === eaterKey) { ateAt = gen; break }
+      }
+      t.equal(ateAt, 27, `滑翔机应在第 27 代被吞完，实测第 ${ateAt} 代`)
+
+      // 「一格不少」不是看总数，是逐格比对绝对坐标
+      t.equal(liveKey(), eaterKey, '吞完之后必须逐格回到原位 —— 吞食者的绝技就在这一条')
+
+      // 吞完之后不该再变
+      const after = liveKey()
+      for (let i = 0; i < 20; i++) { e.step(); t.equal(liveKey(), after, `吞完后第 ${i + 1} 代仍应静止`) }
     }
   },
   {

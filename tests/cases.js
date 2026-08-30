@@ -1841,6 +1841,45 @@ cases.push(
     }
   },
   {
+    name: '浮层排查第一批：缩放上限、顶栏对齐、总结卡片按钮（D77）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      const ctl = readSrc('src/ui/controls.js')
+      const rec = readSrc('src/ui/records.js')
+
+      // ① 窄屏放大上限抬高，但策略写在 UI 层 —— render 目录保持零改动
+      t.ok(/const NARROW_MAX_SCALE = 120/.test(ctl), '窄屏放大上限应为 120 设备像素/格')
+      t.ok(/app\.viewport\.maxScale = NARROW\.matches \? NARROW_MAX_SCALE : DESKTOP_MAX_SCALE/.test(ctl),
+        '上限要按断点切换，且桌面沿用渲染器的默认值')
+      t.ok(readSrc('src/render/viewport.js').indexOf('maxScale = 40') >= 0,
+        '渲染器的默认上限不许改 —— 这是界面策略，不是渲染器的固有属性')
+
+      // ⑤ 品牌垂直居中：桌面的 flex-direction: column 漏进窄屏，
+      //    column 下 align-items 管水平，纵向靠 justify-content，于是标题贴顶（实测差 10.2px）
+      t.ok(/\.tb-brand \{[^}]*flex-direction:\s*row/.test(css),
+        '窄屏必须显式写 flex-direction: row —— 这是「桌面属性漏进窄屏」的第五次')
+
+      // ⑥ 等间距交给网格，不让各元素自己带外边距（原来两条缝一个 6 一个 0）
+      t.ok(/grid-template-columns:\s*1fr auto auto;[\s\S]{0,120}?column-gap:\s*8px/.test(css),
+        '顶栏三段的间距应由 column-gap 统一给出')
+
+      // ③ 总结卡片：文案缩短，括号里的说明挪到 title
+      t.equal(DICT.zh['sum.continue'], '继续跑', '中文按钮文案缩短')
+      t.equal(DICT.en['sum.continue'], 'Keep going', '英文按钮文案缩短')
+      for (const lang of ['zh', 'en']) {
+        t.ok(typeof DICT[lang]['sum.continue.tip'] === 'string', `${lang} 缺 sum.continue.tip`)
+        t.ok(DICT[lang]['sum.continue'].indexOf('(') < 0 && DICT[lang]['sum.continue'].indexOf('（') < 0,
+          `${lang} 的按钮文案里不许再带括号说明 —— 那正是溢出 76px 的成因`)
+      }
+      t.ok(/el\.cont\.title = t\('sum\.continue\.tip'\)/.test(rec), '说明必须挂到 title 上，不能丢')
+
+      // ③ 页脚窄屏重排 + 浮层按钮 44px（排查发现「更多」4 个、总结卡片 3 个不达标）
+      t.ok(/#summary-modal \.intro-foot \{[^}]*flex-wrap:\s*wrap/.test(css), '总结卡片页脚窄屏可换行')
+      t.ok(/\.tb-more-group button, #summary-modal button, #rule-modal button \{ min-height: 44px; \}/.test(css),
+        '浮层里的按钮统一 44px 触控区')
+    }
+  },
+  {
     name: '介绍卡：三幕主线 + 两页附录的信息架构（D76）',
     run(t) {
       // 标记类的东西写在模板字符串里，stripLiterals 会把它们剥掉 —— 这类断言要查原文。

@@ -163,6 +163,21 @@ export function setupControls(app) {
   const NARROW = window.matchMedia('(max-width: 767px)')
 
   /**
+   * 窄屏放大上限（D77 ①）。桌面 40 设备像素/格，在手机上按 dpr 2 折算只有 20 CSS 像素，
+   * 一个格子还没指尖大，画细节时凑不近。窄屏抬到 120（60 CSS 像素/格），
+   * 一格比 44px 的触控下限还宽一截，点得准也看得清。
+   * 值写在 UI 层而不是改 viewport 的默认 —— 这是"手机上要多近"的界面策略，
+   * 不是渲染器的固有属性，render 目录因此保持零改动。
+   */
+  const NARROW_MAX_SCALE = 120
+  const DESKTOP_MAX_SCALE = app.viewport.maxScale
+  const applyZoomLimit = () => {
+    app.viewport.maxScale = NARROW.matches ? NARROW_MAX_SCALE : DESKTOP_MAX_SCALE
+  }
+  applyZoomLimit()
+  NARROW.addEventListener('change', applyZoomLimit)
+
+  /**
    * 取用区选择（D75 ③）：窄屏下图案与世界共用第 5 行那一个位置，
    * 互斥且恒有其一 —— 切换只换内容，不换位置也不换形态。
    */

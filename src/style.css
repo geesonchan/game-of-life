@@ -922,6 +922,7 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   #app {
     display: grid;
     grid-template-columns: 1fr auto auto;   /* 品牌 | 图案/世界页签 | 更多 */
+    column-gap: 8px;                        /* 顶栏三段等间距，见 .tb-more 注释 */
     /* 顶栏 / 棋盘 / 运行控件 / 玩具盒 / 余量。余量放在最后 ——
        棋盘顶到视口上部，运行控件紧贴其下，两者之间不留空档。 */
     /* 顶栏 / 棋盘（拿全部余量）/ 主控排 / 配角排 / 玩具盒。
@@ -936,24 +937,32 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   .topbar, .workspace { display: contents; }
 
   /* ---- 第 1 行：品牌 + 「更多」 ---- */
+  /* ⑤ 品牌垂直居中。桌面基础规则是 flex-direction: column，漏进窄屏后
+     align-items 管的是**水平**方向，纵向靠 justify-content（默认 flex-start），
+     于是标题贴着行顶 —— 实测中心 14.8 而页签在 25，差 10.2px。
+     这是"桌面属性漏进窄屏"的第五次，处理办法同前：显式覆盖，不靠继承。 */
   .tb-brand {
-    display: flex; grid-row: 1; grid-column: 1;
-    align-items: center; padding: 6px 4px 6px 12px; min-width: 0;
+    display: flex; flex-direction: row; grid-row: 1; grid-column: 1;
+    align-items: center; padding: 0 4px 0 12px; min-width: 0;
   }
   .tb-brand b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tb-tabs {
     display: flex; grid-row: 1; grid-column: 2;
-    align-items: center; gap: 6px; margin: 0;
+    align-items: center; gap: 8px; margin: 0;
   }
-  .tb-tabs .tab { min-height: 40px; padding: 0 12px; font-size: 13px; }
+  /* 页签与「更多」各收 2px 内边距，把 column-gap 吃掉的宽度还给品牌 ——
+     否则英文标题会被截成「Game of Life L…」 */
+  .tb-tabs .tab { min-height: 40px; padding: 0 10px; font-size: 13px; }
   /* 简洁模式默认藏掉 data-mode="full" 的控件，但窄屏下这两个页签是**取用区唯一的开关**：
      藏掉「图案」之后，儿童版用户一旦点了「世界」就再也回不到玩具盒 —— 单向陷阱。
      这是 D75 把两个取用区改成互斥之后才出现的：在那之前玩具盒是常驻的，藏掉开关无所谓。
      用更高的特异度把它顶回来（同为 !important 时特异度高的胜）。 */
   body.mode-simple .tb-tabs [data-mode="full"] { display: block !important; }
+  /* ⑥ 等间距。原来页签内部 gap 6px、而「更多」靠自己的 margin ——
+     两条缝一个 6 一个 0。改为统一交给网格的 column-gap，量出来才一致。 */
   .tb-more {
     display: block; grid-row: 1; grid-column: 3;
-    margin: 5px 10px 5px 0; padding: 0 16px; height: 40px;
+    margin: 0 12px 0 0; padding: 0 12px; height: 40px;
     font-size: 14px; background: var(--panel-2);
   }
 
@@ -1182,4 +1191,16 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   .demo canvas { height: 104px; }
   .demo p { text-align: left; min-height: 0; }
   .demo-btns { justify-content: flex-start; }
+}
+
+/* ---------- 浮层的窄屏排版（D77 排查结果） ---------- */
+@media (max-width: 767px) {
+  /* ③ 总结卡片的页脚：三个按钮 + 圆点在 351px 里排不开，改为换行、按钮不缩水。
+     文案本身也缩短了（括号里的说明挪到 title），两头一起治。 */
+  #summary-modal .intro-foot { flex-wrap: wrap; gap: 8px; }
+  #summary-modal .intro-foot .dots { display: none; }   /* 总结卡片没有分页，圆点是空的 */
+  #summary-modal .intro-foot button { flex: 1 1 auto; min-height: 44px; }
+
+  /* 浮层里的按钮统一 44px —— 排查发现「更多」有 4 个、总结卡片有 3 个不达标 */
+  .tb-more-group button, #summary-modal button, #rule-modal button { min-height: 44px; }
 }

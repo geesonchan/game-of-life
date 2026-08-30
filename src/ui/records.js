@@ -153,6 +153,7 @@ export function setupRecords(app) {
     el.again.textContent = t('sum.newRun')
     el.close.textContent = t('sum.close')
     el.cont.textContent = t('sum.continue')
+    el.cont.title = t('sum.continue.tip')   // 括号里的说明挪到悬停提示（D77 ③）
     el.cont.hidden = end.type === 'manual' || end.type === 'extinction'
     el.modal.hidden = false
   }

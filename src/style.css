@@ -921,7 +921,7 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
      用 vh 会让底部的运行控件被地址栏压住 —— 恰恰是最该点得到的那一排。 */
   #app {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 1fr auto auto;   /* 品牌 | 图案/世界页签 | 更多 */
     /* 顶栏 / 棋盘 / 运行控件 / 玩具盒 / 余量。余量放在最后 ——
        棋盘顶到视口上部，运行控件紧贴其下，两者之间不留空档。 */
     /* 顶栏 / 棋盘（拿全部余量）/ 主控排 / 配角排 / 玩具盒。
@@ -941,8 +941,13 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
     align-items: center; padding: 6px 4px 6px 12px; min-width: 0;
   }
   .tb-brand b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb-tabs {
+    display: flex; grid-row: 1; grid-column: 2;
+    align-items: center; gap: 6px; margin: 0;
+  }
+  .tb-tabs .tab { min-height: 40px; padding: 0 12px; font-size: 13px; }
   .tb-more {
-    display: block; grid-row: 1; grid-column: 2;
+    display: block; grid-row: 1; grid-column: 3;
     margin: 5px 10px 5px 0; padding: 0 16px; height: 40px;
     font-size: 14px; background: var(--panel-2);
   }
@@ -1002,25 +1007,44 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
      ID 特异度 (1,0,0) 压得过 .tb-left > button (0,2,1)，同写在媒体查询里也不管用。 */
   #btn-fit-m, #btn-step-m { display: block; }
 
-  /* ---- 第 5 行：玩具盒 —— 高度永远是整数张卡片，绝不取"剩多少给多少" ----
-     矮屏一排 + 横滑；高屏两排（见文件末尾的 min-height 分支）。
-     两档都是整行，任何机型都不会露半排。余量给棋盘，不给这里。 */
-  .toolrail, .toolrail[hidden] {
-    display: block;
+  /* ---- 第 5 行：取用区 —— 一个位置、两种内容（D75）----
+     图案与世界是同一类东西（可选卡片），所以共用同一条卡片带：
+     同尺寸、同方向、同滚动、同选中态。切换页签只换内容，不换位置也不换形态。
+     高度永远是整数张卡片，余量给棋盘。 */
+  .toolrail, .strip {
     grid-row: 5; grid-column: 1 / -1;
-    /* 77 而不是 76：border-box 下那条 1px 上边框要占掉内容高，
-       差这 1px 就会多出一条无谓的滚动 */
-    width: auto; height: 77px;
-    border-right: none; border-top: 1px solid var(--line);
+    position: static;                    /* 世界横条曾是 fixed 浮层，钉住不许退回去 */
+    width: auto; height: 77px; max-height: none;
+    inset: auto;
+    border: none; border-top: 1px solid var(--line);
     overflow-x: auto; overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     padding: 8px 12px;
   }
-  .toolrail .rail-list { display: flex; flex-flow: row nowrap; gap: 8px; align-items: flex-start; }
-  .toolrail .card { flex: 0 0 auto; width: 84px; height: 60px; padding: 4px 3px; gap: 3px; }
-  .toolrail .card-art { width: 22px; height: 22px; }
-  .toolrail .card-text b { font-size: 10px; line-height: 1.2; }
-  .rail-hint { display: none; }          /* 横条上没地方摆说明，走 title */
+  .toolrail .rail-list, .strip .strip-list {
+    display: flex; flex-flow: row nowrap; gap: 8px; align-items: flex-start;
+  }
+  /* 桌面上世界横条的滚动发生在**内层列表**（.strip .card-list 自带 overflow-x:auto），
+     而玩具盒滚的是容器本身。同样的外观、两套机制 —— 这是「同类同形」更隐蔽的一种违反，
+     还顺带把 padding-bottom:4px 算进了高度，撑出 4px 竖滚。统一交给容器滚。 */
+  .strip .card-list { overflow-x: visible; padding-bottom: 0; }
+  /* ② 自我宣告：卡片宽 = 容器的 1/3.4，于是任何屏宽下都是
+     3 整张 + 第 4 张露 40% —— "还有更多"的通用视觉语言，且与屏宽无关。
+     靠调 padding 去撞这个比例是撞不准的，必须让宽度本身按容器取分数。 */
+  .toolrail .card, .strip .card, .strip .card.world {
+    flex: 0 0 calc((100% - 24px) / 3.4);
+    width: auto; height: 60px; padding: 4px 3px; gap: 3px;
+  }
+  .toolrail .card-art, .strip .card-art { width: 22px; height: 22px; }
+  .toolrail .card-text b, .strip .card-text b { font-size: 10px; line-height: 1.2; }
+  .strip .card-text em, .strip .card-size { display: none; }
+  .rail-hint, .strip-hint { display: none; }   /* 卡片条上没地方摆说明，走 title */
+
+  /* 切换页签时的滑入：感觉得到但说不出，别过度 */
+  .toolrail .rail-list, .strip .strip-list { animation: pickerIn .16s ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .toolrail .rail-list, .strip .strip-list { animation: none; }
+  }
 
   /* ---- 「更多」浮层：一个真容器，三段在里面自然纵向排开 ----
      不用写死 top 去堆三个 fixed 元素 —— 那种做法在真机字体度量或英文标签下必然错位。 */
@@ -1084,13 +1108,6 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   }
   body.drawer-open .drawer-handle::before { background: var(--accent); }
 
-  /* ---- 世界横条：也做成浮层，盖在棋盘上而不是挤掉棋盘 ---- */
-  .strip {
-    position: fixed; left: 0; right: 0; bottom: 46px; z-index: 54;
-    border-top: 1px solid var(--line); max-height: 40dvh; overflow-y: auto;
-  }
-  .strip .card { width: 100%; }
-  .strip-list { display: flex; flex-direction: column; gap: 6px; }
 
   /* ---- 触控目标：44px 是苹果人机规范的下限（要求③） ---- */
   .panel button, .panel .seg button { min-height: 44px; }
@@ -1118,8 +1135,10 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
    一刀切的 nowrap 会把它们变成横向溢出 —— 从"难看"换成"看不全"，更糟。 */
 .card, .pick-card { white-space: normal; }
 
-/* 高屏（≥750px）玩具盒排两行 —— 仍是整数张卡片，不会露半排（D74 第四节） */
-@media (max-width: 767px) and (min-height: 750px) {
-  .toolrail, .toolrail[hidden] { height: 153px; overflow-x: hidden; overflow-y: auto; }
-  .toolrail .rail-list { flex-flow: row wrap; }
+/* 取用区的滑入动画（D75 ②）。高屏两排的分支已取消 ——
+   一排横滑 / 两排换行是两套姿势，只是分设备而非同屏并存，同样违反「同类同形」。
+   高屏多出的高度给棋盘，比塞第二排卡片值。 */
+@keyframes pickerIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: none; }
 }

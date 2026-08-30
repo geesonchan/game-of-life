@@ -19,6 +19,14 @@
       </div>
 
       <!-- 窄屏专用：把低频控件收进「更多」。桌面 display:none，零影响 -->
+      <!-- 图案/世界 页签：取用区的选择器。放顶栏是因为它是低频动作，
+           不该向主视觉（棋盘）收 44px 的高度税（D75 第七节）。
+           桌面靠 order:3 保持在原位不变。 -->
+      <div class="tb-seg tb-tabs">
+        <button class="tab" data-tab="pattern" data-mode="full" data-i18n="pattern.section" data-i18n-title="tip.pattern">图案盒子</button>
+        <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>
+      </div>
+
       <button class="tb-more" id="btn-more" data-i18n="mobile.more" data-i18n-title="mobile.more.tip">更多</button>
 
       <div class="tb-seg tb-left">
@@ -47,10 +55,6 @@
            顺序由 CSS 的 order 固定，桌面呈现逐像素不变；窄屏下它变成一个真正的浮层容器，
            三段在里面纵向排开 —— 不必再靠写死的 top 值去堆，真机字体度量变了也不会重叠。 -->
       <div class="tb-more-group" id="tb-more-group">
-      <div class="tb-seg tb-tabs">
-        <button class="tab" data-tab="pattern" data-mode="full" data-i18n="pattern.section" data-i18n-title="tip.pattern">图案盒子</button>
-        <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>
-      </div>
       <div class="tb-seg tb-right">
         <div class="seg" id="mode-switch" role="group" data-i18n-title="tip.mode">
           <button data-mode-val="simple" data-i18n="mode.simpleLabel">简洁</button>

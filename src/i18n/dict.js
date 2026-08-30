@@ -240,7 +240,7 @@ export const DICT = {
     'ctrl.pause.simple': '⏸ 停一下',
     'ctrl.step.simple': '走一步',
     'ctrl.clear.simple': '全部擦掉',
-    'ctrl.fitShort.simple': '找回',
+    'ctrl.fitShort.simple': '返回',
     'ctrl.speed.simple': '走多快',
     'unit.gps.simple': '步/秒',
     'hud.gen.simple': '走了',

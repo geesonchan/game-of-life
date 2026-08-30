@@ -1513,8 +1513,8 @@ cases.push(
       atRow(/\.stage \{[^}]*grid-row:\s*2;\s*grid-column:\s*1 \/ -1/, 2, '棋盘')
       atRow(/\.tb-run \{[^}]*grid-row:\s*3;\s*grid-column:\s*1 \/ -1/, 3, '主控排')
       atRow(/\.tb-left \{[^}]*grid-row:\s*4;\s*grid-column:\s*1 \/ -1/, 4, '配角排')
-      t.ok(/\.toolrail, \.toolrail\[hidden\][^{]*\{[^}]*grid-row:\s*5;\s*grid-column:\s*1 \/ -1/.test(css),
-        '玩具盒在第 5 行且铺满')
+      t.ok(/\.toolrail, \.strip \{[^}]*grid-row:\s*5;\s*grid-column:\s*1 \/ -1/.test(css),
+        '取用区（图案与世界共用）在第 5 行且铺满')
       t.ok(/grid-template-rows:\s*auto 1fr auto auto auto/.test(css),
         '余量必须给棋盘（第 2 行 1fr），不给玩具盒 —— 列表拿到非整数行必然截断')
 
@@ -1545,11 +1545,11 @@ cases.push(
       t.ok(/#btn-play \{[^}]*min-height:\s*56px/.test(css), '主键 56px')
       t.ok(/\.tb-left > button \{[^}]*min-height:\s*44px/.test(css), '配角 44px，且不缩水')
 
-      // ---- 玩具盒高度必须是整数张卡片，不许再取 1fr ----
-      t.ok(/\.toolrail, \.toolrail\[hidden\][^{]*\{[^}]*height:\s*77px/.test(css),
-        '矮屏一排：77px（60 卡片 + 16 内边距 + 1 上边框）')
-      t.ok(/min-height:\s*750px\)\s*\{[\s\S]*?height:\s*153px/.test(css),
-        '高屏两排：153px。两档都是整行，任何机型都不露半排')
+      // ---- 取用区高度必须是整数张卡片，不许再取 1fr ----
+      t.ok(/\.toolrail, \.strip \{[^}]*height:\s*77px/.test(css),
+        '取用区一排：77px（60 卡片 + 16 内边距 + 1 上边框）')
+      t.ok(!/min-height:\s*750px\)/.test(css),
+        '高屏两排的分支必须已取消 —— 一排横滑 / 两排换行是两套姿势，违反「同类同形」（D75 ①）')
 
       // ---- 配角排是纯文案，不用 emoji（跨机型渲染不一致） ----
       const secBlock = /<button id="btn-step-m"[\s\S]*?<button id="btn-clear"[^>]*>[^<]*<\/button>/.exec(html)
@@ -1563,6 +1563,74 @@ cases.push(
         t.ok(typeof DICT[lang]['ctrl.fitShort.simple'] === 'string', `${lang} 缺 ctrl.fitShort.simple`)
       }
       t.equal(DICT.zh['ctrl.fitShort'], '适配', '中文配角短文案两字')
+    }
+  },
+  {
+    name: '取用区：同类同形、自我宣告、位置恒定（D75 三条原则）',
+    run(t) {
+      const css = readSrc('src/style.css')
+
+      // ---- ① 同类同形：图案与世界必须共用同一套卡片规则 ----
+      // 它们曾经一个是版面内横排、一个是 fixed 竖向浮层，同一类东西两套姿势。
+      t.ok(/\.toolrail, \.strip \{/.test(css),
+        '图案与世界必须写在同一条规则里 —— 分开写迟早又长成两套')
+      t.ok(/\.toolrail \.card, \.strip \.card, \.strip \.card\.world \{/.test(css),
+        '两处的卡片必须共用同一条尺寸规则（含 .card.world，它桌面上是 200px 宽的特例）')
+      t.ok(/\.toolrail \.rail-list, \.strip \.strip-list \{[^}]*flex-flow:\s*row nowrap/.test(css),
+        '两处必须同为横向单排 —— 排列方向是「同形」的第一要素')
+      // 世界横条曾是 fixed 浮层，钉住不许退回去
+      t.ok(/\.toolrail, \.strip \{[^}]*position:\s*static/.test(css),
+        '窄屏下取用区必须在版面内（position: static），不许再做成浮层')
+      // 滚动机制也必须同一套：桌面上世界横条滚的是内层列表，玩具盒滚的是容器 ——
+      // 同样的外观、两套机制，是「同类同形」更隐蔽的一种违反
+      t.ok(/\.strip \.card-list \{[^}]*overflow-x:\s*visible/.test(css),
+        '窄屏必须把世界横条的内层滚动关掉，统一由容器滚')
+
+      // ---- ② 自我宣告：末张露出的比例与屏宽无关 ----
+      const m = /\.toolrail \.card, \.strip \.card[^{]*\{[^}]*flex:\s*0 0 calc\(\(100% - (\d+)px\) \/ ([\d.]+)\)/.exec(css)
+      t.ok(!!m, '卡片宽度必须按容器取分数（calc((100% - Npx) / K)），靠调 padding 撞不准这个比例')
+      const gapTotal = Number(m[1]), K = Number(m[2])
+      const GAP = 8, PAD = 12
+      for (const W of [320, 375, 390, 430]) {
+        const inner = W - PAD * 2
+        const card = (inner - gapTotal) / K
+        // 第 4 张的左边缘 = 3 张卡片 + 3 个间距
+        const fourthLeft = card * 3 + GAP * 3
+        const visible = (inner - fourthLeft) / card
+        t.ok(visible > 0.25 && visible < 0.5,
+          `${W}px 下末张应露出 25%–50%，算得 ${(visible * 100).toFixed(0)}%`)
+      }
+
+      // ---- ③ 位置恒定：高频控件与取用区的 grid-row 是常量 ----
+      // 清空搬过三次位置、玩具盒换过三种形态，每换一次用户重新学一次。
+      // 这几条断言就是"以后要动得先过我"。
+      const rowIs = (re, what) => t.ok(re.test(css), `${what} 的 grid-row 必须是常量`)
+      rowIs(/\.tb-run \{[^}]*grid-row:\s*3;/, '主控排')
+      rowIs(/\.tb-left \{[^}]*grid-row:\s*4;/, '配角排')
+      rowIs(/\.toolrail, \.strip \{[^}]*grid-row:\s*5;/, '取用区')
+      // grid-row 只能出现这几个固定值，不许被别的规则改写
+      const rows = (css.match(/grid-row:\s*\d+/g) || []).filter(x => /grid-row:\s*[345]/.test(x))
+      t.equal(rows.length, 3, `第 3/4/5 行各应只被声明一次，实测 ${rows.join('、')}`)
+
+      // ---- 页签定在顶栏：低频动作不向主视觉收高度税 ----
+      t.ok(/\.tb-tabs \{[^}]*grid-row:\s*1;\s*grid-column:\s*2/.test(css),
+        '页签在顶栏第 2 列 —— 放取用区正上方要吃掉 SE 上棋盘 14% 的面积')
+      const html = readSrc('index.html')
+      const group = /<div class="tb-more-group"[\s\S]*?\n      <\/div>/.exec(html)
+      t.ok(!!group && group[0].indexOf('tb-tabs') < 0,
+        '页签必须已移出「更多」组 —— 藏在里面时它的出现位置取决于展开状态')
+
+      // ---- 切换只换内容：动画存在且尊重 reduced-motion ----
+      t.ok(/@keyframes pickerIn/.test(css), '切换页签应有轻微滑入')
+      t.ok(/prefers-reduced-motion: reduce\)\s*\{[\s\S]{0,200}?animation:\s*none/.test(css),
+        'reduced-motion 下必须关掉动画')
+
+      // ---- 互斥且恒有其一（窄屏） ----
+      const ctl = readSrc('src/ui/controls.js')
+      t.ok(/app\.setPicker = function \(name\)/.test(ctl), '应有 setPicker')
+      t.ok(/app\.setRail\(name === 'pattern'\)[\s\S]{0,80}app\.setWorlds\(name === 'world'\)/.test(ctl),
+        'setPicker 必须让两者互斥')
+      t.ok(/NARROW\.matches/.test(ctl), '窄屏与桌面的取用区语义不同，需按断点分流')
     }
   },
   {

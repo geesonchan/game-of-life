@@ -158,7 +158,26 @@ export function setupControls(app) {
     app.handleResize()
   }
 
+  // 窄屏断点。与 style.css 里的 max-width:767px 是同一个数 ——
+  // 这是 JS 与 CSS 之间唯一的耦合点，所以只写一处、写明白。
+  const NARROW = window.matchMedia('(max-width: 767px)')
+
+  /**
+   * 取用区选择（D75 ③）：窄屏下图案与世界共用第 5 行那一个位置，
+   * 互斥且恒有其一 —— 切换只换内容，不换位置也不换形态。
+   */
+  app.setPicker = function (name) {
+    app.setRail(name === 'pattern')
+    app.setWorlds(name === 'world')
+  }
+
   app.toggleTab = function (name) {
+    if (NARROW.matches) {
+      // 窄屏：点已选中的那个不关闭（关了那一行就空着，位置反而不恒定了）
+      app.setPicker(name)
+      return
+    }
+    // 桌面照旧：图案在左缘、世界在顶部，占的是不同的边，可以同时开着
     if (name === 'pattern') app.setRail(rail.hidden)
     else app.setWorlds(strip.hidden)
   }
@@ -169,6 +188,11 @@ export function setupControls(app) {
   }
   app.refreshTabHint()
   tabs.forEach(b => b.addEventListener('click', () => app.toggleTab(b.dataset.tab)))
+
+  // 窄屏开机默认展示图案；转屏进出窄屏时重新落位，免得留下一个空行或两个都开着
+  const applyNarrow = () => { if (NARROW.matches) app.setPicker('pattern') }
+  applyNarrow()
+  NARROW.addEventListener('change', applyNarrow)
 
   /* ---------- 窄屏：「更多」浮层与底部抽屉（D66） ---------- */
 

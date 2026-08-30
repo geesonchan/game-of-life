@@ -19,6 +19,7 @@ export const DICT = {
     'hud.fps': '帧率',
     'hud.zoom': '缩放',
     'hud.cell': '格',
+    'hud.cell.simple': '位置',
     'unit.gps': '代/秒',
 
     /* ---- 主控制 ---- */
@@ -606,6 +607,7 @@ export const DICT = {
     'hud.fps': 'FPS',
     'hud.zoom': 'Zoom',
     'hud.cell': 'cell',
+    'hud.cell.simple': 'spot',
     'unit.gps': 'gen/s',
 
     'ctrl.play': '▶ Play',

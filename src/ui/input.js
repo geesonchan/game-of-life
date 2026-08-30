@@ -27,6 +27,20 @@ export function strokeVerdict(elapsedMs) {
   return elapsedMs < PROMOTE_MS ? 'rollback' : 'commit'
 }
 
+/**
+ * 方向键把图案挪一格。纯函数，可直接测。
+ * 抽出来的理由同 D65：这类判断埋在 keydown 回调里，这个项目的测试就摸不到。
+ * @returns {{x:number,y:number}|null} 新位置；不是方向键则返回 null
+ */
+export function nudgeCell(cell, key, w, h) {
+  const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[key]
+  if (!d) return null
+  return {
+    x: Math.max(0, Math.min(w - 1, cell.x + d[0])),
+    y: Math.max(0, Math.min(h - 1, cell.y + d[1]))
+  }
+}
+
 export function setupCanvasInput(app) {
   const canvas = app.canvas
   const vp = app.viewport
@@ -229,6 +243,7 @@ export function setupCanvasInput(app) {
     // 鼠标位置的格坐标显示在 HUD 上
     const c = vp.screenToCell(p.x, p.y)
     app.hoverCell = (c.x >= 0 && c.y >= 0 && c.x < app.engine.w && c.y < app.engine.h) ? c : null
+    app.updateHoverReadout()      // 坐标要跟着指针走，不能等下一次 updateHud
     // 图案预览要跟着鼠标走，所以移动就得重画
     if (app.stamp) app.dirty = true
   })
@@ -263,6 +278,7 @@ export function setupCanvasInput(app) {
   canvas.addEventListener('pointercancel', e => { if (!endTouch(e)) endDrag(e) })
   canvas.addEventListener('pointerleave', () => {
     app.hoverCell = null
+    app.updateHoverReadout()
     if (app.stamp) app.dirty = true
   })
 
@@ -277,6 +293,21 @@ export function setupCanvasInput(app) {
 
   // 空格键按住 = 临时平移模式；Esc 取消图案选择
   window.addEventListener('keydown', e => {
+    // 方向键微调图案位置（桌面专属；手机有拖放，不需要）。
+    // 一按方向键，幽灵就从鼠标上脱开、钉在 app.stampAt —— 否则鼠标一动就把微调抹掉了。
+    if (app.stamp && !isTyping(e.target) && e.key.startsWith('Arrow')) {
+      const from = app.stampAt || app.hoverCell ||
+        { x: app.engine.w >> 1, y: app.engine.h >> 1 }   // 鼠标不在画布上时从中心起步
+      const next = nudgeCell(from, e.key, app.engine.w, app.engine.h)
+      if (next) { app.stampAt = next; app.dirty = true; app.updateHud(); e.preventDefault() }
+      return
+    }
+    // 回车落子（位置取幽灵当前所在，不管是鼠标跟着还是方向键钉住的）
+    if (app.stamp && !isTyping(e.target) && e.key === 'Enter') {
+      const at = app.stampAt || app.hoverCell
+      if (at) { app.placeStampAt(at); e.preventDefault() }
+      return
+    }
     if (e.code === 'Space' && !isTyping(e.target)) { spaceHeld = true; e.preventDefault() }
     else if (e.key === 'Escape' && app.stamp
       && document.getElementById('rule-modal').hidden

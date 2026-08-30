@@ -22,7 +22,8 @@ import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
 import { introPages, introNext, placeStarterGift } from '../src/ui/intro.js'
-import { pinchDelta, strokeVerdict, PROMOTE_MS } from '../src/ui/input.js'
+import { pinchDelta, strokeVerdict, PROMOTE_MS, nudgeCell } from '../src/ui/input.js'
+import { clampToRange, NUMERIC_SLIDERS } from '../src/ui/numeric-entry.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -1903,6 +1904,80 @@ cases.push(
       const withZero = introPages({ chooser: true, mode: 'simple' })
       t.equal(introNext(withZero, 2), 3, '带第零幕时，第 2 页（第二幕）应该翻到下一页而不是收尾')
       t.equal(introNext(withZero, 3), 'finish', '第 3 页才是第三幕')
+    }
+  },
+  {
+    name: '精确档：滑块数值输入的钳位（D80 ①）',
+    run(t) {
+      const speed = { min: '1', max: '60', step: '1', value: '10' }
+      const density = { min: '0.05', max: '0.6', step: '0.01', value: '0.35' }
+
+      // 越界钳到合法范围，不是拒绝
+      t.equal(clampToRange('999', speed), 60, '超上限钳到 max')
+      t.equal(clampToRange('-5', speed), 1, '低于下限钳到 min')
+      t.equal(clampToRange('7', speed), 7, '合法值原样')
+      // 按步长对齐；顺序必须是"先对齐再钳位"，反了会在 max 不是整步长时越界
+      t.equal(clampToRange('3.7', speed), 4, '按步长对齐')
+      // 小数步长要收敛小数位，否则 0.35+0.01 那类浮点误差会漏进界面
+      t.equal(clampToRange('0.427', density), 0.43, '小数步长对齐并收敛位数')
+      t.equal(clampToRange('2', density), 0.6, '密度超上限')
+      t.equal(clampToRange('0', density), 0.05, '密度低于下限')
+      // 不是数字就当作没改过，而不是回落成 0 —— 回落成 0 会静默毁掉用户的设置
+      t.equal(clampToRange('abc', speed), null, '非数字返回 null')
+      t.equal(clampToRange('', speed), null, '空串返回 null')
+
+      // 12 个滑块全部登记；新增滑块必须登记，否则这条会红
+      const html = readSrc('index.html')
+      const ranges = (html.match(/<input[^>]*type="range"[^>]*>/g) || [])
+        .map(tag => (/id="([^"]+)"/.exec(tag) || [])[1]).filter(Boolean)
+      t.equal(ranges.length, NUMERIC_SLIDERS.length,
+        `index.html 里有 ${ranges.length} 个滑块，登记了 ${NUMERIC_SLIDERS.length} 个 —— 数目必须一致`)
+      const registered = {}
+      for (const [r, l] of NUMERIC_SLIDERS) {
+        registered[r] = true
+        t.ok(html.indexOf('id="' + l + '"') >= 0, `标签 #${l} 必须存在`)
+      }
+      for (const id of ranges) t.ok(registered[id], `滑块 #${id} 没有登记数值输入`)
+
+      // 取值以滑块为准，不解析标签文字 —— 有几个标签根本不是纯数字
+      const src = readSrc('src/ui/numeric-entry.js')
+      t.ok(/input\.value = range\.value/.test(src),
+        '编辑框的初值应取自滑块，不是解析标签文字（拖尾显示「短/中/长」，解析必崩）')
+      t.ok(/dispatchEvent\(new Event\('input'/.test(src),
+        '提交后要派发 input 事件，让既有监听器照常更新 —— 不复制一份更新逻辑')
+      t.ok(/inputMode = 'decimal'/.test(src), '手机上要唤起数字键盘')
+    }
+  },
+  {
+    name: '精确档：图案方向键微调（D80 ③）',
+    run(t) {
+      const W = 200, H = 120
+      t.equal(JSON.stringify(nudgeCell({ x: 10, y: 10 }, 'ArrowRight', W, H)), '{"x":11,"y":10}', '右')
+      t.equal(JSON.stringify(nudgeCell({ x: 10, y: 10 }, 'ArrowLeft', W, H)), '{"x":9,"y":10}', '左')
+      t.equal(JSON.stringify(nudgeCell({ x: 10, y: 10 }, 'ArrowUp', W, H)), '{"x":10,"y":9}', '上')
+      t.equal(JSON.stringify(nudgeCell({ x: 10, y: 10 }, 'ArrowDown', W, H)), '{"x":10,"y":11}', '下')
+      // 边界钳位：不许走出棋盘
+      t.equal(JSON.stringify(nudgeCell({ x: 0, y: 0 }, 'ArrowLeft', W, H)), '{"x":0,"y":0}', '左边界钳住')
+      t.equal(JSON.stringify(nudgeCell({ x: 0, y: 0 }, 'ArrowUp', W, H)), '{"x":0,"y":0}', '上边界钳住')
+      t.equal(JSON.stringify(nudgeCell({ x: 199, y: 119 }, 'ArrowRight', W, H)), '{"x":199,"y":119}', '右边界钳住')
+      t.equal(JSON.stringify(nudgeCell({ x: 199, y: 119 }, 'ArrowDown', W, H)), '{"x":199,"y":119}', '下边界钳住')
+      // 非方向键返回 null，调用方据此放行给别的快捷键
+      t.equal(nudgeCell({ x: 5, y: 5 }, 'Enter', W, H), null, '回车不是方向键')
+      t.equal(nudgeCell({ x: 5, y: 5 }, 'a', W, H), null, '普通字母不是方向键')
+
+      // 幽灵脱离鼠标：一按方向键就钉在 stampAt，否则鼠标一动就把微调抹掉
+      const inp = readSrc('src/ui/input.js')
+      t.ok(/app\.stampAt = next/.test(inp), '方向键必须把位置钉进 app.stampAt')
+      const main = readSrc('src/main.js')
+      t.ok(/const gc = app\.stampAt \|\| app\.hoverCell/.test(main),
+        '幽灵优先用钉住的位置，其次才跟鼠标')
+      t.ok(/app\.stampAt = null/.test(main), '换图案要解除钉住')
+
+      // ② 坐标读数：必须单独刷新，不能只等 updateHud
+      t.ok(/app\.updateHoverReadout = function/.test(main), '坐标读数应有独立的刷新函数')
+      t.ok(/app\.updateHoverReadout\(\)/.test(inp), 'pointermove 上必须刷新坐标，否则"实时"是假的')
+      t.ok(/app\.stampAnchor\(\) \|\| app\.hoverCell/.test(main),
+        '选中图案时显示幽灵锚点，不是光标格 —— 放置对齐的是锚点')
     }
   },
   {

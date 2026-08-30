@@ -1233,3 +1233,26 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   #rule-modal .modal-head button { min-height: 44px; }
   .tb-more-group .seg { align-items: stretch; }
 }
+
+/* ---------- 滑块数值直接输入 ---------- */
+.num-editable { cursor: text; border-bottom: 1px dotted var(--line); }
+.num-editable:hover { color: var(--accent); border-bottom-color: var(--accent); }
+/* 用 .num-input[type="text"]（0,2,1）而不是 .num-input（0,1,0）——
+   基础层的 input[type="text"] 是 (0,1,1)，会压过单类名，字号就跟着输入框的默认走了。
+   这是本项目第六次被特异度绊倒，形状每次一样：以为"写在后面就行"，
+   实际要看的是特异度。 */
+.num-input[type="text"] {
+  width: 5.5em; padding: 1px 4px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--accent-dim); border-radius: 4px;
+  font-family: inherit; font-size: inherit;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 767px) {
+  /* HUD 只留前三项，但坐标必须留着 —— 触屏拖动画笔时它就是唯一的定位反馈 */
+  .hud #hud-cell-item { display: inline-flex; }
+  .num-editable { padding: 2px 6px; }          /* 手机上给它一个够点的热区 */
+  /* 16px 是 iOS 的阈值：输入框字号小于 16px，聚焦时 Safari 会把整页放大，
+     用户改完一个数字还得手动缩回去。这里必须 ≥16，不能跟着 HUD 的 13px 走。 */
+  .num-input[type="text"] { width: 4.5em; font-size: 16px; }
+}

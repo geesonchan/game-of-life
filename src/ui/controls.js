@@ -3,6 +3,7 @@ import { normalizeSeed, randomSeed } from '../engine/prng.js'
 import { isTyping } from './input.js'
 import { t, setLang, getLang } from '../i18n/index.js'
 import { prefs } from './prefs.js'
+import { attachNumericEntry, NUMERIC_SLIDERS } from './numeric-entry.js'
 
 const $ = id => document.getElementById(id)
 
@@ -123,6 +124,12 @@ export function setupControls(app) {
   app.renderer.setGlowFrames(Number(el.glowFrames.value))
   el.glowFrames.parentElement.classList.toggle('disabled', !el.glow.checked)
   el.trailLen.parentElement.classList.toggle('disabled', !el.trails.checked)
+
+  /* ---------- 滑块数值直接输入（点数字变输入框） ---------- */
+  // 12 个滑块一次登记完，包括观塔与勘探视图里的 —— 它们的元素在开机时就在 DOM 里。
+  for (const [rangeId, labelId] of NUMERIC_SLIDERS) {
+    attachNumericEntry($(rangeId), $(labelId), { ariaLabel: rangeId })
+  }
 
   /* ---------- 右栏分组折叠 ---------- */
 

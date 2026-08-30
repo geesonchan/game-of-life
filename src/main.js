@@ -181,8 +181,16 @@ app.setMode = function (mode, opts = {}) {
 }
 
 /** 选中 / 取消选中一个待放置的图案 */
+/** 选中图案时幽灵的锚点（左上角格）；没选中则返回 null */
+app.stampAnchor = function () {
+  const gc = app.stampAt || app.hoverCell
+  if (!app.stamp || !gc) return null
+  return centerOrigin(app.stamp, gc.x, gc.y)
+}
+
 app.setStamp = function (pattern) {
   app.stamp = pattern
+  app.stampAt = null          // 换图案就解除方向键的钉住
   app.library.renderPatterns()
   app.canvas.classList.toggle('stamping', !!pattern)
   app.dirty = true
@@ -337,6 +345,7 @@ const hud = {
   gen: document.getElementById('hud-gen'),
   alive: document.getElementById('hud-alive'),
   gps: document.getElementById('hud-gps'),
+  cell: document.getElementById('hud-cell'),
   fps: document.getElementById('hud-fps'),
   scale: document.getElementById('hud-scale')
 }
@@ -349,15 +358,29 @@ const st = {
   crowded: document.getElementById('st-crowded')
 }
 
+/**
+ * 只刷新 HUD 里的坐标那一项。单独拆出来是因为它要挂在 pointermove 上 ——
+ * 每次鼠标移动都跑整个 updateHud（十来处 DOM 写入）没必要。
+ *
+ * 坐标此前是拼在「缩放」那一项尾巴上的，于是有两个毛病：
+ * 窄屏下连同缩放一起被藏掉；而且只在 updateHud 被调用时才刷新，
+ * 光移动鼠标根本不触发 —— 所谓"实时"其实是陈旧的。
+ *
+ * 选中图案时显示的是**幽灵的锚点**（左上角），不是光标格 —— 放置对齐的是锚点。
+ */
+app.updateHoverReadout = function () {
+  const c = app.stampAnchor() || app.hoverCell
+  hud.cell.textContent = c ? `${c.x}, ${c.y}` : '–'
+}
+
 app.updateHud = function () {
   const s = app.engine.stats
   hud.gen.textContent = app.engine.generation
   hud.alive.textContent = s.alive
   hud.gps.textContent = app.running ? app.gps.toFixed(0) : '0'
   hud.fps.textContent = app.running ? app.fps.toFixed(0) : '–'
-  const c = app.hoverCell
+  app.updateHoverReadout()
   hud.scale.textContent = `${t('hud.zoom')} ${app.viewport.scale.toFixed(1)}×`
-    + (c ? ` · ${t('hud.cell')} (${c.x}, ${c.y})` : '')
 
   st.gen.textContent = app.engine.generation
   st.alive.textContent = s.alive
@@ -502,8 +525,10 @@ function frame(now) {
 
   if (app.dirty) {
     app.renderer.draw(app.engine, app.viewport, app.visual, app.visualOpts)
-    if (app.stamp && app.hoverCell) {
-      const o = centerOrigin(app.stamp, app.hoverCell.x, app.hoverCell.y)
+    // 方向键微调后幽灵脱离鼠标跟随（app.stampAt 非空即钉住）
+    const gc = app.stampAt || app.hoverCell
+    if (app.stamp && gc) {
+      const o = centerOrigin(app.stamp, gc.x, gc.y)
       app.renderer.drawGhost(app.viewport, app.stamp, o.x, o.y, app.engine.w, app.engine.h)
     }
     if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)

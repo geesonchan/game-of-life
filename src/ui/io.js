@@ -6,7 +6,21 @@ import { centerOrigin, placePattern } from '../engine/patterns.js'
 import { t } from '../i18n/index.js'
 
 const $ = id => document.getElementById(id)
-const REPLAY_CHUNK = 400   // 每帧最多重放多少代，保证进度条能画出来
+const REPLAY_CHUNK = 400          // 每帧最多重放多少代，保证进度条能画出来
+const PROGRESS_THRESHOLD_MS = 1000 // 预计一秒内跑完的重放不弹进度条
+
+/**
+ * 要不要弹进度条：跑完第一片之后按实测速度外推总耗时，超过阈值才弹。
+ * 这样判据与棋盘大小、机器快慢自动挂钩 —— 500×500 上的两千代和 100×100 上的两千代
+ * 不是一回事，写死一个"多少代以上才弹"是不对的。
+ * 抽成纯函数是为了能直接测，不用去戳异步的 rAF 分片。
+ * @param {number} elapsedMs 已经花掉的毫秒 @param {number} done 已重放代数
+ * @param {number} total 总代数 @param {number} [thresholdMs]
+ */
+export function shouldShowProgress(elapsedMs, done, total, thresholdMs = PROGRESS_THRESHOLD_MS) {
+  if (done <= 0 || done >= total) return false
+  return (elapsedMs / done) * total > thresholdMs
+}
 
 function download(filename, text, mime = 'application/json') {
   const blob = new Blob([text], { type: `${mime};charset=utf-8` })
@@ -43,9 +57,12 @@ export function setupIO(app) {
 
   el.save.addEventListener('click', () => {
     // 手绘/贴过图案的局没法"从种子重放"，改用当前棋盘做 RLE 基线、重放 0 代
+    // 手改过的局用"最后一次编辑时"的基线，这样存档里还留着那之后的可重放段落，
+    // 读档时年龄着色与统计才回得来；万一没抓到基线（理论上不会）就退回当前棋盘
     const origin = app.runDirty
-      ? { type: 'pattern', rle: boardBaseline(app.engine), gen: app.engine.generation }
+      ? (app.baseline || { rle: boardBaseline(app.engine), gen: app.engine.generation })
       : { type: 'random', seed: app.engine.seed, density: app.engine.density }
+    if (app.runDirty) origin.type = 'pattern'
     const save = buildSave({ engine: app.engine, density: app.density, origin })
     download(`life-${save.seed}-gen${save.generation}.json`, saveToText(save))
     app.toast(t('io.saved', { gen: save.generation }))
@@ -73,22 +90,47 @@ export function setupIO(app) {
     const { engine, replayFrom, replayTo } = restored
     const total = Math.max(0, replayTo - replayFrom)
 
-    // 分片重放，每帧一段，好让进度条真的动起来（一次性跑完的话浏览器只会卡住不刷新）
-    showProgress(0, total)
+    // 先把引擎换上，再走**和正常运行完全相同的那条流水线**重放：
+    // engine.step → series.push → records.onGeneration → visual.advance。
+    // 否则读档回来年龄全是新生白、统计与折线全空 —— 重放本来就在逐代跑，顺路记账几乎不额外花钱。
+    engine.generation = replayFrom
+    app.adoptEngine(engine)
+    if (total === 0) { finishLoad(replayTo); return }
+
+    app.records.setReplaying(true)
     let done = 0
+    let barShown = false
+    const startedAt = performance.now()
+
     const stepChunk = () => {
       const n = Math.min(REPLAY_CHUNK, total - done)
-      for (let i = 0; i < n; i++) engine.step()
+      for (let i = 0; i < n; i++) app.replayStep(total - done - i)
       done += n
-      showProgress(done, total)
+
+      // 短局不弹进度条：跑完第一片之后按实测速度估算总耗时，
+      // 预计一秒内能完事就干脆不弹，免得闪一下反而像出了故障
+      if (!barShown && shouldShowProgress(performance.now() - startedAt, done, total)) {
+        barShown = true
+        showProgress(done, total)
+      } else if (barShown) {
+        showProgress(done, total)
+      }
+
       if (done < total) { requestAnimationFrame(stepChunk); return }
-      engine.generation = replayTo    // 图案基线局的代数从基线代数续上
+      app.records.setReplaying(false)
       hideProgress()
-      app.adoptEngine(engine)
-      app.toast(t('io.loaded', { gen: engine.generation }))
+      finishLoad(replayTo)
     }
-    if (total === 0) { engine.generation = replayTo; hideProgress(); app.adoptEngine(engine); app.toast(t('io.loaded', { gen: replayTo })) }
-    else requestAnimationFrame(stepChunk)
+    requestAnimationFrame(stepChunk)
+  }
+
+  function finishLoad(gen) {
+    app.engine.generation = gen
+    app.records.renderPanel()
+    app.chart.draw(app.series, app.renderer.flat)
+    app.updateHud()
+    app.dirty = true
+    app.toast(t('io.loaded', { gen }))
   }
 
   function showProgress(gen, total) {

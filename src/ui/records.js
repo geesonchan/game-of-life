@@ -42,6 +42,7 @@ export function setupRecords(app) {
     extinction: $('det-extinction'), still: $('det-still'), cycle: $('det-cycle'), capped: $('det-capped')
   }
 
+  let replaying = false     // 读档重放期间：照常记账，但不做终止判定
   let runSeq = 0
   let currentRun = null      // {runId, startedAt}
   let lastEnd = null         // 最近一次终止，供总结卡片的按钮用
@@ -79,6 +80,9 @@ export function setupRecords(app) {
     log.push(stats)
     chronicle.observe(stats)
     dirtyPanel = true
+    // 重放期间不做终止判定：既省掉每代一次全盘哈希，也避免"存档正好落在循环里"时
+    // 重放到一半弹出总结卡片。重放结束后再把当前棋盘喂给检测器接上。
+    if (replaying) return null
     // 即使本局已经终止过，也要继续喂给检测器 —— 历史留空洞会让之后算出的周期不准；
     // 只是不再重复落台账、重复弹卡片。
     const alreadyEnded = !!lastEnd     // 必须先取，finishRun 会把 lastEnd 设上
@@ -258,8 +262,14 @@ export function setupRecords(app) {
     if (e.key === 'Escape' && !el.modal.hidden) { closeSummary(); e.preventDefault() }
   })
 
+  /** 读档重放开关；结束时把当前棋盘补进查重表，之后的循环检测才接得上 */
+  function setReplaying(on) {
+    replaying = !!on
+    if (!on) { detector.reset(); observeInitial() }
+  }
+
   return {
-    startRun, onGeneration, noteEdit, renderPanel,
+    startRun, onGeneration, noteEdit, renderPanel, setReplaying,
     get needsPanel() { return dirtyPanel },
     relocalize() { renderPanel(); if (!el.modal.hidden && lastEnd) showSummary(lastEnd) },
     _internals: { log, detector, chronicle, ledger }

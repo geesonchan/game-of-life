@@ -14,6 +14,8 @@ import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
 import { setupRecords } from './ui/records.js'
 import { setupIO } from './ui/io.js'
+import { boardBaseline } from './engine/save.js'
+import { AGE_MAX } from './render/palette.js'
 import { placePattern, centerOrigin } from './engine/patterns.js'
 import { t, applyStatic, onLangChange, setRegister, setLang, getLang } from './i18n/index.js'
 import { prefs } from './ui/prefs.js'
@@ -52,6 +54,7 @@ const app = {
   mode: 'full',       // 'simple' | 'full'
   stamp: null,        // 当前选中的图案（跟随鼠标待放置）
   runDirty: false,    // 本局是否被手动改过 ⇒ 存档不能再靠种子重放
+  baseline: null,     // 手改之后的重放基线 {rle, gen}
   selecting: false,   // 框选导出 RLE 模式
   selection: null     // {x0,y0,w,h}，拖动过程中的选框
 }
@@ -92,6 +95,7 @@ app.clear = function () {
   app.engine.clear()
   app.visual.sync(app.engine)
   app.runDirty = false
+  app.baseline = null
   app.series.clear()
   app.records.startRun()
   app.dirty = true
@@ -104,6 +108,7 @@ app.randomize = function () {
   app.engine.randomize(seed, app.density)
   app.visual.sync(app.engine)
   app.runDirty = false
+  app.baseline = null
   app.series.clear()
   app.series.push(app.engine.stats.alive)
   app.records.startRun()
@@ -147,6 +152,7 @@ app.resizeBoard = function (w, h) {
   app.engine.resize(w, h)
   app.visual.sync(app.engine)
   app.runDirty = false
+  app.baseline = null
   app.series.clear()
   app.records.startRun()
   app.fitView()
@@ -193,13 +199,39 @@ app.placeStampAt = function (cell) {
   app.visual.reconcile(app.engine)
   app.records.noteEdit()
   app.markDirtyRun()
+  app.captureBaseline()
   app.dirty = true
   app.updateHud()
   app.toast(t('pattern.placed', { name: label }))
 }
 
-/** 本局被手动改过：存档只能改用"当前棋盘 RLE 基线 + 重放 0 代" */
+/**
+ * 本局被手动改过：从种子重放这条路断了，改用"当时的棋盘 RLE"当新基线。
+ * 基线在**每次编辑动作结束时**抓一次（抬笔、放下图案），不是每次 pointermove ——
+ * 那样每笔要算几十次全盘 RLE。基线抓在编辑那一刻而不是存档那一刻，
+ * 读档时才有 (存档代数 - 编辑代数) 这段可以重放，年龄和统计才回得来。
+ */
 app.markDirtyRun = function () { app.runDirty = true }
+
+app.captureBaseline = function () {
+  if (!app.runDirty) return
+  app.baseline = { rle: boardBaseline(app.engine), gen: app.engine.generation }
+}
+
+/** 重放期间的一代：与正常运行走同一条流水线，只是年龄数组按需推进 */
+const VISUAL_WARMUP = AGE_MAX + 16   // 年龄色阶在 AGE_MAX 代就饱和了，更早的推进对画面没有影响
+app.replayStep = function (remaining) {
+  const s = app.engine.step()
+  app.series.push(s.alive)
+  app.records.onGeneration(s)
+  // 只在最后这一小段推进年龄/余晖：色阶到 AGE_MAX 代就封顶，
+  // 所以"补跑 VISUAL_WARMUP 代"与"从头跑满"渲染出来的颜色逐格相同，代价却小得多。
+  if (remaining === VISUAL_WARMUP) app.visual.sync(app.engine)
+  if (remaining <= VISUAL_WARMUP) {
+    app.visual.advance(app.engine, app.visualOpts.glow ? app.renderer.glowFrames : 0)
+  }
+}
+app.VISUAL_WARMUP = VISUAL_WARMUP
 
 /** 框选导出 RLE 模式 */
 app.setSelecting = function (on) {

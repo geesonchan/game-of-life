@@ -22,7 +22,7 @@ export const PALETTES = {
 }
 
 export const AGE_STEPS = 64      // 年龄色阶数
-const AGE_MAX = 64               // 映射到最深色的存活代数
+export const AGE_MAX = 64        // 映射到最深色的存活代数；超过它一律同色
 const AGE_LUT_SIZE = 512         // 年龄索引表长度，超出部分钳到最深色
 
 /** 在 stops 之间做分段线性插值 */

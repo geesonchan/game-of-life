@@ -89,6 +89,7 @@ export function setupCanvasInput(app) {
   })
 
   function endDrag(e) {
+    if (mode === 'paint' || mode === 'erase') app.captureBaseline()
     if (mode === 'pan') canvas.classList.remove('panning')
     if (mode === 'select' && app.selection && app.onSelection) {
       const s = app.selection
@@ -149,6 +150,7 @@ export function setupCanvasInput(app) {
     app.engine.stats.alive = app.engine.countAlive()
     app.visual.reconcile(app.engine)  // 手绘的格子补上年龄，擦除的不留残影
     app.records.noteEdit()            // 轨迹变了，之前攒的哈希作废
+    app.markDirtyRun()                // 手绘过的局不能再靠种子重放
     app.dirty = true
     app.updateHud()
   }

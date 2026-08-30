@@ -17,6 +17,10 @@ import { TerminationDetector } from '../src/data/detector.js'
 import { Chronicle } from '../src/data/chronicle.js'
 import { Ledger } from '../src/data/ledger.js'
 import { toCSV, SNAPSHOT_COLUMNS, LEDGER_COLUMNS } from '../src/data/csv.js'
+import { VisualState } from '../src/render/visual-state.js'
+import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
+import { RingSeries } from '../src/data/series.js'
+import { shouldShowProgress } from '../src/ui/io.js'
 
 /** 把 ASCII 图案（O=活，.=死）画到棋盘上，左上角落在 (ox,oy) */
 export function place(engine, pattern, ox, oy) {
@@ -1402,6 +1406,119 @@ cases.push(
     }
   }
 )
+
+/* ========== 读档重放：画面与统计要跟存档前一致（首位用户第五轮反馈） ========== */
+
+cases.push(
+  {
+    name: '重放：年龄预热窗口与"从头跑满"渲染结果逐格相同',
+    run(t) {
+      // 年龄色阶在 AGE_MAX 代就封顶，所以重放时没必要从第 0 代就推进年龄数组 ——
+      // 只补跑最后一小段，渲染出来的颜色索引必须逐格相同。这条测试就是钉这个等价性。
+      const GENS = 600
+      const WARMUP = AGE_MAX + 16
+      const idxLUT = buildAgeIndexLUT()
+      const ageIdx = a => idxLUT[Math.min(a === 0 ? 0 : a, 511)]
+
+      const full = new LifeEngine(90, 90, { rule: lifeRule(), boundary: 'torus' }).randomize(9001, 0.3)
+      const vFull = new VisualState(full.cur.length)
+      vFull.sync(full)
+      for (let g = 0; g < GENS; g++) { full.step(); vFull.advance(full, 4) }
+
+      const warm = new LifeEngine(90, 90, { rule: lifeRule(), boundary: 'torus' }).randomize(9001, 0.3)
+      const vWarm = new VisualState(warm.cur.length)
+      vWarm.sync(warm)
+      for (let g = 0; g < GENS; g++) {
+        const remaining = GENS - g
+        warm.step()
+        if (remaining === WARMUP) vWarm.sync(warm)
+        if (remaining <= WARMUP) vWarm.advance(warm, 4)
+      }
+
+      t.equal(warm.hash(), full.hash(), '两边棋盘本身必须一致')
+      let colorDiff = 0, decayDiff = 0, aliveOld = 0
+      for (let i = 0; i < full.cur.length; i++) {
+        if (ageIdx(vFull.ages[i]) !== ageIdx(vWarm.ages[i])) colorDiff++
+        if (vFull.decay[i] !== vWarm.decay[i]) decayDiff++
+        if (vFull.ages[i] > AGE_MAX) aliveOld++
+      }
+      t.ok(aliveOld > 50, `场上应确实有不少活过 ${AGE_MAX} 代的细胞，否则这条测试没意义（实测 ${aliveOld} 个）`)
+      t.equal(colorDiff, 0, `渲染用的颜色索引应逐格相同，实测 ${colorDiff} 格不同`)
+      t.equal(decayDiff, 0, `余晖残留应逐格相同，实测 ${decayDiff} 格不同`)
+
+      // 反例：预热窗口太短就会露馅，说明这条等价性确实依赖 WARMUP >= AGE_MAX
+      const short = new LifeEngine(90, 90, { rule: lifeRule(), boundary: 'torus' }).randomize(9001, 0.3)
+      const vShort = new VisualState(short.cur.length)
+      vShort.sync(short)
+      for (let g = 0; g < GENS; g++) {
+        const remaining = GENS - g
+        short.step()
+        if (remaining === 8) vShort.sync(short)
+        if (remaining <= 8) vShort.advance(short, 4)
+      }
+      let shortDiff = 0
+      for (let i = 0; i < full.cur.length; i++) if (ageIdx(vFull.ages[i]) !== ageIdx(vShort.ages[i])) shortDiff++
+      t.ok(shortDiff > 0, '预热只有 8 代时应当能看出差异，否则这条等价性是空的')
+    }
+  },
+  {
+    name: '重放：顺路记账的增量成本',
+    run(t) {
+      // 用户的顾虑："长局重放会不会明显变慢"。这里把两种跑法都量一遍。
+      const GENS = 2000
+      const WARMUP = AGE_MAX + 16
+
+      const bare = new LifeEngine(200, 200, { rule: lifeRule(), boundary: 'torus' }).randomize(4271, 0.35)
+      for (let i = 0; i < 100; i++) bare.step()
+      const t0 = now()
+      for (let i = 0; i < GENS; i++) bare.step()
+      const bareMs = now() - t0
+
+      const full = new LifeEngine(200, 200, { rule: lifeRule(), boundary: 'torus' }).randomize(4271, 0.35)
+      const vis = new VisualState(full.cur.length)
+      const log = new SnapshotLog()
+      const chron = new Chronicle()
+      const series = new RingSeries(500)
+      vis.sync(full); chron.reset(200 * 200)
+      for (let i = 0; i < 100; i++) full.step()
+      const t1 = now()
+      for (let i = 0; i < GENS; i++) {
+        const remaining = GENS - i
+        const st = full.step()
+        series.push(st.alive)
+        log.push(st)
+        chron.observe(st)
+        if (remaining === WARMUP) vis.sync(full)
+        if (remaining <= WARMUP) vis.advance(full, 4)
+      }
+      const fullMs = now() - t1
+
+      const overhead = (fullMs - bareMs) / bareMs * 100
+      t.info(`200×200 重放 ${GENS} 代：裸跑 ${bareMs.toFixed(0)}ms，顺路记账 ${fullMs.toFixed(0)}ms，` +
+        `增量 ${overhead.toFixed(0)}%（${((fullMs - bareMs) / GENS).toFixed(4)}ms/代）`)
+      t.equal(log.length, GENS, '每一代都要有快照')
+      t.ok(overhead < 60, `增量应远小于"每代都推进年龄"的量级，实测 ${overhead.toFixed(0)}%`)
+    }
+  }
+)
+
+cases.push({
+  name: '重放：短局不弹进度条，长局才弹',
+  run(t) {
+    // 判据是"按第一片的实测速度外推总耗时"，不是"代数超过多少"——
+    // 500×500 的两千代和 100×100 的两千代根本不是一回事。
+    // 第一片 400 代花了 30ms（≈0.075ms/代，小棋盘）
+    t.equal(shouldShowProgress(30, 400, 614), false, '614 代预计约 46ms，不该弹')
+    t.equal(shouldShowProgress(30, 400, 2000), false, '2000 代预计约 150ms，不该弹')
+    t.equal(shouldShowProgress(30, 400, 20000), true, '20000 代预计约 1.5s，该弹')
+    // 第一片花了 170ms（≈0.43ms/代，200×200）
+    t.equal(shouldShowProgress(170, 400, 614), false, '同样 614 代在大棋盘上约 261ms，仍不该弹')
+    t.equal(shouldShowProgress(170, 400, 3000), true, '3000 代约 1.3s，该弹')
+    // 边界情况
+    t.equal(shouldShowProgress(999, 0, 5000), false, '还没跑过任何一代时不该下判断')
+    t.equal(shouldShowProgress(9999, 500, 500), false, '已经跑完了就别弹了')
+  }
+})
 
 function now() {
   if (typeof performance !== 'undefined' && performance.now) return performance.now()

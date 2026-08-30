@@ -1147,3 +1147,39 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   from { opacity: 0; transform: translateX(12px); }
   to   { opacity: 1; transform: none; }
 }
+
+/* ---------- 介绍卡：附录入口与进度点（D76） ---------- */
+/* 附录是可选的附加内容，不是"还没看完的第 4、5 幕"。所以它与主键三重区分：
+   不在同一排（正文末尾 vs 页脚）、不在同一形态（链接 vs 实心按钮）、不在同一颜色档。 */
+.appendix-link {
+  display: inline-block;
+  margin: 14px 0 2px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: #9fb4d8;
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: normal;          /* 完整文案，不许截断 */
+  text-align: left;
+}
+.appendix-link:hover { background: none; color: #cfe0ff; }
+
+/* 三实心点（主线）+ 间隔 + 两空心点（附录）—— 形状上就说明"这是另一组" */
+.dot-apx { background: none; border: 1px solid var(--line); }
+.dot-apx.on { background: var(--accent); border-color: var(--accent); }
+.dot-gap { display: inline-block; width: 10px; }
+
+/* ---------- 介绍卡的窄屏排版 ---------- */
+@media (max-width: 767px) {
+  /* 三块规矩演示横排在窄屏必然超宽：.demo-row 是 grid repeat(3,1fr)，
+     而 1fr 的最小尺寸是内容宽 —— 两个按钮并排就把每列撑到 ~164px，
+     三列 493 塞进 303 的可见宽，第三块整个在屏外。
+     改单列竖排：可点戳、走一步、放回去三样都保留，只是从并排改成上下。 */
+  .demo-row { grid-template-columns: 1fr; gap: 12px; }
+  .demo { min-width: 0; }
+  .demo canvas { height: 104px; }
+  .demo p { text-align: left; min-height: 0; }
+  .demo-btns { justify-content: flex-start; }
+}

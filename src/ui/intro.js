@@ -134,7 +134,6 @@ export function createIntro(app) {
   const dotsEl = document.getElementById('intro-dots')
   const backBtn = document.getElementById('intro-back')
   const nextBtn = document.getElementById('intro-next')
-  const moreBtn = document.getElementById('intro-more')
   const skipBtn = document.getElementById('intro-skip')
   const langSeg = document.getElementById('intro-lang')
 
@@ -204,25 +203,32 @@ export function createIntro(app) {
     dotsEl.hidden = onAct0
     stepEl.textContent = ''
     if (!onAct0) {
+      // 主线是三幕，附录是另一组 —— 两者分开数（D76）。
+      // 五个一样的点等于说"你还有两幕没看完"，那正是这次要纠正的误解。
+      const ACTS = 3
       const shown = chooser ? page : page + 1        // 有第零幕时，第一幕才算第 1 幕
-      const shownTotal = chooser ? total - 1 : total
-      stepEl.textContent = t('intro.step', { n: shown, total: shownTotal })
-      dotsEl.innerHTML = Array.from({ length: shownTotal }, (_, i) =>
-        `<span class="dot ${i === shown - 1 ? 'on' : ''}"></span>`).join('')
+      const appendixCount = list.filter(k => k === 'helpAge' || k === 'helpBS').length
+      const inAppendix = shown > ACTS
+      stepEl.textContent = inAppendix
+        ? t('intro.appendix.step', { n: shown - ACTS, total: appendixCount })
+        : t('intro.step', { n: shown, total: ACTS })
+      const dot = (i, cls) => `<span class="dot ${cls} ${i === shown ? 'on' : ''}"></span>`
+      const acts = Array.from({ length: ACTS }, (_, i) => dot(i + 1, 'dot-act')).join('')
+      const apx = Array.from({ length: appendixCount }, (_, i) => dot(ACTS + i + 1, 'dot-apx')).join('')
+      dotsEl.innerHTML = acts + (appendixCount ? `<span class="dot-gap"></span>${apx}` : '')
     }
     backBtn.hidden = page === 0
     backBtn.textContent = t('intro.back')
     skipBtn.textContent = t('intro.skip')
     langSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.lang === getLang()))
 
-    // 第三幕的主按钮是「开始玩」；完整模式下另给一个通往参考页的次按钮
+    // 第三幕的主按钮是「开始玩」。附录入口不在这一排 —— 它是正文里的一行链接（D76）：
+    // 次级入口塞进主键的位置，会同时坏掉语义、视觉和宽度三件事。
     const isAct3 = cur === 'act3'
     const isLast = page === total - 1
     // 第零幕的动作就是那两张卡片本身，不需要"下一幕"
     nextBtn.hidden = onAct0
     nextBtn.textContent = isAct3 ? t('intro.start') : (isLast ? t('intro.close') : t('intro.next'))
-    moreBtn.hidden = onAct0 || !(isAct3 && list.includes('helpAge'))
-    if (!moreBtn.hidden) moreBtn.textContent = t('help.age.title') + ' / ' + t('help.bs.title')
 
     bodyEl.innerHTML = ''
     if (!onAct0) RENDERERS[cur]()
@@ -302,7 +308,10 @@ export function createIntro(app) {
       <h3>${t('intro.act3.title')}</h3>
       <p class="lead">${t('intro.act3.body')}</p>
       <p class="caption">${t('intro.act3.caption')}</p>
-      <p class="gift">${t('intro.act3.gift')}</p>`
+      <p class="gift">${t('intro.act3.gift')}</p>
+      ${pageList().includes('helpAge')
+        ? `<button class="appendix-link" data-appendix>${t('intro.appendix.entry')}</button>`
+        : ''}`
   }
 
   /* ---------------- 完整模式的两页参考 ---------------- */
@@ -367,7 +376,10 @@ export function createIntro(app) {
     render()
   })
   backBtn.addEventListener('click', () => { if (page > 0) { page--; render() } })
-  moreBtn.addEventListener('click', () => { page = pageList().indexOf('helpAge'); render() })
+  // 附录入口在正文里，用事件委托接（正文是 innerHTML 重建的，不能直接绑）
+  bodyEl.addEventListener('click', e => {
+    if (e.target.closest('[data-appendix]')) { page = pageList().indexOf('helpAge'); render() }
+  })
   skipBtn.addEventListener('click', close)
   document.getElementById('intro-backdrop').addEventListener('click', close)
   window.addEventListener('keydown', e => {

@@ -302,6 +302,8 @@ export const DICT = {
     'intro.act3.body': '按下播放，就没人能插手了 —— 它们只会照那三条规矩一步步走下去。',
     'intro.act3.caption': '这就是好玩的地方：你只决定第一步。',
     'intro.act3.gift': '这就给你放一个「会走路的小家伙」，按开始看看它往哪爬。',
+    'intro.appendix.entry': '想了解更多：颜色与规则 →',
+    'intro.appendix.step': '附录 · 第 {n} / {total} 页',
 
     /* ==== 完整模式的额外两页 ==== */
     'help.age.title': '颜色是什么意思',
@@ -868,6 +870,8 @@ export const DICT = {
     'intro.act3.body': 'Once you press play nobody can interfere — they just follow those three rules, step after step.',
     'intro.act3.caption': 'That is the fun of it: you only decide the first move.',
     'intro.act3.gift': 'Here is a little guy that walks, ready to go. Press start and see where he crawls.',
+    'intro.appendix.entry': 'More if you are curious: colours and rules →',
+    'intro.appendix.step': 'Appendix · page {n} of {total}',
 
     /* ==== Two extra pages in Full mode ==== */
     'help.age.title': 'What the colours mean',

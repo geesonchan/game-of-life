@@ -1841,6 +1841,58 @@ cases.push(
     }
   },
   {
+    name: '介绍卡：三幕主线 + 两页附录的信息架构（D76）',
+    run(t) {
+      // 标记类的东西写在模板字符串里，stripLiterals 会把它们剥掉 —— 这类断言要查原文。
+      // 只有"是不是真代码"的判断（如条件、常量）才用剥过的版本。
+      const raw = readSrc('src/ui/intro.js')
+      const src = stripLiterals(raw)
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+
+      // ---- 附录入口在正文，不在页脚 ----
+      // 把次级入口塞进主键那一排，会同时坏掉语义、视觉和宽度三件事：
+      // 实测原来那个按钮盒宽 51px 而内容溢出 195px，文字压在「开始玩」底下穿出屏幕。
+      t.ok(html.indexOf('id="intro-more"') < 0,
+        '页脚的 #intro-more 必须删除而不是隐藏 —— 留着一个永不显示的元素，下一个人会以为它还有用')
+      t.ok(/data-appendix/.test(raw), '附录入口应渲染在正文里，用 data-appendix 标记')
+      t.ok(/appendix-link/.test(raw) && /\.appendix-link \{/.test(css), '附录入口应有独立的次级样式')
+      t.ok(/\.appendix-link \{[^}]*white-space:\s*normal/.test(css),
+        '附录入口文案必须完整不截断 —— 截断正是它「不像可点」的成因之一')
+      t.ok(!/\.appendix-link \{[^}]*background:\s*var\(--accent/.test(css),
+        '附录入口不许用主键的绿 —— 与主键要在颜色档上分开')
+
+      // ---- 只有完整模式才有附录入口 ----
+      t.ok(/pageList\(\)\.includes\('helpAge'\)/.test(raw),
+        '附录入口必须按页序里有没有附录来决定，而不是按模式名硬判')
+      // 简洁模式的页序里本来就没有附录
+      const simple = introPages({ chooser: false, mode: 'simple' })
+      t.equal(simple.join(','), 'act1,act2,act3', '简洁版只有三幕，不受本次改动影响')
+      const full = introPages({ chooser: false, mode: 'full' })
+      t.equal(full.join(','), 'act1,act2,act3,helpAge,helpBS', '完整版三幕 + 两页附录')
+
+      // ---- 进度：主线与附录分开数 ----
+      t.ok(/const ACTS = 3/.test(src), '主线固定三幕')
+      t.ok(/intro\.appendix\.step/.test(raw), '附录页应有自己的步骤文案，不能读作「第 4 幕」')
+      t.ok(/dot-apx/.test(raw) && /\.dot-apx \{/.test(css),
+        '附录点必须与主线点形状不同 —— 五个一样的点等于说「你还有两幕没看完」')
+      t.ok(/\.dot-apx \{[^}]*background:\s*none/.test(css), '附录点是空心的')
+      for (const lang of ['zh', 'en']) {
+        t.ok(typeof DICT[lang]['intro.appendix.entry'] === 'string', `${lang} 缺附录入口文案`)
+        t.ok(typeof DICT[lang]['intro.appendix.step'] === 'string', `${lang} 缺附录步骤文案`)
+      }
+
+      // ---- 窄屏：三块规矩演示改单列 ----
+      // .demo-row 是 grid repeat(3,1fr)，而 1fr 的最小尺寸是内容宽 ——
+      // 两个按钮并排就把每列撑到 ~164px，三列 493 塞进 303 的可见宽。
+      t.ok(/@media \(max-width: 767px\)[\s\S]*?\.demo-row \{[^}]*grid-template-columns:\s*1fr/.test(css),
+        '窄屏下三块演示必须改单列竖排')
+      // 三块演示的可点戳与两个按钮都要保留
+      t.ok(/data-demo-step/.test(raw) && /data-demo-reset/.test(raw),
+        '竖排后「走一步」「放回去」两个按钮必须都还在')
+    }
+  },
+  {
     name: '介绍卡：页序不许再用写死的下标判断',
     run(t) {
       // D62 定过"用身份不用下标"，然后我自己在 nextBtn 回调里写了 page === 2。

@@ -512,11 +512,12 @@ cases.push(
     }
   },
   {
-    name: '图案库：5 个内置图案的尺寸与活细胞数正确',
+    name: '图案库：6 个内置图案的尺寸与活细胞数正确',
     run(t) {
-      t.equal(PATTERNS.length, 5, '应有 5 个内置图案')
+      t.equal(PATTERNS.length, 6, '应有 6 个内置图案')
       const expect = {
-        glider: [3, 3, 5], gun: [36, 9, 36], pulsar: [13, 13, 48], lwss: [5, 4, 9], rpentomino: [3, 3, 5]
+        glider: [3, 3, 5], gun: [36, 9, 36], pulsar: [13, 13, 48], lwss: [5, 4, 9], rpentomino: [3, 3, 5],
+        matt: [3, 4, 5]   // 用户注册图案，包围盒 3×4：末行那个孤立格把高度撑到 4
       }
       for (const key of Object.keys(expect)) {
         const p = getPattern(key)
@@ -525,6 +526,71 @@ cases.push(
         t.equal(p.h, h, `${key} 高度`)
         t.equal(p.cells.length, n, `${key} 活细胞数`)
       }
+    }
+  },
+  {
+    name: '图案库：Matt 排在 R-五连体之后，是第一个用户注册图案',
+    run(t) {
+      const keys = PATTERNS.map(p => p.key)
+      t.equal(keys.join(','), 'glider,gun,pulsar,lwss,rpentomino,matt',
+        `内置 5 个在前、用户注册图案在后，实测顺序 ${keys.join(',')}`)
+
+      // 名称不翻译：中英两语、两个语域都得是「Matt」本身
+      t.equal(DICT.zh['pattern.matt'], 'Matt', '中文名不翻译')
+      t.equal(DICT.en['pattern.matt'], 'Matt', '英文名一致')
+      t.equal(DICT.zh['pattern.matt.simple'], 'Matt', '简洁语域中文名也是 Matt')
+      t.equal(DICT.en['pattern.matt.simple'], 'Matt', '简洁语域英文名也是 Matt')
+    }
+  },
+  {
+    name: '图案库：Matt 的实测生平（注册标准要求附生平，这里钉死）',
+    run(t) {
+      // 注册标准见 D64：用户原创图案要附 RLE + 实测生平，且生平必须可复现。
+      // 盘子取 400×400 死边界、图案居中 —— 够大，核心定型之前滑翔机碰不到边。
+      const N = 400, C = N >> 1
+      const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+      const p = getPattern('matt')
+      for (const [x, y] of p.cells) e.set(C + x, C + y, 1)
+      e.stats.alive = e.countAlive()
+      t.equal(e.stats.alive, 5, '起步 5 格')
+
+      // 只看中心窗口：飞出去的滑翔机永远不停，全盘是不会"定型"的
+      const R = 70
+      const winHash = () => {
+        let h = 2166136261
+        for (let y = C - R; y <= C + R; y++) {
+          for (let x = C - R; x <= C + R; x++) { h ^= e.get(x, y) ? 1 : 0; h = Math.imul(h, 16777619) }
+        }
+        return h >>> 0
+      }
+      const hs = [winHash()]
+      let settled = 0, peak = 5, peakGen = 0
+      for (let i = 0; i < 1400; i++) {
+        const st = e.step()
+        hs.push(winHash())
+        if (st.alive > peak) { peak = st.alive; peakGen = st.gen }
+        const g = hs.length - 1
+        if (g >= 2 && hs[g] !== hs[g - 2]) settled = g   // 最后一次"与两代前不同"
+      }
+      t.info(`Matt：峰值 ${peak} @ 第 ${peakGen} 代，核心第 ${settled} 代进入周期 2`)
+      t.equal(peakGen, 823, '人口峰值出现的代数')
+      t.equal(peak, 319, '人口峰值')
+      t.equal(settled, 1106, '核心定型代数')
+
+      // 那个孤立格不是装饰：去掉它，第 4 代就安静了
+      const e2 = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of p.cells.filter(c => c[1] < 3)) e2.set(C + x, C + y, 1)
+      e2.stats.alive = e2.countAlive()
+      t.equal(e2.stats.alive, 4, '去掉孤立格后剩 4 个格子')
+      let last = 0
+      const seen = []
+      for (let i = 0; i < 50; i++) {
+        e2.step()
+        seen.push(e2.hash())
+        if (seen.length >= 3 && seen[seen.length - 1] !== seen[seen.length - 3]) last = i + 1
+      }
+      t.equal(last, 4, `少了那一格，第 4 代就安定，实测第 ${last} 代`)
+      t.equal(e2.stats.alive, 6, '安定成 6 格静物')
     }
   },
   {

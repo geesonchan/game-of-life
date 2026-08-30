@@ -110,6 +110,8 @@ export const DICT = {
     'pattern.lwss.desc': '横着飞，每 4 代前进两格',
     'pattern.rpentomino': 'R-五连体',
     'pattern.rpentomino.desc': '5 格起步，乱窜 1103 代才安定',
+    'pattern.matt': 'Matt',
+    'pattern.matt.desc': '5 格起步，第 823 代冲到 319 格；核心第 1106 代定型为周期 2，另有 6 架滑翔机一去不回',
 
     /* ---- 世界卡片（简洁模式下的规则预设） ---- */
     'world.section': '世界',
@@ -249,6 +251,8 @@ export const DICT = {
     'pattern.lwss.desc.simple': '一直往一边飞，比会走路的那个快。',
     'pattern.rpentomino.simple': '五个格子的大麻烦',
     'pattern.rpentomino.desc.simple': '只有五格，却能闹腾好久才安静下来。',
+    'pattern.matt.simple': 'Matt',
+    'pattern.matt.desc.simple': 'Matt 亲手发明的小家伙，看它能闹腾多久。',
 
     'tips.section.simple': '怎么玩',
     'tips.draw.simple': '<b>按住左键</b>画 —— 拖过的格子会亮起来',
@@ -662,6 +666,8 @@ export const DICT = {
     'pattern.lwss.desc': 'Flies sideways, two cells every 4 generations',
     'pattern.rpentomino': 'R-pentomino',
     'pattern.rpentomino.desc': 'Just 5 cells, but thrashes for 1103 generations before settling',
+    'pattern.matt': 'Matt',
+    'pattern.matt.desc': 'Starts at 5 cells, peaks at 319 on generation 823; the core settles into period 2 by 1106, plus 6 gliders that never come back',
 
     'world.section': 'Worlds',
     'world.hint': 'Try another world — the very same thing grows into something completely different.',
@@ -795,6 +801,8 @@ export const DICT = {
     'pattern.lwss.desc.simple': 'It flies sideways, faster than the little guy who walks.',
     'pattern.rpentomino.simple': 'Five squares of trouble',
     'pattern.rpentomino.desc.simple': 'Only five squares, but it makes a mess for ages before it settles.',
+    'pattern.matt.simple': 'Matt',
+    'pattern.matt.desc.simple': 'Matt made this little guy himself — see how long it can keep going.',
 
     'tips.section.simple': 'How to play',
     'tips.draw.simple': '<b>Hold the left button</b> to draw — squares light up as you drag',

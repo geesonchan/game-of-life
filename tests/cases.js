@@ -1563,6 +1563,19 @@ cases.push(
         t.ok(typeof DICT[lang]['ctrl.fitShort.simple'] === 'string', `${lang} 缺 ctrl.fitShort.simple`)
       }
       t.equal(DICT.zh['ctrl.fitShort'], '适配', '中文配角短文案两字')
+
+      // 页签短词条：与「世界」/Worlds 对齐节奏；「图案盒子」保留
+      t.equal(DICT.zh['pattern.tab'], '图案', '中文页签两字')
+      t.equal(DICT.en['pattern.tab'], 'Patterns', '英文页签与 Worlds 对齐')
+      t.equal(DICT.zh['pattern.tab.simple'], '玩具', '简洁语域页签两字')
+      t.equal(DICT.en['pattern.tab.simple'], 'Toys', '简洁语域英文页签')
+      t.ok(typeof DICT.zh['pattern.section'] === 'string' && typeof DICT.en['pattern.section'] === 'string',
+        '「图案盒子」词条保留（按用户要求留作提示用），不许顺手删掉')
+      t.ok(readSrc('index.html').indexOf('data-i18n="pattern.tab"') >= 0, '页签必须改用短词条')
+
+      // 语义修正不分语言：中文简洁语域是「返回」，英文不能还停在 Find it
+      t.equal(DICT.zh['ctrl.fitShort.simple'], '返回', '中文简洁语域')
+      t.equal(DICT.en['ctrl.fitShort.simple'], 'Go back', '英文简洁语域须与中文同义')
     }
   },
   {
@@ -1624,6 +1637,13 @@ cases.push(
       t.ok(/@keyframes pickerIn/.test(css), '切换页签应有轻微滑入')
       t.ok(/prefers-reduced-motion: reduce\)\s*\{[\s\S]{0,200}?animation:\s*none/.test(css),
         'reduced-motion 下必须关掉动画')
+
+      // ---- 取用区的开关在任何模式下都必须可见（窄屏）----
+      // 简洁模式默认藏掉 data-mode="full"，而这两个页签是取用区唯一的开关。
+      // D75 把两者改成互斥之后，藏掉「图案」就等于：儿童版用户点了「世界」再也回不去玩具盒。
+      // 互斥之前玩具盒是常驻的，藏掉开关无所谓 —— 这个陷阱是互斥带来的连带后果。
+      t.ok(/body\.mode-simple \.tb-tabs \[data-mode="full"\] \{ display: block !important; \}/.test(css),
+        '窄屏简洁模式必须把「图案」页签顶回来，否则取用区是单向的')
 
       // ---- 互斥且恒有其一（窄屏） ----
       const ctl = readSrc('src/ui/controls.js')

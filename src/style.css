@@ -946,6 +946,11 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
     align-items: center; gap: 6px; margin: 0;
   }
   .tb-tabs .tab { min-height: 40px; padding: 0 12px; font-size: 13px; }
+  /* 简洁模式默认藏掉 data-mode="full" 的控件，但窄屏下这两个页签是**取用区唯一的开关**：
+     藏掉「图案」之后，儿童版用户一旦点了「世界」就再也回不到玩具盒 —— 单向陷阱。
+     这是 D75 把两个取用区改成互斥之后才出现的：在那之前玩具盒是常驻的，藏掉开关无所谓。
+     用更高的特异度把它顶回来（同为 !important 时特异度高的胜）。 */
+  body.mode-simple .tb-tabs [data-mode="full"] { display: block !important; }
   .tb-more {
     display: block; grid-row: 1; grid-column: 3;
     margin: 5px 10px 5px 0; padding: 0 16px; height: 40px;

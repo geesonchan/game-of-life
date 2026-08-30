@@ -1667,8 +1667,8 @@ cases.push(
 
       // 但一刀切会把玩具卡片变成横向溢出 —— 从"难看"换成"看不全"，更糟。
       // 卡片本来就是多行块（72–84px 宽，要放「A little guy that walks」这种名字）。
-      t.ok(/\.card,\s*\.pick-card\s*\{[^}]*white-space:\s*normal/.test(css),
-        '.card / .pick-card 必须保留折行 —— 它们是多行卡片，不是单行动作按钮')
+      t.ok(/\.card,\s*\.pick-card,\s*\.preset\s*\{[^}]*white-space:\s*normal/.test(css),
+        '.card / .pick-card / .preset 必须保留折行 —— 它们是多行卡片，不是单行动作按钮')
     }
   },
   {
@@ -1838,6 +1838,47 @@ cases.push(
       const withZero = introPages({ chooser: true, mode: 'simple' })
       t.equal(introNext(withZero, 2), 3, '带第零幕时，第 2 页（第二幕）应该翻到下一页而不是收尾')
       t.equal(introNext(withZero, 3), 'finish', '第 3 页才是第三幕')
+    }
+  },
+  {
+    name: '浮层层级表与规则编辑器窄屏（D79）',
+    run(t) {
+      const css = readSrc('src/style.css')
+
+      // ---- 层级表：数字大的永远压小的 ----
+      // 原来是倒置的：.modal 50 < .panel 55 < .tb-more-group 60，抽屉能盖住规则编辑器。
+      const z = (re, what) => {
+        const m = re.exec(css)
+        t.ok(!!m, `找不到 ${what} 的 z-index`)
+        return m ? Number(m[1]) : NaN
+      }
+      const modal = z(/\.modal \{[^}]*z-index:\s*(\d+)/, '模态')
+      const tower = z(/\.tower-view \{[^}]*z-index:\s*(\d+)/, '全屏视图')
+      const more = z(/\.tb-more-group \{[^}]*z-index:\s*(\d+)/, '「更多」')
+      const panel = z(/\.panel \{[^}]*z-index:\s*(\d+)/, '抽屉')
+      t.equal(modal, 80, '模态层 80')
+      t.equal(tower, 60, '全屏视图层 60')
+      t.equal(more, 41, '「更多」41')
+      t.equal(panel, 40, '抽屉 40')
+      t.ok(modal > tower, '模态必须压住全屏视图 —— 从观塔里弹出的确认框否则点不到')
+      t.ok(tower > more && more > panel, '全屏视图 > 常驻浮层；「更多」固定在抽屉之上，不靠 DOM 顺序碰运气')
+
+      // ---- 规则编辑器窄屏：单栏铺满 ----
+      // 两栏 300px + 1fr 塞不进 375（实测自身溢出 39、内部 21 处、最大 213）
+      t.ok(/#rule-modal \.modal-body \{[^}]*grid-template-columns:\s*1fr/.test(css),
+        '窄屏下规则编辑器必须单栏')
+      t.ok(/#rule-modal \.modal-box \{[^}]*height:\s*100dvh/.test(css), '窄屏下铺满整屏')
+      t.ok(/#rule-modal \.modal-foot \{[^}]*flex-wrap:\s*wrap/.test(css),
+        '页脚四个按钮在 375 上排不下，必须可换行')
+      t.ok(/#rule-modal \.modal-foot button \{[^}]*min-width:\s*0/.test(css),
+        '桌面的 min-width: 88px 会让页脚在窄屏溢出，必须覆盖')
+      // 打开时收起常驻浮层 —— 模态本来就压在它们之上，但退出后不该撞见半开的抽屉
+      t.ok(/classList\.remove\('drawer-open', 'more-open'\)/.test(readSrc('src/ui/rule-editor.js')),
+        '打开规则编辑器时应收起抽屉与「更多」')
+
+      // ---- 浮层触控目标 44px ----
+      t.ok(/\.tb-more-group \.seg button,[\s\S]{0,120}?min-height:\s*44px/.test(css),
+        '「更多」里的分段开关被别处压到 40px，需用更高特异度顶回 44')
     }
   },
   {

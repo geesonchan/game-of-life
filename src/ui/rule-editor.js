@@ -42,6 +42,8 @@ export function createRuleEditor(app) {
   /* ---------------- 打开 / 关闭 ---------------- */
 
   function open() {
+    // 模态压在所有常驻浮层之上（D79），但退出后不该撞见一个半开的抽屉
+    document.body.classList.remove('drawer-open', 'more-open')
     const r = app.engine.rule
     draft = { agingLayers: r.agingLayers, clauses: deepClone(r.clauses) }
     el.io.hidden = true

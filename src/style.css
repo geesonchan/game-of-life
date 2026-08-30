@@ -216,7 +216,9 @@ input[type="text"]:focus, select:focus { outline: 1px solid var(--accent-dim); }
 
 /* ---------- 阶段 3：规则编辑器模态窗 ---------- */
 
-.modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
+/* 层级见 docs/decisions.md D79：模态 80 > 全屏视图 60 > 常驻浮层 40/41 > 贴附 5。
+   原值 50 低于抽屉的 55 与「更多」的 60，于是抽屉能盖住规则编辑器 —— 层级倒置。 */
+.modal { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; }
 .modal[hidden] { display: none; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(6, 8, 12, 0.72); backdrop-filter: blur(2px); }
 
@@ -813,7 +815,7 @@ button.rescue:hover { background: #26497a; border-color: #3a72ad; color: #f0f7ff
 
 /* ---------- 阶段 5.5：时间之塔 ---------- */
 .tower-view {
-  position: fixed; inset: 0; z-index: 40;
+  position: fixed; inset: 0; z-index: 60;   /* 全屏视图层（D79） */
   display: flex; flex-direction: column;
   background: #0b0d12;
 }
@@ -1064,7 +1066,7 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
      不用写死 top 去堆三个 fixed 元素 —— 那种做法在真机字体度量或英文标签下必然错位。 */
   .tb-more-group {
     display: none;
-    position: fixed; top: 54px; left: 8px; right: 8px; z-index: 60;
+    position: fixed; top: 54px; left: 8px; right: 8px; z-index: 41;   /* 常驻浮层（D79） */
     flex-direction: column; gap: 2px;
     max-height: calc(100dvh - 120px); overflow-y: auto;
     background: var(--panel); border: 1px solid var(--line);
@@ -1099,7 +1101,7 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
   /* ---- 抽屉：底部推拉板，收起时只露把手 ---- */
   .panel {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;   /* 常驻浮层（D79） */
     width: auto; max-height: 76dvh;
     border-left: none; border-top: 1px solid var(--line);
     border-radius: 14px 14px 0 0;
@@ -1147,7 +1149,7 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
    但玩具卡片和第零幕的版本卡片本身就是多行块：卡片只有 72–84px 宽，
    而「A little guy that walks」这类名字必须折行才放得下。
    一刀切的 nowrap 会把它们变成横向溢出 —— 从"难看"换成"看不全"，更糟。 */
-.card, .pick-card { white-space: normal; }
+.card, .pick-card, .preset { white-space: normal; }
 
 /* 取用区的滑入动画（D75 ②）。高屏两排的分支已取消 ——
    一排横滑 / 两排换行是两套姿势，只是分设备而非同屏并存，同样违反「同类同形」。
@@ -1203,4 +1205,31 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
   /* 浮层里的按钮统一 44px —— 排查发现「更多」有 4 个、总结卡片有 3 个不达标 */
   .tb-more-group button, #summary-modal button, #rule-modal button { min-height: 44px; }
+}
+
+/* ---------- 规则编辑器的窄屏形态（D79 第三节） ---------- */
+@media (max-width: 767px) {
+  /* 两栏 300px + 1fr 塞不进 375（实测自身溢出 39、内部 21 处、最大 213）。
+     改单栏铺满整屏：竖分隔线改横分隔线，每栏自己滚。 */
+  #rule-modal .modal-box {
+    width: 100%; max-width: none; height: 100dvh; max-height: none;
+    border-radius: 0; border: none;
+  }
+  #rule-modal .modal-body { grid-template-columns: 1fr; grid-auto-rows: min-content; overflow-y: auto; }
+  #rule-modal .re-col { overflow-y: visible; padding: 12px; }
+  #rule-modal .re-left { border-right: none; border-bottom: 1px solid var(--line); }
+  #rule-modal .modal-head { padding: 8px 10px; flex-wrap: wrap; gap: 6px; }
+  #rule-modal .modal-head h2 { font-size: 15px; }
+  /* 页脚四个按钮（导出/导入/取消/应用）在 375 上排不下，实测溢出 17px、
+     「应用规则」被切掉。允许换行，并把 min-width 从 88 收到 0 让它们自适应。 */
+  #rule-modal .modal-foot { flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+  #rule-modal .modal-foot .row { flex-wrap: wrap; gap: 8px; }
+  #rule-modal .modal-foot button { min-width: 0; flex: 1 1 auto; min-height: 44px; }
+
+  /* 44px 触控区清零（排查发现「更多」4 个、总结卡片 3 个不达标）。
+     .seg button 在别处被压到 40px，这里用更高的特异度顶回来。 */
+  .tb-more-group .seg button,
+  #summary-modal .intro-foot button,
+  #rule-modal .modal-head button { min-height: 44px; }
+  .tb-more-group .seg { align-items: stretch; }
 }

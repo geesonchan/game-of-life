@@ -95,7 +95,7 @@ app.stepOnce = function () {
   app.updateHud()
 }
 
-app.clear = function () {
+app.clear = function (opts = {}) {
   app.setRunning(false)
   app.engine.clear()
   app.visual.sync(app.engine)
@@ -105,7 +105,8 @@ app.clear = function () {
   app.records.startRun()
   app.dirty = true
   app.updateHud()
-  app.toast(t('toast.cleared'))
+  // 介绍卡收尾时要静默清盘 —— 用户刚点的是「开始玩」，弹一句「已清空」是答非所问
+  if (!opts.silent) app.toast(t('toast.cleared'))
 }
 
 app.randomize = function () {

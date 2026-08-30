@@ -21,7 +21,7 @@ import { VisualState } from '../src/render/visual-state.js'
 import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
-import { introPages, introNext } from '../src/ui/intro.js'
+import { introPages, introNext, placeStarterGift } from '../src/ui/intro.js'
 import { pinchDelta, strokeVerdict, PROMOTE_MS } from '../src/ui/input.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
@@ -1430,6 +1430,75 @@ cases.push(
       t.equal(strokeVerdict(PROMOTE_MS - 1), 'rollback', '窗口内一律撤销')
       t.equal(strokeVerdict(PROMOTE_MS), 'commit', '到点即保留，边界取闭区间的右侧')
       t.equal(strokeVerdict(1200), 'commit', '画了一秒多再捏，画的必须留下')
+    }
+  },
+  {
+    name: '介绍卡：走完三幕后棋盘上恰好是一架滑翔机（5 格）',
+    run(t) {
+      // 用户裁决：第三幕收束到干净起点 —— 清盘再送滑翔机。
+      // 这条断言就是"承诺必须兑现"的那把尺子（D70）。
+      const e = new LifeEngine(200, 200, { rule: lifeRule(), boundary: 'torus' })
+      e.randomize(4271, 0.35)                 // 先摆成首访那样的满盘
+      t.ok(e.stats.alive > 10000, `前置：满盘应有上万格，实测 ${e.stats.alive}`)
+
+      const n = placeStarterGift(e)
+      t.equal(n, 5, `走完三幕后存活数必须恰为 5，实测 ${n}`)
+      t.equal(e.stats.alive, 5, 'engine.stats.alive 也要同步成 5')
+
+      // 不只是"5 格"，还得真的是滑翔机：与图案库里的滑翔机逐格比对
+      const g = getPattern('glider')
+      const o = centerOrigin(g, 100, 100)
+      for (const [x, y] of g.cells) {
+        t.equal(e.get(o.x + x, o.y + y), 1, `滑翔机的 (${x},${y}) 应当是活的`)
+      }
+
+      // 空盘上再送一次，结果一样 —— 契约与盘上原有内容无关
+      const e2 = new LifeEngine(60, 60, { rule: lifeRule(), boundary: 'dead' })
+      t.equal(placeStarterGift(e2), 5, '空盘上送出的也必须恰好是 5 格')
+
+      // 它自己会清盘，不依赖调用方先清
+      const e3 = new LifeEngine(60, 60, { rule: lifeRule(), boundary: 'dead' })
+      e3.randomize(99, 0.5)
+      t.equal(placeStarterGift(e3), 5, '满盘直接送，也必须只剩 5 格 —— 说明它自带清盘')
+    }
+  },
+  {
+    name: '文案对账：承诺型文案与兑现它的动作必须同为无条件（D70 盲区的可查部分）',
+    run(t) {
+      // 这颗雷的成因：文案无条件写着"这就给你放一个…"，动作却带着 if。
+      // 承诺与兑现分处两个函数，从没对过账。
+      // 「文案是否承诺了某个行为」一般来说静态查不出来，所以这里维护一张**显式清单**：
+      // 每一对"承诺型词条 ↔ 兑现它的调用"都登记在案，两边的条件必须对齐。
+      // 新增这类文案时要往清单里加 —— 清单本身就是这条守卫的边界，见 D70。
+      const PROMISES = [
+        {
+          key: 'intro.act3.gift',       // 「这就给你放一个『会走路的小家伙』」
+          renderer: 'act3',             // 渲染这句话的函数
+          fulfiller: 'finish',          // 兑现它的函数
+          call: 'placeStarterGift'      // 兑现动作
+        }
+      ]
+      const src = stripLiterals(readSrc('src/ui/intro.js'))
+      const bodyOf = name => {
+        const i = src.indexOf('function ' + name)
+        t.ok(i >= 0, `intro.js 里应有 ${name}()`)
+        const next = src.indexOf('\n  function ', i + 1)
+        return src.slice(i, next < 0 ? src.length : next)
+      }
+      const raw = readSrc('src/ui/intro.js')
+
+      for (const p of PROMISES) {
+        t.ok(raw.indexOf(p.key) >= 0, `${p.renderer} 应当渲染 ${p.key}`)
+
+        const fulfil = bodyOf(p.fulfiller)
+        t.ok(fulfil.indexOf(p.call) >= 0, `${p.fulfiller}() 必须调用 ${p.call}`)
+
+        // 核心判据：兑现动作前面不许有 if —— 文案是无条件说的，动作就得无条件做
+        const before = fulfil.slice(0, fulfil.indexOf(p.call))
+        t.ok(!/\bif\s*\(/.test(before),
+          `${p.call} 前面出现了 if：文案 ${p.key} 是无条件承诺的，兑现却带条件 —— ` +
+          '这正是首访时那句话从未兑现的成因')
+      }
     }
   },
   {

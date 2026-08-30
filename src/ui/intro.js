@@ -104,6 +104,26 @@ export function introNext(list, page) {
   return page + 1
 }
 
+/**
+ * 第三幕的见面礼：清盘 + 正中放一架滑翔机。纯逻辑，只吃一个 engine，可直接测。
+ *
+ * 抽出来是为了让"承诺"能被验证。第三幕的文案无条件写着"这就给你放一个会走路的小家伙"，
+ * 而这个动作从前藏在 finish() 里、还带着"棋盘为空才放"的条件 ——
+ * 首访棋盘是满的，于是那句话从写下那天起就没兑现过（D70）。
+ * 现在动作无条件、文案无条件，两边对齐；这个函数则让"恰好 5 格且是滑翔机"成为断言。
+ *
+ * 自带 clear() 而不是依赖调用方先清 —— 契约要自足，否则测试测的就不是同一件事。
+ * @returns {number} 放完之后的活细胞数（必然是 5）
+ */
+export function placeStarterGift(engine) {
+  engine.clear()
+  const g = getPattern('glider')
+  const o = centerOrigin(g, Math.floor(engine.w / 2), Math.floor(engine.h / 2))
+  placePattern(engine, g, o.x, o.y)
+  engine.stats.alive = engine.countAlive()
+  return engine.stats.alive
+}
+
 export function createIntro(app) {
   const modal = document.getElementById('intro-modal')
   const bodyEl = document.getElementById('intro-body')
@@ -355,17 +375,21 @@ export function createIntro(app) {
   })
 
   /** 开始玩：关掉卡片，并送一个滑翔机（棋盘是空的时候才送，免得盖掉已有作品） */
+  /**
+   * 「开始玩」：导演场到此为止 —— 前两幕已经把"这是个会自己动的世界"讲完了，
+   * 第三幕的任务是把场子交给用户，所以收束到一个干净起点 + 一架滑翔机。
+   * 无条件执行，因为第三幕的文案就是无条件承诺的（D70）。
+   */
   function finish() {
     close()
-    if (app.engine.countAlive() === 0) {
-      const g = getPattern('glider')
-      const o = centerOrigin(g, Math.floor(app.engine.w / 2), Math.floor(app.engine.h / 2))
-      placePattern(app.engine, g, o.x, o.y)
-      app.engine.stats.alive = app.engine.countAlive()
-      app.visual.reconcile(app.engine)
-      app.dirty = true
-      app.updateHud()
-    }
+    app.clear({ silent: true })   // 走既有的清空路径，记账与用户自己点清空完全一致
+    placeStarterGift(app.engine)
+    app.visual.reconcile(app.engine)
+    app.records.noteEdit()        // 棋盘换了，之前攒的哈希作废
+    app.markDirtyRun()            // 这局不是种子生成的，不能靠种子重放
+    app.captureBaseline()
+    app.dirty = true
+    app.updateHud()
   }
 
   return { open, close, relocalize() { if (!modal.hidden) render() } }

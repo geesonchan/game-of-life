@@ -90,6 +90,7 @@ export const DICT = {
     'tips.pan': '<b>中键</b> 或 <b>空格+左键</b> 拖动 = 平移',
     'tips.zoom': '<b>滚轮</b> = 以光标为中心缩放',
     'tips.keys': '<b>P</b> 播放/暂停 · <b>N</b> 单步 · <b>F</b> 适配视图',
+    'tips.select': '<b>Shift+左键</b>拖 = 框住一块区域，松手后可导出 RLE',
     'tips.stamp': '选中图案后 <b>左键</b> = 放置，<b>右键</b>或 <b>Esc</b> = 取消',
 
     /* ---- 图案盒子 ---- */
@@ -439,12 +440,19 @@ export const DICT = {
     'io.rleNamed': '图案',
 
     'io.rleExport': '框选导出 RLE',
-    'io.rleExportOn': '在画布上拖一个矩形，松手就生成 RLE',
-    'io.rleExportOff': '已退出框选',
     'io.rleExported': '已导出 {w}×{h} · {n} 个细胞',
     'io.copy': '复制',
     'io.copied': '已复制到剪贴板',
     'io.copyFail': '复制失败，请手动选中文本框里的内容',
+
+
+    /* ==== 框选：先框后选 ==== */
+    'sel.export': '导出 RLE',
+    'sel.cancel': '取消',
+    'sel.size': '{w}×{h} · {n} 个细胞',
+    'sel.armed': '下一次拖动会框选一块区域',
+    'io.rleImportHint': '粘贴 RLE → 点「导入」→ 再选放到哪里。',
+    'io.rleExportHint': '在棋盘上按住 Shift 拖一个矩形即可框选；松手后选区旁会浮出菜单。',
 
     'toast.ruleApplied': '规则已应用 · {notation} · 指纹 {fp}'
   },
@@ -528,6 +536,7 @@ export const DICT = {
     'tips.pan': '<b>Middle</b> or <b>Space+Left</b> drag = pan',
     'tips.zoom': '<b>Wheel</b> = zoom at cursor',
     'tips.keys': '<b>P</b> play/pause · <b>N</b> step · <b>F</b> fit view',
+    'tips.select': '<b>Shift+Left</b> drag = box off an area; a menu appears when you let go',
     'tips.stamp': 'With a pattern picked, <b>Left</b> = place, <b>Right</b> or <b>Esc</b> = cancel',
 
     'pattern.section': 'Pattern box',
@@ -868,12 +877,19 @@ export const DICT = {
     'io.rleNamed': 'pattern',
 
     'io.rleExport': 'Select area → RLE',
-    'io.rleExportOn': 'Drag a rectangle on the board; release to generate the RLE',
-    'io.rleExportOff': 'Selection mode off',
     'io.rleExported': 'Exported {w}×{h} · {n} cells',
     'io.copy': 'Copy',
     'io.copied': 'Copied to the clipboard',
     'io.copyFail': 'Copy failed — select the text in the box manually',
+
+
+    /* ==== Selection: draw the box first, then choose ==== */
+    'sel.export': 'Export RLE',
+    'sel.cancel': 'Cancel',
+    'sel.size': '{w}×{h} · {n} cells',
+    'sel.armed': 'Your next drag will select an area',
+    'io.rleImportHint': 'Paste RLE → press Import → then choose where to drop it.',
+    'io.rleExportHint': 'Hold Shift and drag a rectangle on the board; a menu pops up beside it when you let go.',
 
     'toast.ruleApplied': 'Rule applied · {notation} · fingerprint {fp}'
   }

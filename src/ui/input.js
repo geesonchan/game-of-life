@@ -27,8 +27,11 @@ export function setupCanvasInput(app) {
 
   canvas.addEventListener('pointerdown', e => {
     const p0 = devicePos(e)
-    // 框选导出 RLE：左键拖一个矩形，松手交给 app.onSelection
-    if (app.selecting && e.button === 0) {
+    // 框选：Shift+左键随时可拖（无模式），或侧栏按钮预备的一次性框选。
+    // 简洁模式不启用 —— RLE 面板本来就只在完整模式出现，框出来没地方放（D47）。
+    const wantSelect = app.mode === 'full' && e.button === 0 && (e.shiftKey || app.selectArmed)
+    app.hideSelectionMenu()
+    if (wantSelect) {
       canvas.setPointerCapture(e.pointerId)
       mode = 'select'
       const c = vp.screenToCell(p0.x, p0.y)
@@ -91,11 +94,10 @@ export function setupCanvasInput(app) {
   function endDrag(e) {
     if (mode === 'paint' || mode === 'erase') app.captureBaseline()
     if (mode === 'pan') canvas.classList.remove('panning')
-    if (mode === 'select' && app.selection && app.onSelection) {
-      const s = app.selection
-      app.selection = null
-      app.dirty = true
-      app.onSelection(s.x0, s.y0, s.w, s.h)
+    if (mode === 'select' && app.selection && app.onSelectionDone) {
+      // 先框后选：选区留在画布上，松手才问要干嘛（D47）
+      app.selectArmed = false
+      app.onSelectionDone(app.selection)
     }
     mode = null
     lastCell = null

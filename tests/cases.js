@@ -20,7 +20,7 @@ import { toCSV, SNAPSHOT_COLUMNS, LEDGER_COLUMNS } from '../src/data/csv.js'
 import { VisualState } from '../src/render/visual-state.js'
 import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
-import { shouldShowProgress } from '../src/ui/io.js'
+import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
 
 /** 把 ASCII 图案（O=活，.=死）画到棋盘上，左上角落在 (ox,oy) */
 export function place(engine, pattern, ox, oy) {
@@ -1517,6 +1517,39 @@ cases.push({
     // 边界情况
     t.equal(shouldShowProgress(999, 0, 5000), false, '还没跑过任何一代时不该下判断')
     t.equal(shouldShowProgress(9999, 500, 500), false, '已经跑完了就别弹了')
+  }
+})
+
+cases.push({
+  name: '框选：浮出菜单越界时向内翻转，始终整块可见',
+  run(t) {
+    const stage = { w: 800, h: 600 }
+    const menu = { w: 180, h: 34 }
+    const inside = at => at.x >= 0 && at.y >= 0 && at.x + menu.w <= stage.w && at.y + menu.h <= stage.h
+
+    // 常规：贴在选区右下角外侧
+    const mid = placeSelectionMenu({ left: 100, top: 100, right: 300, bottom: 200 }, menu, stage)
+    t.equal(mid.x, 308, '默认贴右')
+    t.equal(mid.y, 208, '默认贴下')
+    t.ok(inside(mid), '应完全在画布内')
+
+    // 贴右边缘：往左翻
+    const right = placeSelectionMenu({ left: 600, top: 100, right: 790, bottom: 200 }, menu, stage)
+    t.ok(right.x + menu.w <= stage.w, `右侧放不下应往左翻，实测 x=${right.x}`)
+    t.ok(inside(right), '翻转后仍应完全可见')
+
+    // 贴下边缘：往上翻
+    const bottom = placeSelectionMenu({ left: 100, top: 500, right: 300, bottom: 595 }, menu, stage)
+    t.ok(bottom.y + menu.h <= stage.h, `下方放不下应往上翻，实测 y=${bottom.y}`)
+    t.ok(inside(bottom), '翻转后仍应完全可见')
+
+    // 右下角：两个方向都要翻
+    const corner = placeSelectionMenu({ left: 600, top: 500, right: 795, bottom: 595 }, menu, stage)
+    t.ok(inside(corner), `右下角选区时菜单仍应完全可见，实测 ${corner.x},${corner.y}`)
+
+    // 选区几乎铺满整个画布：两边都翻不动，退化成贴边而不是跑到画布外
+    const huge = placeSelectionMenu({ left: 2, top: 2, right: 798, bottom: 598 }, menu, stage)
+    t.ok(inside(huge), `选区铺满时也不能跑到画布外，实测 ${huge.x},${huge.y}`)
   }
 })
 

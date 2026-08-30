@@ -756,3 +756,24 @@ button.danger:hover { background: #713030; border-color: #9a3d3d; color: #fff0f0
 
 #btn-rle-export.on { background: var(--accent-dim); border-color: #3d8a4c; color: #eaffef; font-weight: 600; }
 #board.selecting { cursor: crosshair; }
+
+/* ---------- 框选浮出菜单（先框后选） ---------- */
+.sel-menu {
+  position: absolute;
+  z-index: 5;
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  background: rgba(22, 26, 34, 0.96);
+  border: 1px solid var(--accent-dim);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+  backdrop-filter: blur(6px);
+}
+.sel-menu[hidden] { display: none; }
+.sel-menu .sel-size {
+  font-size: 11px; color: var(--muted); padding-right: 2px;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.sel-menu button { padding: 4px 10px; font-size: 12px; }
+.sel-menu #sel-export { background: var(--accent-dim); border-color: #3d8a4c; color: #eaffef; font-weight: 600; }
+.sel-menu #sel-export:hover { background: #38804a; }

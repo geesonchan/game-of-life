@@ -17,6 +17,24 @@ const PROGRESS_THRESHOLD_MS = 1000 // 预计一秒内跑完的重放不弹进度
  * @param {number} elapsedMs 已经花掉的毫秒 @param {number} done 已重放代数
  * @param {number} total 总代数 @param {number} [thresholdMs]
  */
+/**
+ * 浮出菜单的落点：默认贴在选区右下角外侧，越出画布就往内翻转，保证整块菜单可见。
+ * 抽成纯函数是为了能直接测 —— 鼠标事件里的定位逻辑最容易写错又最难复现（D48）。
+ * @param {{left:number,top:number,right:number,bottom:number}} sel 选区（画布内的 CSS 像素）
+ * @param {{w:number,h:number}} menu 菜单尺寸
+ * @param {{w:number,h:number}} stage 画布尺寸
+ * @param {number} [gap]
+ */
+export function placeSelectionMenu(sel, menu, stage, gap = 8) {
+  let x = sel.right + gap
+  if (x + menu.w > stage.w) x = sel.left - gap - menu.w          // 往左翻
+  if (x < gap) x = Math.min(sel.left, Math.max(gap, stage.w - menu.w - gap))
+  let y = sel.bottom + gap
+  if (y + menu.h > stage.h) y = sel.top - gap - menu.h           // 往上翻
+  if (y < gap) y = Math.min(sel.top, Math.max(gap, stage.h - menu.h - gap))
+  return { x: Math.round(x), y: Math.round(y) }
+}
+
 export function shouldShowProgress(elapsedMs, done, total, thresholdMs = PROGRESS_THRESHOLD_MS) {
   if (done <= 0 || done >= total) return false
   return (elapsedMs / done) * total > thresholdMs
@@ -200,27 +218,64 @@ export function setupIO(app) {
 
   /* ---------------- RLE 框选导出 ---------------- */
 
+  // 侧栏按钮降级为"预备一次框选"的入口之一，不再是常驻模式（D47）
   el.rleExport.addEventListener('click', () => {
-    app.setSelecting(!app.selecting)
-    el.rleExport.classList.toggle('on', app.selecting)
-    app.toast(t(app.selecting ? 'io.rleExportOn' : 'io.rleExportOff'))
+    const on = !app.selectArmed
+    app.armSelection(on)
+    el.rleExport.classList.toggle('on', on)
+    if (on) app.toast(t('sel.armed'))
   })
 
-  /** 由画布交互在框选完成时回调 */
-  app.onSelection = function (x0, y0, w, h) {
-    const text = boardToRLE(app.engine, x0, y0, w, h, {
+  const menu = { root: $('sel-menu'), size: $('sel-size'), export: $('sel-export'), cancel: $('sel-cancel') }
+
+  function liveCount(sel) {
+    let n = 0
+    for (let y = 0; y < sel.h; y++) {
+      for (let x = 0; x < sel.w; x++) if (app.engine.get(sel.x0 + x, sel.y0 + y) === 1) n++
+    }
+    return n
+  }
+
+  /** 框选松手：选区留着，菜单浮到它旁边 */
+  app.onSelectionDone = function (sel) {
+    el.rleExport.classList.remove('on')
+    menu.size.textContent = t('sel.size', { w: sel.w, h: sel.h, n: liveCount(sel) })
+    menu.root.hidden = false
+
+    const vp = app.viewport
+    const dpr = app.renderer.dpr
+    const stage = app.canvas.getBoundingClientRect()
+    const tl = vp.boardToScreen(sel.x0, sel.y0)
+    const br = vp.boardToScreen(sel.x0 + sel.w, sel.y0 + sel.h)
+    const rect = { left: tl.x / dpr, top: tl.y / dpr, right: br.x / dpr, bottom: br.y / dpr }
+    const box = menu.root.getBoundingClientRect()
+    const at = placeSelectionMenu(rect, { w: box.width, h: box.height },
+      { w: stage.width, h: stage.height })
+    menu.root.style.left = at.x + 'px'
+    menu.root.style.top = at.y + 'px'
+    app.dirty = true
+  }
+
+  app.hideSelectionMenu = function () { menu.root.hidden = true }
+
+  menu.cancel.addEventListener('click', () => app.clearSelection())
+  menu.export.addEventListener('click', () => {
+    const sel = app.selection
+    if (!sel) return
+    el.rleText.value = boardToRLE(app.engine, sel.x0, sel.y0, sel.w, sel.h, {
       rule: app.engine.rule.notation || 'B3/S23'
     })
-    el.rleText.value = text
-    let n = 0
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (app.engine.get(x0 + x, y0 + y) === 1) n++
     el.rleInfo.className = 'note ok'
-    el.rleInfo.textContent = t('io.rleExported', { w, h, n })
-    app.setSelecting(false)
-    el.rleExport.classList.remove('on')
+    el.rleInfo.textContent = t('io.rleExported', { w: sel.w, h: sel.h, n: liveCount(sel) })
+    app.toast(t('io.rleExported', { w: sel.w, h: sel.h, n: liveCount(sel) }))
     parsed = null
     setButtons(false)
-  }
+    app.clearSelection()
+  })
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && app.selection) { app.clearSelection(); e.preventDefault() }
+  })
 
   el.rleCopy.addEventListener('click', async () => {
     const text = el.rleText.value

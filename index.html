@@ -73,6 +73,11 @@
           <span class="hud-item" data-mode="full"><span data-i18n="hud.fps">帧率</span> <b id="hud-fps">–</b></span>
           <span class="hud-item muted" id="hud-scale">缩放 4.0×</span>
         </div>
+        <div class="sel-menu" id="sel-menu" hidden>
+          <span class="sel-size" id="sel-size"></span>
+          <button id="sel-export" data-i18n="sel.export">导出 RLE</button>
+          <button id="sel-cancel" data-i18n="sel.cancel">取消</button>
+        </div>
         <div class="toast" id="toast" hidden></div>
       </main>
 
@@ -185,10 +190,12 @@
               <button id="btn-rle-import" data-i18n="io.rleImport">导入</button>
               <button id="btn-rle-copy" data-i18n="io.copy">复制</button>
             </div>
+            <p class="note" data-i18n="io.rleImportHint">粘贴 RLE → 点「导入」→ 再选放到哪里。</p>
             <div class="row btn-row">
               <button id="btn-rle-center" data-i18n="io.rleCenter">居中放下</button>
               <button id="btn-rle-stamp" data-i18n="io.rleStamp">跟着鼠标放</button>
             </div>
+            <p class="note" data-i18n="io.rleExportHint">在棋盘上按住 Shift 拖一个矩形即可框选。</p>
             <div class="row btn-row">
               <button id="btn-rle-export" data-i18n="io.rleExport">框选导出 RLE</button>
             </div>
@@ -250,7 +257,8 @@
               <li data-i18n-html="tips.stamp"></li>
               <li data-mode="full" data-i18n-html="tips.pan"></li>
               <li data-i18n-html="tips.zoom"></li>
-              <li data-mode="full" data-i18n-html="tips.keys"></li>
+              <li data-mode="full" data-i18n-html="tips.select"></li>
+          <li data-mode="full" data-i18n-html="tips.keys"></li>
             </ul>
           </div>
         </section>

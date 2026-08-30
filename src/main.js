@@ -55,7 +55,7 @@ const app = {
   stamp: null,        // 当前选中的图案（跟随鼠标待放置）
   runDirty: false,    // 本局是否被手动改过 ⇒ 存档不能再靠种子重放
   baseline: null,     // 手改之后的重放基线 {rle, gen}
-  selecting: false,   // 框选导出 RLE 模式
+  selectArmed: false, // 侧栏按钮预备的一次性框选（Shift+拖则随时可用）
   selection: null     // {x0,y0,w,h}，拖动过程中的选框
 }
 
@@ -233,12 +233,21 @@ app.replayStep = function (remaining) {
 }
 app.VISUAL_WARMUP = VISUAL_WARMUP
 
-/** 框选导出 RLE 模式 */
-app.setSelecting = function (on) {
-  app.selecting = !!on
+/**
+ * 预备一次框选（侧栏按钮用）。它不是常驻模式：拖完一次就自动失效，
+ * 和 Shift+拖是同一件事的两个入口，而不是两套状态机（D47）。
+ */
+app.armSelection = function (on) {
+  app.selectArmed = !!on
+  app.clearSelection()
+  app.canvas.classList.toggle('selecting', app.selectArmed)
+  if (app.selectArmed && app.stamp) app.setStamp(null)
+  app.dirty = true
+}
+
+app.clearSelection = function () {
   app.selection = null
-  app.canvas.classList.toggle('selecting', app.selecting)
-  if (app.selecting && app.stamp) app.setStamp(null)
+  app.hideSelectionMenu()
   app.dirty = true
 }
 

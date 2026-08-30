@@ -13,6 +13,7 @@ import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
 import { setupRecords } from './ui/records.js'
+import { setupIO } from './ui/io.js'
 import { placePattern, centerOrigin } from './engine/patterns.js'
 import { t, applyStatic, onLangChange, setRegister, setLang, getLang } from './i18n/index.js'
 import { prefs } from './ui/prefs.js'
@@ -49,7 +50,10 @@ const app = {
   needsFit: false,
   chartGen: -1,
   mode: 'full',       // 'simple' | 'full'
-  stamp: null         // 当前选中的图案（跟随鼠标待放置）
+  stamp: null,        // 当前选中的图案（跟随鼠标待放置）
+  runDirty: false,    // 本局是否被手动改过 ⇒ 存档不能再靠种子重放
+  selecting: false,   // 框选导出 RLE 模式
+  selection: null     // {x0,y0,w,h}，拖动过程中的选框
 }
 
 /* ---------------- 行为 ---------------- */
@@ -87,6 +91,7 @@ app.clear = function () {
   app.setRunning(false)
   app.engine.clear()
   app.visual.sync(app.engine)
+  app.runDirty = false
   app.series.clear()
   app.records.startRun()
   app.dirty = true
@@ -98,6 +103,7 @@ app.randomize = function () {
   const seed = readSeedInput(app)
   app.engine.randomize(seed, app.density)
   app.visual.sync(app.engine)
+  app.runDirty = false
   app.series.clear()
   app.series.push(app.engine.stats.alive)
   app.records.startRun()
@@ -140,6 +146,7 @@ app.resizeBoard = function (w, h) {
   app.setRunning(false)
   app.engine.resize(w, h)
   app.visual.sync(app.engine)
+  app.runDirty = false
   app.series.clear()
   app.records.startRun()
   app.fitView()
@@ -167,7 +174,7 @@ app.setStamp = function (pattern) {
   app.library.renderPatterns()
   app.canvas.classList.toggle('stamping', !!pattern)
   app.dirty = true
-  if (pattern) app.toast(t('pattern.selected', { name: t('pattern.' + pattern.key) }))
+  if (pattern) app.toast(t('pattern.selected', { name: pattern.label || t('pattern.' + pattern.key) }))
   else app.toast(t('pattern.cancelled'))
 }
 
@@ -175,8 +182,9 @@ app.setStamp = function (pattern) {
 app.placeStampAt = function (cell) {
   const p = app.stamp
   if (!p) return
+  const label = p.label || t('pattern.' + p.key)
   if (p.w > app.engine.w || p.h > app.engine.h) {
-    app.toast(t('pattern.tooBig', { name: t('pattern.' + p.key) }))
+    app.toast(t('pattern.tooBig', { name: label }))
     return
   }
   const o = centerOrigin(p, cell.x, cell.y)
@@ -184,9 +192,40 @@ app.placeStampAt = function (cell) {
   app.engine.stats.alive = app.engine.countAlive()
   app.visual.reconcile(app.engine)
   app.records.noteEdit()
+  app.markDirtyRun()
   app.dirty = true
   app.updateHud()
-  app.toast(t('pattern.placed', { name: t('pattern.' + p.key) }))
+  app.toast(t('pattern.placed', { name: label }))
+}
+
+/** 本局被手动改过：存档只能改用"当前棋盘 RLE 基线 + 重放 0 代" */
+app.markDirtyRun = function () { app.runDirty = true }
+
+/** 框选导出 RLE 模式 */
+app.setSelecting = function (on) {
+  app.selecting = !!on
+  app.selection = null
+  app.canvas.classList.toggle('selecting', app.selecting)
+  if (app.selecting && app.stamp) app.setStamp(null)
+  app.dirty = true
+}
+
+/** 读档后换上新引擎：所有跟棋盘尺寸/规则挂钩的东西都要重新对齐 */
+app.adoptEngine = function (engine) {
+  app.engine = engine
+  app.visual.sync(engine)
+  app.series.clear()
+  app.series.push(engine.stats.alive)
+  app.renderer.setAgingLayers(engine.rule.agingLayers)
+  app.records.startRun()
+  app.runDirty = engine.initType === 'pattern'
+  app.el.boundary.set(engine.boundary)
+  app.el.size.set(String(engine.w))
+  app.updateRuleInfo()
+  app.library.render()
+  app.fitView()
+  app.updateHud()
+  app.dirty = true
 }
 
 app.fitView = function () {
@@ -288,6 +327,7 @@ setupCanvasInput(app)
 app.ruleEditor = createRuleEditor(app)
 document.getElementById('btn-rule').addEventListener('click', () => app.ruleEditor.open())
 app.records = setupRecords(app)
+app.io = setupIO(app)
 app.library = setupLibrary(app)
 app.library.render()
 app.intro = createIntro(app)
@@ -391,6 +431,7 @@ function frame(now) {
       const o = centerOrigin(app.stamp, app.hoverCell.x, app.hoverCell.y)
       app.renderer.drawGhost(app.viewport, app.stamp, o.x, o.y, app.engine.w, app.engine.h)
     }
+    if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)
     app.dirty = false
     app.updateHud()
   }

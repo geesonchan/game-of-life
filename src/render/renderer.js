@@ -283,6 +283,24 @@ export class Renderer {
     ctx.restore()
   }
 
+  /** 框选导出 RLE 时的选框，画在最上层 */
+  drawSelection(vp, sel) {
+    const ctx = this.ctx
+    const x = (sel.x0 - vp.originX) * vp.scale
+    const y = (sel.y0 - vp.originY) * vp.scale
+    const w = sel.w * vp.scale
+    const h = sel.h * vp.scale
+    ctx.save()
+    ctx.fillStyle = 'rgba(126,231,135,0.12)'
+    ctx.fillRect(x, y, w, h)
+    ctx.strokeStyle = rgb(this.flat)
+    ctx.setLineDash([5, 3])
+    ctx.lineWidth = 1
+    ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), Math.round(h))
+    ctx.setLineDash([])
+    ctx.restore()
+  }
+
   strokeBorder(ctx, rx, ry, rw, rh) {
     ctx.strokeStyle = COLORS.border
     ctx.lineWidth = 1

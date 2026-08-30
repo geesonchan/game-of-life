@@ -165,6 +165,37 @@
           </div>
         </section>
 
+        <section class="group" data-mode="full">
+          <h2 class="group-head"><span data-i18n="io.section">存档与图案</span></h2>
+          <div class="group-body">
+            <div class="row btn-row">
+              <button id="btn-save" data-i18n="io.save">下载存档</button>
+              <button id="btn-load" data-i18n="io.load">读取存档…</button>
+            </div>
+            <input type="file" id="in-save-file" accept=".json,application/json" hidden />
+            <div class="progress" id="load-progress" hidden>
+              <div class="progress-track"><div class="progress-bar" id="load-progress-bar"></div></div>
+              <p class="note" id="load-progress-text"></p>
+            </div>
+
+            <p class="note" style="margin-top:12px" data-i18n="io.rle">RLE 图案</p>
+            <textarea id="in-rle" rows="4" spellcheck="false"
+              data-i18n-placeholder="io.rlePlaceholder" placeholder="把 RLE 粘贴到这里"></textarea>
+            <div class="row btn-row">
+              <button id="btn-rle-import" data-i18n="io.rleImport">导入</button>
+              <button id="btn-rle-copy" data-i18n="io.copy">复制</button>
+            </div>
+            <div class="row btn-row">
+              <button id="btn-rle-center" data-i18n="io.rleCenter">居中放下</button>
+              <button id="btn-rle-stamp" data-i18n="io.rleStamp">跟着鼠标放</button>
+            </div>
+            <div class="row btn-row">
+              <button id="btn-rle-export" data-i18n="io.rleExport">框选导出 RLE</button>
+            </div>
+            <p class="note" id="rle-info"></p>
+          </div>
+        </section>
+
         <!-- 阶段 4：记录 / 编年史 / 台账。位置就是当初预留的 #slot-records。 -->
         <div id="slot-records">
           <section class="group" data-mode="full">

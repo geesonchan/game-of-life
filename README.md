@@ -4,7 +4,7 @@
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)，
 用户反馈记录见 [docs/feedback.md](./docs/feedback.md)。
 
-当前进度：**阶段 4（数据记录与编年史）已完成**。
+当前进度：**阶段 5（存档、种子与 RLE 互通）已完成**。
 
 ## 目录结构
 
@@ -17,6 +17,8 @@ src/engine/   纯逻辑，零 DOM 依赖，可在 Node 里跑测试
   rule-io.js    规则导出导入（B/S 记法 或 条款 JSON）
   board.js      双缓冲棋盘与单代演进
   patterns.js   5 个内置图案与放置函数
+  rle.js        标准 RLE 格式解析与生成
+  save.js       存档格式（规格 3.1）与读档重建
 src/render/   只读引擎状态，负责画
   viewport.js       棋盘坐标 ↔ 屏幕坐标
   renderer.js       Canvas 渲染（ImageData 放大方案 + 拖尾图层）
@@ -38,6 +40,7 @@ src/ui/       控件绑定与画布交互
   library.js        图案盒子与世界卡片
   intro.js          三幕介绍卡与规矩实验角
   records.js        记录面板、总结卡片与 CSV 导出
+  io.js             存档下载读取（分片重放 + 进度条）、RLE 导入与框选导出
 src/main.js   装配与主循环
 tests/        验收用例（Vitest 与 jsc 运行器共用）
 ```

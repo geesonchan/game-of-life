@@ -8,6 +8,8 @@ import { validateRule, validateClauses } from '../src/engine/validate.js'
 import { presetRule, PRESETS } from '../src/engine/presets.js'
 import { exportRule, importRule } from '../src/engine/rule-io.js'
 import { PATTERNS, getPattern, placePattern, centerOrigin } from '../src/engine/patterns.js'
+import { parseRLE, toRLE, boardToRLE } from '../src/engine/rle.js'
+import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_VERSION } from '../src/engine/save.js'
 import { DICT } from '../src/i18n/dict.js'
 import { createPrefs, PREF_KEYS } from '../src/ui/prefs.js'
 import { SnapshotLog } from '../src/data/snapshots.js'
@@ -1095,7 +1097,8 @@ cases.push(
 /** 会碰 DOM 的源文件；jsc 没有目录遍历，所以显式列出来 */
 const DOM_SOURCES = [
   'src/main.js', 'src/ui/controls.js', 'src/ui/records.js', 'src/ui/library.js',
-  'src/ui/intro.js', 'src/ui/rule-editor.js', 'src/ui/input.js', 'src/render/chart.js'
+  'src/ui/intro.js', 'src/ui/rule-editor.js', 'src/ui/input.js', 'src/ui/io.js',
+  'src/render/chart.js'
 ]
 
 function readSrc(path) {
@@ -1177,6 +1180,225 @@ cases.push(
       t.ok(a !== b, '留空时两次应生成不同的种子')
       t.equal(normalizeSeed('4271'), 4271, '填了数字就必须照用，保证可复现')
       t.equal(normalizeSeed('4271'), normalizeSeed('4271'), '同一个种子输入必须稳定')
+    }
+  }
+)
+
+/* ================= 阶段 5：存档、种子与 RLE 互通 ================= */
+
+/** 从 LifeWiki 复制下来的 Gosper glider gun 原文，一字未改 */
+const LIFEWIKI_GUN = `#N Gosper glider gun
+#C This was the first gun discovered.
+#C As its name suggests, it was discovered by Bill Gosper.
+x = 36, y = 9, rule = B3/S23
+24bo$22bobo$12b2o6b2o12b2o$11bo3bo4b2o12b2o$2o8bo5bo3b2o$2o8bo3bob2o4b
+obo$10bo5bo7bo$11bo3bo$12b2o!`
+
+function cellSet(engine) {
+  const out = new Set()
+  for (let y = 0; y < engine.h; y++) {
+    for (let x = 0; x < engine.w; x++) if (engine.get(x, y) === 1) out.add(x + ',' + y)
+  }
+  return out
+}
+function sameBoard(a, b) {
+  if (a.w !== b.w || a.h !== b.h) return false
+  for (let i = 0; i < a.cur.length; i++) if (a.cur[i] !== b.cur[i]) return false
+  return true
+}
+
+cases.push(
+  {
+    name: 'RLE：LifeWiki 的 Gosper glider gun 原文能正确解析',
+    run(t) {
+      const p = parseRLE(LIFEWIKI_GUN)
+      t.equal(p.w, 36, '宽度')
+      t.equal(p.h, 9, '高度')
+      t.equal(p.cells.length, 36, '活细胞数')
+      t.equal(p.rule, 'B3/S23', '应读出头行里的 rule')
+      t.equal(p.name, 'Gosper glider gun', '应读出 #N 里的名字')
+      // 正文在原文里是折行的，折点落在 "4b" 与 "obo" 之间 —— 必须能正确跨行接上
+      t.ok(p.cells.some(c => c[0] === 24 && c[1] === 0), '第 0 行第 24 列应有细胞')
+      t.ok(p.cells.some(c => c[0] === 35 && c[1] === 3), '右下角那对方块应在')
+    }
+  },
+  {
+    name: 'RLE：粘贴导入 Gosper glider gun，运行后每 30 代产出一个滑翔机',
+    run(t) {
+      const p = parseRLE(LIFEWIKI_GUN)
+      const e = new LifeEngine(160, 160, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of p.cells) e.set(10 + x, 10 + y, 1)
+      e.stats.alive = e.countAlive()
+      t.equal(e.stats.alive, 36, '放下之后应有 36 个活细胞')
+
+      // 枪本体周期 30，每个周期吐出一架 5 格的滑翔机 ⇒ 人口每 30 代恰好 +5
+      const counts = []
+      for (let g = 0; g <= 150; g++) {
+        if (g % 30 === 0) counts.push(e.countAlive())
+        e.step()
+      }
+      t.equal(counts.join(','), '36,41,46,51,56,61',
+        `每 30 代人口应恰好 +5（一架滑翔机），实测 ${counts.join(',')}`)
+    }
+  },
+  {
+    name: 'RLE：导出再导入，逐格一致',
+    run(t) {
+      const e = new LifeEngine(60, 40, { rule: lifeRule(), boundary: 'dead' }).randomize(31337, 0.3)
+      const rle = boardToRLE(e, 0, 0, e.w, e.h, { rule: 'B3/S23' })
+      const back = parseRLE(rle)
+      const e2 = new LifeEngine(60, 40, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of back.cells) e2.set(x, y, 1)
+      t.ok(sameBoard(e, e2), '整盘随机图案导出再导入应逐格一致')
+      t.equal(e2.countAlive(), e.countAlive(), '活细胞数应相同')
+
+      // 框选一块子区域同样要往返一致
+      const sub = boardToRLE(e, 7, 5, 23, 17, { rule: 'B3/S23' })
+      const subBack = parseRLE(sub)
+      const want = new Set()
+      for (let y = 0; y < 17; y++) for (let x = 0; x < 23; x++) if (e.get(7 + x, 5 + y) === 1) want.add(x + ',' + y)
+      const got = new Set(subBack.cells.map(c => c[0] + ',' + c[1]))
+      t.equal(got.size, want.size, '框选区域的活细胞数应一致')
+      t.ok([...want].every(k => got.has(k)), '框选区域应逐格一致')
+
+      // 开头有空行/空列的图案：$ 是"换到下一行"，开头的空行同样得写出来，
+      // 漏掉的话整个图案会往上平移。第一版 toRLE 就漏了这一支，靠存档往返才暴露。
+      const e3 = new LifeEngine(20, 20, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e3, getPattern('glider'), 6, 5)
+      const offsetRLE = boardToRLE(e3, 0, 0, 20, 20, { rule: 'B3/S23' })
+      const offsetBack = parseRLE(offsetRLE)
+      const e4 = new LifeEngine(20, 20, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of offsetBack.cells) e4.set(x, y, 1)
+      t.ok(sameBoard(e3, e4), '开头有空行时导出再导入不该发生平移')
+      t.ok(offsetBack.cells.every(c => c[1] >= 5), `图案应仍从第 5 行开始，实测最上一行 ${Math.min(...offsetBack.cells.map(c => c[1]))}`)
+
+      // 内置图案也全部走一遍往返
+      for (const pat of PATTERNS) {
+        const set = new Set(pat.cells.map(c => c[0] + ',' + c[1]))
+        const text = toRLE((x, y) => set.has(x + ',' + y), pat.w, pat.h, { rule: 'B3/S23' })
+        const rt = parseRLE(text)
+        t.equal(rt.cells.length, pat.cells.length, `${pat.key} 往返后细胞数应一致`)
+        t.ok(rt.cells.every(c => set.has(c[0] + ',' + c[1])), `${pat.key} 往返后应逐格一致`)
+      }
+    }
+  },
+  {
+    name: 'RLE：容错 —— 缺头行、空行游程、非法字符',
+    run(t) {
+      // 没有头行的裸正文
+      const bare = parseRLE('bo$2bo$3o!')
+      t.equal(bare.cells.length, 5, '裸正文应能解析出滑翔机的 5 个细胞')
+
+      // $ 带重复次数表示连续空行
+      const gapped = parseRLE('x = 3, y = 5, rule = B3/S23\no$3$2o!')
+      t.equal(gapped.cells.length, 3, '应解析出 3 个细胞')
+      t.ok(gapped.cells.some(c => c[1] === 4), '3$ 之后应落到第 4 行')
+
+      let threw = null
+      try { parseRLE('x = 3, y = 3\nozz!') } catch (e) { threw = e.message }
+      t.ok(threw && threw.includes('z'), `非法字符应抛出并指出是哪个，实测：${threw}`)
+
+      let empty = null
+      try { parseRLE('   ') } catch (e) { empty = e.message }
+      t.ok(!!empty, '空内容应抛错')
+    }
+  },
+  {
+    name: '存档：随机局往返 —— 棋盘逐格一致、代数一致',
+    run(t) {
+      const e = new LifeEngine(120, 90, { rule: lifeRule(), boundary: 'torus' }).randomize(4271, 0.35)
+      e.run(347)
+
+      const save = buildSave({
+        engine: e, density: 0.35,
+        origin: { type: 'random', seed: 4271, density: 0.35 }
+      })
+      t.equal(save.version, SAVE_VERSION, '版本号')
+      t.equal(save.generation, 347, '代数应写进存档')
+      t.equal(save.initType, 'random', '类型应是 random')
+      t.equal(save.boardSize.join('x'), '120x90', '棋盘尺寸')
+      t.equal(save.rule.fingerprint, e.rule.fingerprint, '规则指纹应写进存档')
+      t.ok(!('initPattern' in save), '纯种子局不该带 initPattern —— 这才是规格 3.1 说的"极简"')
+
+      // 走一遍文本序列化，模拟真实的下载/上传
+      const back = parseSave(saveToText(save))
+      const r = restoreInitial(back)
+      t.equal(r.replayFrom, 0, '随机局从第 0 代开始重放')
+      t.equal(r.replayTo, 347, '应重放到第 347 代')
+      r.engine.run(r.replayTo - r.replayFrom)
+      t.ok(sameBoard(e, r.engine), '读档后棋盘应逐格一致')
+      t.equal(r.engine.generation, e.generation, '代数应一致')
+      t.equal(r.engine.hash(), e.hash(), '哈希应一致')
+      t.equal(r.engine.boundary, e.boundary, '边界应一致')
+      t.equal(r.engine.rule.fingerprint, e.rule.fingerprint, '规则指纹应一致')
+    }
+  },
+  {
+    name: '存档：手绘局用 RLE 基线往返，代数同样对得上',
+    run(t) {
+      // 手绘改过盘之后，"从种子重放"这条路就断了，改用当时的棋盘做 RLE 基线
+      const e = new LifeEngine(80, 60, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e, getPattern('gun'), 5, 5)
+      e.stats.alive = e.countAlive()
+      const baselineGen = 0
+      const rle = boardBaseline(e)
+      e.run(97)
+
+      const save = buildSave({
+        engine: e, density: 0.3,
+        origin: { type: 'pattern', rle, gen: baselineGen }
+      })
+      t.equal(save.initType, 'pattern', '类型应是 pattern')
+      t.equal(save.initGeneration, 0, '基线代数')
+
+      const r = restoreInitial(parseSave(saveToText(save)))
+      r.engine.run(r.replayTo - r.replayFrom)
+      t.ok(sameBoard(e, r.engine), '读档后棋盘应逐格一致')
+      t.equal(r.engine.generation, 97, '代数应一致')
+    }
+  },
+  {
+    name: '存档：坏文件必须被挡住并说清坏在哪',
+    run(t) {
+      const bad = [
+        ['not-json', '{这不是 JSON'],
+        ['version', JSON.stringify({ version: 99 })],
+        ['boardSize', JSON.stringify({ version: 1, boardSize: [0, 5] })],
+        ['boundary', JSON.stringify({ version: 1, boardSize: [10, 10], boundary: 'klein' })],
+        ['rule', JSON.stringify({ version: 1, boardSize: [10, 10], boundary: 'torus' })],
+        ['generation', JSON.stringify({ version: 1, boardSize: [10, 10], boundary: 'torus', rule: { clauses: [] }, generation: -3 })]
+      ]
+      for (const [why, text] of bad) {
+        let msg = null
+        try { parseSave(text) } catch (e) { msg = e.message }
+        t.ok(msg && msg.startsWith(why), `${why} 应被拦下，实测：${msg}`)
+      }
+
+      // 条款与自称的指纹对不上 ⇒ 不能装作没看见
+      const life = lifeRule()
+      const tampered = {
+        version: 1, seed: 1, initType: 'random', initDensity: 0.3,
+        rule: { type: 'clauses', clauses: life.clauses, agingLayers: 0, fingerprint: 'deadbeef' },
+        boundary: 'torus', boardSize: [10, 10], generation: 0
+      }
+      let fp = null
+      try { restoreInitial(parseSave(JSON.stringify(tampered))) } catch (e) { fp = e.message }
+      t.ok(fp && fp.startsWith('fingerprint:'), `指纹对不上应报错，实测：${fp}`)
+    }
+  },
+  {
+    name: '引擎回归基线：固定种子跑 1000 代的棋盘哈希',
+    run(t) {
+      // 这条不测某个功能，测的是"引擎的演化结果一个字节都没变"。
+      // 以后任何一次优化（邻居计数、双缓冲、查找表）只要动了结果，这里立刻红。
+      const e = new LifeEngine(200, 200, { rule: lifeRule(), boundary: 'torus' }).randomize(4271, 0.35)
+      e.run(1000)
+      t.equal(e.hash(), 'e1e16f70', '第 1000 代的棋盘哈希（基线：种子 4271 / 密度 0.35 / 200×200 / 环形 / B3/S23）')
+      t.equal(e.stats.alive, 1755, '第 1000 代的存活数')
+      t.equal(e.stats.births, 511, '第 1000 代的出生数')
+      t.equal(e.stats.deathsLonely, 307, '第 1000 代的孤独死')
+      t.equal(e.stats.deathsCrowded, 249, '第 1000 代的拥挤死')
+      t.equal(e.rule.fingerprint, '9eba4f34', '规则指纹基线')
     }
   }
 )

@@ -9,6 +9,12 @@ export function setupCanvasInput(app) {
   let lastCell = null
   let lastPointer = null
   let spaceHeld = false
+  let selectAnchor = null
+
+  const clampCell = c => ({
+    x: Math.max(0, Math.min(app.engine.w - 1, c.x)),
+    y: Math.max(0, Math.min(app.engine.h - 1, c.y))
+  })
 
   canvas.addEventListener('contextmenu', e => e.preventDefault())
 
@@ -21,6 +27,16 @@ export function setupCanvasInput(app) {
 
   canvas.addEventListener('pointerdown', e => {
     const p0 = devicePos(e)
+    // 框选导出 RLE：左键拖一个矩形，松手交给 app.onSelection
+    if (app.selecting && e.button === 0) {
+      canvas.setPointerCapture(e.pointerId)
+      mode = 'select'
+      const c = vp.screenToCell(p0.x, p0.y)
+      selectAnchor = clampCell(c)
+      app.selection = { x0: selectAnchor.x, y0: selectAnchor.y, w: 1, h: 1 }
+      app.dirty = true
+      return
+    }
     // 选中图案时，左键 = 放置，右键 = 取消选择；此时不进画笔
     if (app.stamp && (e.button === 0 || e.button === 2) && !spaceHeld) {
       if (e.button === 2) app.setStamp(null)
@@ -47,7 +63,14 @@ export function setupCanvasInput(app) {
 
   canvas.addEventListener('pointermove', e => {
     const p = devicePos(e)
-    if (mode === 'pan') {
+    if (mode === 'select') {
+      const c = clampCell(vp.screenToCell(p.x, p.y))
+      app.selection = {
+        x0: Math.min(selectAnchor.x, c.x), y0: Math.min(selectAnchor.y, c.y),
+        w: Math.abs(c.x - selectAnchor.x) + 1, h: Math.abs(c.y - selectAnchor.y) + 1
+      }
+      app.dirty = true
+    } else if (mode === 'pan') {
       vp.panByPixels(p.x - lastPointer.x, p.y - lastPointer.y)
       app.dirty = true
     } else if (mode === 'paint' || mode === 'erase') {
@@ -67,6 +90,12 @@ export function setupCanvasInput(app) {
 
   function endDrag(e) {
     if (mode === 'pan') canvas.classList.remove('panning')
+    if (mode === 'select' && app.selection && app.onSelection) {
+      const s = app.selection
+      app.selection = null
+      app.dirty = true
+      app.onSelection(s.x0, s.y0, s.w, s.h)
+    }
     mode = null
     lastCell = null
     if (e && e.pointerId !== undefined && canvas.hasPointerCapture(e.pointerId)) {

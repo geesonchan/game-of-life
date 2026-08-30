@@ -735,3 +735,24 @@ button.danger:hover { background: #713030; border-color: #9a3d3d; color: #fff0f0
 
 /* HUD 上的世界名：常驻，且比别的项更显眼一点 */
 .hud-world b { color: var(--accent); }
+
+/* ---------- 阶段 5：存档与 RLE ---------- */
+
+#in-rle {
+  width: 100%; padding: 7px 8px; resize: vertical;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 7px;
+  font-family: ui-monospace, Menlo, monospace; font-size: 11px; line-height: 1.5;
+}
+#in-rle:focus { outline: 1px solid var(--accent-dim); }
+
+.progress { margin-top: 10px; }
+.progress-track {
+  height: 6px; border-radius: 3px; overflow: hidden;
+  background: var(--panel-2); border: 1px solid var(--line);
+}
+.progress-bar { height: 100%; width: 0; background: var(--accent); transition: width .08s linear; }
+.progress .note { margin-top: 5px; }
+
+#btn-rle-export.on { background: var(--accent-dim); border-color: #3d8a4c; color: #eaffef; font-weight: 600; }
+#board.selecting { cursor: crosshair; }

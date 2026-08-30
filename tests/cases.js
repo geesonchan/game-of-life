@@ -1433,6 +1433,27 @@ cases.push(
     }
   },
   {
+    name: '接线：开局状态按首访/回访分流，清空不许藏进「更多」',
+    run(t) {
+      // D69：回访者的实际动作是"先清空再开始"，所以回访开空盘。
+      const main = readSrc('src/main.js')
+      t.ok(/const firstVisit = prefs\.get\('introSeen'\) !== '1'/.test(main),
+        '开局状态应由 introSeen 决定，而不是别开一个偏好键')
+      t.ok(/if \(firstVisit\) app\.engine\.randomize\(/.test(main),
+        '随机填充只在首访执行；回访不填充')
+      // 空盘不能有种子语义：开机仍不许回填种子框（原有守卫也在管这条，这里再钉一次动机）
+      t.ok(!/el\.seed\.value\s*=/.test(main), '开机不许回填种子框')
+
+      // 清空是高频动作，必须在常驻区，不能是「更多」浮层的子元素
+      const html = readSrc('index.html')
+      const group = /<div class="tb-more-group"[\s\S]*?\n      <\/div>/.exec(html)
+      t.ok(!!group, 'index.html 里应有「更多」组')
+      t.ok(group[0].indexOf('btn-clear') < 0,
+        '清空不许放在「更多」组里 —— 手机上误画频繁，它是高频动作')
+      t.ok(html.indexOf('id="btn-clear"') >= 0, '清空按钮本身要还在')
+    }
+  },
+  {
     name: '接线：页面必须声明网站图标，且文件存在',
     run(t) {
       // 不声明的话浏览器会去要 /favicon.ico，控制台一条 404。公网首验看到的就是这条。

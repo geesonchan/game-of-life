@@ -185,7 +185,7 @@ export function setupControls(app) {
 
   // 点「更多」里的任何一个按钮就收起浮层 —— 那些控件都是一次性的，
   // 点完还杵在那儿盖着棋盘，用户得再点一次才能看见效果
-  for (const seg of ['tb-left', 'tb-tabs', 'tb-right']) {
+  for (const seg of ['tb-tabs', 'tb-right']) {   // 清空已挪出「更多」，不在此列
     const el = document.querySelector('.' + seg)
     if (el) el.addEventListener('click', e => { if (e.target.closest('button')) app.setMore(false) })
   }

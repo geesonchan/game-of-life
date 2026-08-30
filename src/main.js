@@ -432,7 +432,11 @@ function trailLabelOf(v) {
   return t(v <= 6 ? 'vis.trail.short' : v <= 13 ? 'vis.trail.mid' : 'vis.trail.long')
 }
 
-app.engine.randomize(4271, app.density)
+// 开局状态：首访给"导演场"，回访给"空场"（依据见 docs/decisions.md D69）。
+// 回访者的实际动作是"先清空再开始" —— 那说明满盘随机不是他要的开场，
+// 是他每次都要先撤掉的东西。
+const firstVisit = prefs.get('introSeen') !== '1'
+if (firstVisit) app.engine.randomize(4271, app.density)
 app.visual.sync(app.engine)
 app.series.push(app.engine.stats.alive)
 app.records.startRun()

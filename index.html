@@ -21,6 +21,10 @@
       <!-- 窄屏专用：把低频控件收进「更多」。桌面 display:none，零影响 -->
       <button class="tb-more" id="btn-more" data-i18n="mobile.more" data-i18n-title="mobile.more.tip">更多</button>
 
+      <div class="tb-seg tb-left">
+        <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
+      </div>
+
       <div class="tb-seg tb-run">
         <button id="btn-play" class="primary" data-i18n="ctrl.play" data-i18n-title="tip.play">▶ 播放</button>
         <button id="btn-step" data-i18n="ctrl.step" data-i18n-title="tip.step">单步</button>
@@ -35,9 +39,6 @@
            顺序由 CSS 的 order 固定，桌面呈现逐像素不变；窄屏下它变成一个真正的浮层容器，
            三段在里面纵向排开 —— 不必再靠写死的 top 值去堆，真机字体度量变了也不会重叠。 -->
       <div class="tb-more-group" id="tb-more-group">
-      <div class="tb-seg tb-left">
-        <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
-      </div>
       <div class="tb-seg tb-tabs">
         <button class="tab" data-tab="pattern" data-mode="full" data-i18n="pattern.section" data-i18n-title="tip.pattern">图案盒子</button>
         <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>

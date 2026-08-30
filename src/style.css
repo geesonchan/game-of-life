@@ -683,3 +683,55 @@ body.mode-full [data-mode="simple"] { display: none !important; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 body.mode-simple .sum-grid { grid-template-columns: repeat(3, 1fr); }
+
+/* ---------- 界面微调（首位用户第四轮反馈） ---------- */
+
+/* 清空是破坏性动作，用 danger 配色和其它按钮区分开 */
+button.danger {
+  background: #5a2323;
+  border-color: #7a3030;
+  color: #ffd9d9;
+}
+button.danger:hover { background: #713030; border-color: #9a3d3d; color: #fff0f0; }
+
+/* 所有"一组里选一个"的控件统一：未选中灰底、选中高亮。
+   涉及三处 —— 侧栏按钮组、顶栏分段开关、顶栏标签，之前三者样式各写各的。 */
+.btn-group button,
+.seg button,
+.tb-tabs .tab {
+  background: var(--panel-2);
+  color: var(--muted);
+  font-weight: 500;
+}
+.btn-group button:hover,
+.seg button:hover,
+.tb-tabs .tab:hover { background: #262d3a; color: var(--text); }
+.btn-group button.on,
+.seg button.on,
+.tb-tabs .tab.on {
+  background: var(--accent-dim);
+  border-color: #3d8a4c;
+  color: #eaffef;
+  font-weight: 600;
+}
+.seg { background: var(--panel-2); }
+.seg button { border-radius: 0; }
+
+/* 玩具盒与世界卡片的选中态加强：描边 + 底色 + 标题变色，一眼看得出选了哪个 */
+.card.on {
+  border-color: var(--accent);
+  background: #1c2a21;
+  box-shadow: inset 0 0 0 1px var(--accent-dim);
+}
+.card.on .card-text b { color: #b6f5c0; }
+.toolrail .card.on { box-shadow: inset 3px 0 0 var(--accent); }
+.card.world.on::after {
+  content: '';
+  position: absolute; right: 9px; top: 9px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+}
+.card.world { position: relative; }
+
+/* HUD 上的世界名：常驻，且比别的项更显眼一点 */
+.hud-world b { color: var(--accent); }

@@ -57,5 +57,15 @@ export function setupLibrary(app) {
     renderWorlds()
   })
 
-  return { renderPatterns, renderWorlds, render() { renderPatterns(); renderWorlds() } }
+  /** 当前棋盘用的规则对应哪个世界；手搓的自定义规则返回 null */
+  function currentWorldKey() {
+    const fp = app.engine.rule.fingerprint
+    for (const [key, f] of worldFingerprints) if (f === fp) return key
+    return null
+  }
+
+  return {
+    renderPatterns, renderWorlds, currentWorldKey,
+    render() { renderPatterns(); renderWorlds() }
+  }
 }

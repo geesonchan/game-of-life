@@ -123,6 +123,11 @@ app.applyRule = function (rule, message) {
 
 app.updateRuleInfo = function () {
   const r = app.engine.rule
+  // HUD 上常驻显示当前世界名 —— 切去烟花世界玩过之后，很容易忘了自己还没切回来
+  if (app.library) {
+    const key = app.library.currentWorldKey()
+    document.getElementById('hud-world').textContent = key ? t('world.' + key) : t('rule.custom')
+  }
   document.getElementById('lbl-rule-name').textContent = r.name
   document.getElementById('lbl-notation').textContent = r.notation || t('rule.beyondBS')
   document.getElementById('lbl-fingerprint').textContent = r.fingerprint

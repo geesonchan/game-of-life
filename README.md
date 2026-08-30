@@ -2,9 +2,10 @@
 
 基于浏览器的 Conway 生命游戏实验平台。规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)，
-用户反馈记录见 [docs/feedback.md](./docs/feedback.md)。
+用户反馈记录见 [docs/feedback.md](./docs/feedback.md)，
+**v1 复盘（流程资产 / 方法清单 / v2 待办）见 [docs/retrospective.md](./docs/retrospective.md)**。
 
-当前进度：**全部规格阶段（1–6，含 3.5 / 3.6 / 3.7 / 5.5）已完成**。
+当前进度：**v1 封版**。全部规格阶段（1–6，含插入的 3.5 / 3.6 / 3.7 / 5.5）已通过验收，`acceptance.md` 零未勾项。
 
 ## 目录结构
 

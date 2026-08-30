@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" role="img" aria-label="Game of Life Lab">
+  <title>生命游戏实验台</title>
+  <!-- 一架滑翔机 —— 生命游戏最通用的标志，5 格，斜着爬 -->
+  <rect width="10" height="10" rx="2" fill="#12181a"/>
+  <g fill="#7bd88f">
+    <rect x="3.7" y="1.1" width="2.2" height="2.2" rx=".3"/>
+    <rect x="6.3" y="3.7" width="2.2" height="2.2" rx=".3"/>
+    <rect x="1.1" y="6.3" width="2.2" height="2.2" rx=".3"/>
+    <rect x="3.7" y="6.3" width="2.2" height="2.2" rx=".3"/>
+    <rect x="6.3" y="6.3" width="2.2" height="2.2" rx=".3"/>
+  </g>
+</svg>

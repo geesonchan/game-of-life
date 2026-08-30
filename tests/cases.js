@@ -21,6 +21,7 @@ import { VisualState } from '../src/render/visual-state.js'
 import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
+import { introPages, introNext } from '../src/ui/intro.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -1183,8 +1184,119 @@ cases.push(
 const DOM_SOURCES = [
   'src/main.js', 'src/ui/controls.js', 'src/ui/records.js', 'src/ui/library.js',
   'src/ui/intro.js', 'src/ui/rule-editor.js', 'src/ui/input.js', 'src/ui/io.js',
-  'src/ui/tower-view.js', 'src/ui/explorer-view.js', 'src/render/chart.js'
+  'src/ui/tower-view.js', 'src/ui/explorer-view.js', 'src/render/chart.js', 'src/analytics.js'
 ]
+
+/**
+ * 把注释、字符串、正则字面量剥掉，只留真正是代码的部分。
+ * 模板字符串里的 ${...} 要保留 —— 界面文案基本都在那儿拼，里面是真代码。
+ * 不剥的话误报能淹掉守卫：CSS 里的 rgb(、正则 /^B([0-8]*)\/S([0-8]*)$/ 里的 B( S(，
+ * 都会被当成"调用了一个不存在的函数"。
+ */
+function stripLiterals(src) {
+  let out = ''
+  let i = 0
+  const n = src.length
+  const regexAfter = new Set(['=', '(', ',', ':', '[', '!', '&', '|', '?', '{', '}', ';', '\n', '+', '-', '*', '%', '<', '>', '~', '^'])
+  const prevSig = () => {
+    for (let k = out.length - 1; k >= 0; k--) {
+      const c = out[k]
+      if (c === ' ' || c === '\t') continue
+      return c
+    }
+    return '\n'
+  }
+  const prevWord = () => { const m = /([A-Za-z_$][\w$]*)\s*$/.exec(out); return m ? m[1] : '' }
+  while (i < n) {
+    const c = src[i], d = src[i + 1]
+    if (c === '/' && d === '/') { while (i < n && src[i] !== '\n') i++; continue }
+    if (c === '/' && d === '*') { i += 2; while (i < n && !(src[i] === '*' && src[i + 1] === '/')) i++; i += 2; out += ' '; continue }
+    if (c === "'" || c === '"') {
+      const q = c; i++
+      while (i < n && src[i] !== q) { if (src[i] === '\\') i++; i++ }
+      i++; out += '""'; continue
+    }
+    if (c === '`') {
+      i++
+      while (i < n && src[i] !== '`') {
+        if (src[i] === '\\') { i += 2; continue }
+        if (src[i] === '$' && src[i + 1] === '{') {
+          i += 2
+          let depth = 1, inner = ''
+          while (i < n && depth > 0) {
+            if (src[i] === '{') depth++
+            else if (src[i] === '}') { depth--; if (!depth) break }
+            inner += src[i]; i++
+          }
+          i++; out += '(' + stripLiterals(inner) + ')'
+          continue
+        }
+        i++
+      }
+      i++; out += '""'; continue
+    }
+    if (c === '/') {
+      const pw = prevWord()
+      const isRegex = regexAfter.has(prevSig()) ||
+        ['return', 'typeof', 'case', 'in', 'of', 'delete', 'void', 'instanceof', 'new', 'do', 'else'].indexOf(pw) >= 0
+      if (isRegex) {
+        i++
+        let cls = false
+        while (i < n) {
+          const ch = src[i]
+          if (ch === '\\') { i += 2; continue }
+          if (ch === '[') cls = true
+          else if (ch === ']') cls = false
+          else if (ch === '/' && !cls) break
+          else if (ch === '\n') break
+          i++
+        }
+        i++
+        while (i < n && /[gimsuyd]/.test(src[i])) i++
+        out += ' 0 '; continue
+      }
+    }
+    out += c; i++
+  }
+  return out
+}
+
+/** 一个文件里所有"被声明过"的名字：导入、函数、变量、参数、解构、方法简写 */
+function declaredNames(code) {
+  const d = {}
+  const add = x => { if (x && /^[A-Za-z_$][\w$]*$/.test(x)) d[x] = true }
+  const addList = txt => txt.split(',').forEach(part => {
+    const m = part.replace(/\.\.\./g, '').split(':').pop().split('=')[0]
+    add(m.replace(/[{}[\]\s]/g, ''))
+  })
+  const each = (re, fn) => { let m; while ((m = re.exec(code)) !== null) fn(m) }
+  each(/\b(?:function|class)\s+([A-Za-z_$][\w$]*)/g, m => add(m[1]))
+  each(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g, m => add(m[1]))
+  each(/\b(?:const|let|var)\s*([{[][\s\S]*?[}\]])\s*=/g, m => addList(m[1]))
+  each(/import\s+([\s\S]*?)\s+from/g, m => addList(m[1].replace(/[*]|\bas\b/g, ',')))
+  each(/\bfunction\s*[A-Za-z_$\w]*\s*\(([^()]*)\)/g, m => addList(m[1]))
+  each(/\(([^()]*)\)\s*=>/g, m => addList(m[1]))
+  each(/([A-Za-z_$][\w$]*)\s*=>/g, m => add(m[1]))
+  each(/catch\s*\(\s*([A-Za-z_$][\w$]*)/g, m => add(m[1]))
+  each(/\bfor\s*\(\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g, m => add(m[1]))
+  // 方法/取值器简写：  name(args) {  —— 是定义，不是调用
+  each(/(?:^|[{,;])\s*(?:async\s+|get\s+|set\s+|static\s+)*([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*\{/gm, m => add(m[1]))
+  return d
+}
+
+const JS_GLOBALS = ('Math JSON Object Array Number String Boolean Set Map WeakMap WeakSet Date Error TypeError RangeError ' +
+  'Promise RegExp Symbol BigInt Proxy Reflect parseInt parseFloat isNaN isFinite encodeURIComponent decodeURIComponent ' +
+  'Uint8Array Uint8ClampedArray Uint16Array Uint32Array Int8Array Int16Array Int32Array Float32Array Float64Array ' +
+  'ArrayBuffer DataView ImageData Worker URL URLSearchParams Blob File FileReader FormData Image Audio ' +
+  'document window location navigator console setTimeout clearTimeout setInterval clearInterval ' +
+  'requestAnimationFrame cancelAnimationFrame requestIdleCallback fetch alert confirm prompt structuredClone ' +
+  'performance localStorage sessionStorage CustomEvent Event MouseEvent KeyboardEvent PointerEvent ' +
+  'TextEncoder TextDecoder atob btoa queueMicrotask getComputedStyle matchMedia DOMParser ' +
+  'IntersectionObserver ResizeObserver MutationObserver AbortController globalThis self').split(' ')
+
+const JS_KEYWORDS = ('async if for while switch catch return typeof function of in do else new delete void await yield ' +
+  'throw case super this import export instanceof let const var class extends try finally break continue default ' +
+  'null true false undefined').split(' ')
 
 function readSrc(path) {
   if (typeof readTextFile !== 'function') throw new Error('运行器没有提供 readTextFile')
@@ -1241,6 +1353,91 @@ cases.push(
         }
       }
       t.equal(missing.length, 0, `绑定落空：\n  ${missing.join('\n  ')}`)
+    }
+  },
+  {
+    name: '接线：页面必须声明网站图标，且文件存在',
+    run(t) {
+      // 不声明的话浏览器会去要 /favicon.ico，控制台一条 404。公网首验看到的就是这条。
+      const html = readSrc('index.html')
+      const m = /<link[^>]*rel="icon"[^>]*>/.exec(html)
+      t.ok(!!m, 'index.html 应声明 rel="icon"')
+      const href = /href="([^"]+)"/.exec(m[0])
+      t.ok(!!href, '图标声明里应有 href')
+      // 相对路径 —— 站点发布在 用户名.github.io/<仓库名>/ 下，绝对路径会 404
+      t.ok(href[1].charAt(0) !== '/', `图标路径要用相对路径，实测 ${href[1]}`)
+      const svg = readSrc('public' + href[1].replace(/^\./, ''))
+      t.ok(svg.indexOf('<svg') >= 0, '图标文件应是一个 svg')
+    }
+  },
+  {
+    name: '接线：事件回调里引用的函数必须真的存在（公网 bug 后补）',
+    run(t) {
+      // 2026-08-29 公网首验炸的就是这条路径：
+      // 第零幕改动时把 pageCount() 换成了 pageList()，漏了 nextBtn 回调里的那一处。
+      // 三个环境（dev / 打包产物 / 线上）全都炸，本地没发现纯粹是因为**没人点过那个按钮**。
+      // 见 docs/decisions.md D65。
+      //
+      // 判据：文件里以 name( 形式调用的名字，必须是本文件声明过的、或者已知全局。
+      // 压缩器的行为反过来印证了这一点 —— 产物里 page/nextBtn/finish 全被改名，
+      // 唯独 pageCount 原样保留，因为压缩器找不到它的声明，只能当全局放过。
+      const known = {}
+      for (const g of JS_GLOBALS) known[g] = true
+      for (const k of JS_KEYWORDS) known[k] = true
+
+      const offenders = []
+      for (const file of DOM_SOURCES) {
+        const code = stripLiterals(readSrc(file))
+        const declared = declaredNames(code)
+        const seen = {}
+        const re = /(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g
+        let m
+        while ((m = re.exec(code)) !== null) {
+          const name = m[2]
+          if (known[name] || declared[name] || seen[name]) continue
+          seen[name] = true
+          offenders.push(`${file} 调用了没有声明的 ${name}()`)
+        }
+      }
+      t.equal(offenders.length, 0, `引用落空：\n  ${offenders.join('\n  ')}`)
+    }
+  },
+  {
+    name: '介绍卡翻页：四种页序下每一页点「下一幕」的去向',
+    run(t) {
+      // 翻页逻辑原本写在 DOM 回调里，这个项目的测试没有 DOM，回调体一行都跑不到 ——
+      // 于是里面同时藏了两个 bug 上了线。现在逻辑搬进纯函数，这里把每条路径都走一遍。
+      const expect = [
+        // [有没有第零幕, 模式, 期望页序, 每一页点「下一幕」的去向]
+        [true, 'simple', ['act0', 'act1', 'act2', 'act3'], [1, 2, 3, 'finish']],
+        [true, 'full', ['act0', 'act1', 'act2', 'act3', 'helpAge', 'helpBS'], [1, 2, 3, 'finish', 5, 'close']],
+        [false, 'simple', ['act1', 'act2', 'act3'], [1, 2, 'finish']],
+        [false, 'full', ['act1', 'act2', 'act3', 'helpAge', 'helpBS'], [1, 2, 'finish', 4, 'close']]
+      ]
+      for (const [chooser, mode, pages, nexts] of expect) {
+        const list = introPages({ chooser, mode })
+        t.equal(list.join(','), pages.join(','), `chooser=${chooser} mode=${mode} 的页序`)
+        for (let i = 0; i < list.length; i++) {
+          t.equal(String(introNext(list, i)), String(nexts[i]),
+            `chooser=${chooser} mode=${mode}：第 ${i} 页（${list[i]}）点下一幕`)
+        }
+      }
+
+      // 第二个 bug 是写死的下标 page === 2：带第零幕时第三幕在 3 号位，
+      // 会在第二幕就误触「开始玩」。这里正面钉一次。
+      const withZero = introPages({ chooser: true, mode: 'simple' })
+      t.equal(introNext(withZero, 2), 3, '带第零幕时，第 2 页（第二幕）应该翻到下一页而不是收尾')
+      t.equal(introNext(withZero, 3), 'finish', '第 3 页才是第三幕')
+    }
+  },
+  {
+    name: '介绍卡：页序不许再用写死的下标判断',
+    run(t) {
+      // D62 定过"用身份不用下标"，然后我自己在 nextBtn 回调里写了 page === 2。
+      // 规矩光写在文档里没用，得能被机器查。
+      const code = stripLiterals(readSrc('src/ui/intro.js'))
+      const bad = code.match(/\bpage\s*[=!]==?\s*[1-9]\d*/g) || []
+      t.equal(bad.length, 0, `intro.js 里出现了写死的页下标：${bad.join('、')}`)
     }
   },
   {

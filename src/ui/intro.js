@@ -74,6 +74,36 @@ const DEMO_STAGE = [                                              // 第一幕�
   [7, 7], [8, 7], [9, 7], [8, 8]                                  // 会变形几步的
 ]
 
+/**
+ * 介绍卡的页序与翻页决策 —— 纯函数，不碰 DOM，可以直接在测试里跑。
+ *
+ * 这两个函数是从 DOM 回调里抽出来的。抽出来的原因写在 docs/decisions.md D65：
+ * 原本翻页逻辑写在 nextBtn 的 click 回调里，而这个项目的测试没有 DOM，
+ * 回调体一行都执行不到 —— 于是里面既漏了一处改名（pageCount 已删还在调），
+ * 又留了一个写死的下标（page === 2），两个都是上线才炸。
+ * 逻辑搬到这里之后，回调只剩"把决策翻译成动作"，测试能把每条路径走一遍。
+ *
+ * 页用字符串标识，不用函数身份 —— 字符串能写进断言，函数身份不能。
+ * @param {{chooser:boolean, mode:string}} o
+ * @returns {string[]} 形如 ['act0','act1','act2','act3','helpAge','helpBS']
+ */
+export function introPages(o) {
+  const list = o.chooser ? ['act0'] : []
+  list.push('act1', 'act2', 'act3')
+  if (o.mode === 'full') list.push('helpAge', 'helpBS')
+  return list
+}
+
+/**
+ * 点「下一幕」该干什么。
+ * @returns {'finish'|'close'|number} 'finish' = 关卡片并送礼物；'close' = 只关；数字 = 跳到第几页
+ */
+export function introNext(list, page) {
+  if (list[page] === 'act3') return 'finish'      // 第三幕的主按钮 = 开始玩
+  if (page >= list.length - 1) return 'close'     // 已经在最后一页
+  return page + 1
+}
+
 export function createIntro(app) {
   const modal = document.getElementById('intro-modal')
   const bodyEl = document.getElementById('intro-body')
@@ -104,16 +134,9 @@ export function createIntro(app) {
   let stageTimer = 0
   let miniBoards = []
 
-  /**
-   * 页序：可选的第零幕（选版本）→ 三幕 → 完整模式再加两页参考。
-   * 用一个数组按身份取，而不是硬编码下标 —— 第零幕在不在会让所有下标平移。
-   */
-  function pageList() {
-    const list = chooser ? [actZero] : []
-    list.push(act1, act2, act3)
-    if (app.mode === 'full') list.push(helpAge, helpBS)
-    return list
-  }
+  /** 页 key → 画这一页的函数。页序本身由纯函数 introPages 决定（见文件顶部）。 */
+  const RENDERERS = { act0: actZero, act1, act2, act3, helpAge, helpBS }
+  function pageList() { return introPages({ chooser, mode: app.mode }) }
 
   /**
    * @param {{chooser?:boolean, page?:number}} [opts]
@@ -146,7 +169,7 @@ export function createIntro(app) {
     const total = list.length
     if (page >= total) page = total - 1
     const cur = list[page]
-    const onAct0 = cur === actZero
+    const onAct0 = cur === 'act0'
 
     // 第零幕的两张卡片写在 index.html 里（接线守卫扫得到），不是 innerHTML 拼出来的
     act0El.hidden = !onAct0
@@ -170,16 +193,16 @@ export function createIntro(app) {
     langSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.lang === getLang()))
 
     // 第三幕的主按钮是「开始玩」；完整模式下另给一个通往参考页的次按钮
-    const isAct3 = cur === act3
+    const isAct3 = cur === 'act3'
     const isLast = page === total - 1
     // 第零幕的动作就是那两张卡片本身，不需要"下一幕"
     nextBtn.hidden = onAct0
     nextBtn.textContent = isAct3 ? t('intro.start') : (isLast ? t('intro.close') : t('intro.next'))
-    moreBtn.hidden = onAct0 || !(isAct3 && list.includes(helpAge))
+    moreBtn.hidden = onAct0 || !(isAct3 && list.includes('helpAge'))
     if (!moreBtn.hidden) moreBtn.textContent = t('help.age.title') + ' / ' + t('help.bs.title')
 
     bodyEl.innerHTML = ''
-    if (!onAct0) cur()
+    if (!onAct0) RENDERERS[cur]()
     // 画布要等布局算完才有尺寸
     requestAnimationFrame(() => { for (const b of miniBoards) b.draw() })
   }
@@ -312,14 +335,16 @@ export function createIntro(app) {
 
   /* ---------------- 导航 ---------------- */
 
+  // 回调只负责"把决策翻译成动作"，决策本身在 introNext 里（纯函数，测试覆盖）
   nextBtn.addEventListener('click', () => {
-    if (page === 2) { finish(); return }              // 第三幕的主按钮 = 开始玩
-    if (page >= pageCount() - 1) { close(); return }
-    page++
+    const r = introNext(pageList(), page)
+    if (r === 'finish') { finish(); return }
+    if (r === 'close') { close(); return }
+    page = r
     render()
   })
   backBtn.addEventListener('click', () => { if (page > 0) { page--; render() } })
-  moreBtn.addEventListener('click', () => { page = pageList().indexOf(helpAge); render() })
+  moreBtn.addEventListener('click', () => { page = pageList().indexOf('helpAge'); render() })
   skipBtn.addEventListener('click', close)
   document.getElementById('intro-backdrop').addEventListener('click', close)
   window.addEventListener('keydown', e => {

@@ -44,6 +44,7 @@
           <button data-lang="zh" class="on">中</button>
           <button data-lang="en">EN</button>
         </div>
+        <button id="btn-tower" data-i18n="tower.open" data-i18n-title="tower.legend">观塔</button>
         <button class="help-btn" id="btn-help" data-i18n-title="tip.help">?</button>
       </div>
     </header>
@@ -262,6 +263,46 @@
             </ul>
           </div>
         </section>
+      </aside>
+    </div>
+  </div>
+
+  <div class="tower-view" id="tower-view" hidden>
+    <header class="tower-head">
+      <b data-i18n="tower.title">时间之塔</b>
+      <span class="tower-stat" id="tower-stat"></span>
+      <span class="tower-stat" id="tower-fps"></span>
+      <button id="tower-back" data-i18n="tower.back">返回</button>
+    </header>
+    <div class="tower-body">
+      <div class="tower-stage">
+        <canvas id="tower-canvas"></canvas>
+        <p class="tower-empty" id="tower-empty" data-i18n="tower.empty">还没有造塔</p>
+        <div class="progress tower-progress" id="tower-progress" hidden>
+          <div class="progress-track"><div class="progress-bar" id="tower-progress-bar"></div></div>
+          <p class="note" id="tower-progress-text"></p>
+        </div>
+        <p class="tower-hint" data-i18n="tower.hint">左键拖动旋转</p>
+      </div>
+      <aside class="tower-panel">
+        <div class="field">
+          <span class="field-label"><span data-i18n="tower.gens">走多少代</span> <b id="tower-lbl-gens">200</b></span>
+          <input type="range" id="tower-gens" min="20" max="500" step="10" value="200" />
+        </div>
+        <div class="field">
+          <span class="field-label"><span data-i18n="tower.height">塔高</span> <b id="tower-lbl-height">200</b></span>
+          <input type="range" id="tower-height" min="20" max="500" step="10" value="200" />
+        </div>
+        <div class="row btn-row">
+          <button id="tower-build" class="primary" data-i18n="tower.build">造塔</button>
+        </div>
+        <label class="check"><input type="checkbox" id="tower-spin" checked /><span data-i18n="tower.spin">自动环绕</span></label>
+        <div class="field">
+          <span class="field-label"><span data-i18n="tower.slice">切片</span> <b id="tower-lbl-slice">—</b></span>
+          <input type="range" id="tower-slice" min="0" max="0" step="1" value="0" disabled />
+        </div>
+        <canvas id="tower-mini" class="tower-mini"></canvas>
+        <p class="note" data-i18n="tower.legend">一层就是一代。</p>
       </aside>
     </div>
   </div>

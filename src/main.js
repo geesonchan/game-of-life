@@ -14,6 +14,7 @@ import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
 import { setupRecords } from './ui/records.js'
 import { setupIO } from './ui/io.js'
+import { createTowerView } from './ui/tower-view.js'
 import { boardBaseline } from './engine/save.js'
 import { AGE_MAX } from './render/palette.js'
 import { placePattern, centerOrigin } from './engine/patterns.js'
@@ -373,6 +374,8 @@ app.library = setupLibrary(app)
 app.library.render()
 app.intro = createIntro(app)
 document.getElementById('btn-help').addEventListener('click', () => app.intro.open(0))
+app.tower = createTowerView(app)
+document.getElementById('btn-tower').addEventListener('click', () => app.tower.show())
 app.renderer.setAgingLayers(app.engine.rule.agingLayers)
 app.updateRuleInfo()
 
@@ -397,6 +400,7 @@ onLangChange(() => {
   app.ruleEditor.relocalize()
   app.intro.relocalize()
   app.records.relocalize()
+  app.tower.relocalize()
   app.refreshTabHint()
 })
 function trailLabelOf(v) {

@@ -21,6 +21,7 @@ import { VisualState } from '../src/render/visual-state.js'
 import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
+import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 
 /** 把 ASCII 图案（O=活，.=死）画到棋盘上，左上角落在 (ox,oy) */
 export function place(engine, pattern, ox, oy) {
@@ -1102,7 +1103,7 @@ cases.push(
 const DOM_SOURCES = [
   'src/main.js', 'src/ui/controls.js', 'src/ui/records.js', 'src/ui/library.js',
   'src/ui/intro.js', 'src/ui/rule-editor.js', 'src/ui/input.js', 'src/ui/io.js',
-  'src/render/chart.js'
+  'src/ui/tower-view.js', 'src/render/chart.js'
 ]
 
 function readSrc(path) {
@@ -1552,6 +1553,194 @@ cases.push({
     t.ok(inside(huge), `选区铺满时也不能跑到画布外，实测 ${huge.x},${huge.y}`)
   }
 })
+
+/* ================= 阶段 5.5：时间之塔（渲染器无关部分） ================= */
+
+/** 把内置图案放到大棋盘中央，返回给 buildTower 用的格索引 */
+function patternCells(key, boardW, ox, oy) {
+  const p = getPattern(key)
+  return p.cells.map(([x, y]) => (y + oy) * boardW + (x + ox))
+}
+
+cases.push(
+  {
+    name: '时间之塔 · 几何断言：滑翔机的塔身是一条斜线',
+    run(t) {
+      const W = 60
+      const { tower } = buildTower({
+        boardSize: [W, W], boundary: 'dead',
+        initCells: patternCells('glider', W, 20, 20), gens: 40, maxLayers: 200
+      })
+      t.equal(tower.length, 41, '第 0 代也算一层，40 代应有 41 层')
+      for (const l of tower.layers) t.equal(l.cells.length, 5, '滑翔机每一层都是 5 格')
+
+      // 每 4 层质心平移 (1,1) —— 这就是"斜线"的准确说法
+      for (let i = 0; i + 4 < tower.length; i++) {
+        const a = tower.centroidOf(tower.layers[i])
+        const b = tower.centroidOf(tower.layers[i + 4])
+        t.equal(+(b.x - a.x).toFixed(6), 1, `第 ${i} → ${i + 4} 层质心 x 应 +1`)
+        t.equal(+(b.y - a.y).toFixed(6), 1, `第 ${i} → ${i + 4} 层质心 y 应 +1`)
+      }
+
+      // 包围盒沿两轴同步增长：40 代走了 10 步，足迹应比单层宽/高各多约 10
+      const first = tower.bboxOf(tower.layers[0])
+      const last = tower.bboxOf(tower.layers[tower.length - 1])
+      t.equal(last.x0 - first.x0, 10, '整段跑下来 x 应前进 10 格')
+      t.equal(last.y0 - first.y0, 10, '整段跑下来 y 应前进 10 格')
+      t.equal(first.w, last.w, '单层宽度不变（滑翔机不长大）')
+      t.equal(first.h, last.h, '单层高度不变')
+
+      // 斜线：不是直柱（并集足迹远大于单层足迹）
+      t.ok(tower.footprintUnion().size > 5 * 4,
+        `斜线的投影足迹应远大于单层，实测 ${tower.footprintUnion().size} 格`)
+    }
+  },
+  {
+    name: '时间之塔 · 几何断言：blinker 的塔身是麻花柱',
+    run(t) {
+      const W = 30
+      const { tower } = buildTower({
+        boardSize: [W, W], boundary: 'dead',
+        initCells: [14 * W + 13, 14 * W + 14, 14 * W + 15], gens: 20, maxLayers: 200
+      })
+      t.equal(tower.length, 21, '20 代应有 21 层')
+      for (const l of tower.layers) t.equal(l.cells.length, 3, '每层都是 3 格')
+
+      // 麻花：相邻层不同、隔层相同
+      for (let i = 0; i + 1 < tower.length; i++) {
+        t.ok(!tower.sameLayer(tower.layers[i], tower.layers[i + 1]), `第 ${i} 层与第 ${i + 1} 层应不同`)
+      }
+      for (let i = 0; i + 2 < tower.length; i++) {
+        t.ok(tower.sameLayer(tower.layers[i], tower.layers[i + 2]), `第 ${i} 层与第 ${i + 2} 层应逐格相同`)
+      }
+
+      // 并集足迹是一个十字：横三 ∪ 竖三 = 5 格，且包围盒是 3×3
+      const u = tower.footprintUnion()
+      t.equal(u.size, 5, `麻花柱的投影足迹应是十字的 5 格，实测 ${u.size}`)
+      const xs = [...u].map(i => i % W), ys = [...u].map(i => (i / W) | 0)
+      t.equal(Math.max(...xs) - Math.min(...xs) + 1, 3, '十字宽 3')
+      t.equal(Math.max(...ys) - Math.min(...ys) + 1, 3, '十字高 3')
+      const cx = 14, cy = 14
+      t.ok(u.has(cy * W + cx), '十字中心应是活的（两个相位共用）')
+      t.ok(!u.has((cy - 1) * W + cx - 1), '十字的四个角不该有格子')
+    }
+  },
+  {
+    name: '时间之塔 · 几何断言：静物的塔身是直柱',
+    run(t) {
+      const W = 20
+      const { tower } = buildTower({
+        boardSize: [W, W], boundary: 'dead',
+        initCells: [5 * W + 5, 5 * W + 6, 6 * W + 5, 6 * W + 6], gens: 20, maxLayers: 200
+      })
+      t.equal(tower.length, 21, '20 代应有 21 层')
+      const base = tower.layers[0]
+      const bbox0 = tower.bboxOf(base)
+      for (let i = 1; i < tower.length; i++) {
+        t.ok(tower.sameLayer(base, tower.layers[i]), `第 ${i} 层应与第 0 层逐格相同`)
+        const b = tower.bboxOf(tower.layers[i])
+        t.equal(`${b.x0},${b.y0},${b.w},${b.h}`, `${bbox0.x0},${bbox0.y0},${bbox0.w},${bbox0.h}`,
+          `第 ${i} 层包围盒应与第 0 层相同`)
+      }
+      // 直柱：并集足迹恰好等于单层足迹
+      t.equal(tower.footprintUnion().size, base.cells.length,
+        '直柱的投影足迹应恰好等于单层，多一格都说明它在动')
+      t.equal(tower.instanceCount, 4 * 21, '只画活细胞：21 层 × 4 格')
+    }
+  },
+  {
+    name: '时间之塔：滑动窗口，默认 200 上限 500',
+    run(t) {
+      t.equal(TOWER_DEFAULT_HEIGHT, 200, '默认塔高')
+      t.equal(TOWER_MAX_HEIGHT, 500, '塔高上限')
+
+      const W = 40
+      const { tower } = buildTower({
+        boardSize: [W, W], boundary: 'torus', seed: 4271, density: 0.3,
+        gens: 600, maxLayers: TOWER_DEFAULT_HEIGHT
+      })
+      t.equal(tower.length, 200, `层数不该越过塔高，实测 ${tower.length}`)
+      t.equal(tower.dropped, 401, '被丢掉的层数应如实记账（601 层留 200）')
+      t.equal(tower.genRange.join('-'), '401-600', '窗口应停在最近 200 代')
+
+      // 上限夹取
+      const tall = new Tower({ width: 10, height: 10, maxLayers: 9999 })
+      t.equal(tall.maxLayers, TOWER_MAX_HEIGHT, '超过上限应被夹到 500')
+      t.equal(new Tower({ width: 10, height: 10, maxLayers: 0 }).maxLayers, 1, '下限至少 1 层')
+
+      // 调小塔高会立刻裁掉多余的层
+      tower.setMaxLayers(50)
+      t.equal(tower.length, 50, '调小塔高应立刻裁剪')
+      t.equal(tower.genRange.join('-'), '551-600', '裁剪后应保留最新的那一段')
+    }
+  },
+  {
+    name: '时间之塔：只画活细胞，且能按代数取切片',
+    run(t) {
+      const W = 50
+      const { tower, engine } = buildTower({
+        boardSize: [W, W], boundary: 'torus', seed: 99, density: 0.2, gens: 30, maxLayers: 200
+      })
+      // 实例数 = 各层活细胞数之和，死细胞一个都不进
+      let sum = 0
+      for (const l of tower.layers) sum += l.cells.length
+      t.equal(tower.instanceCount, sum, '实例数应等于各层活细胞数之和')
+      t.ok(tower.instanceCount < tower.length * W * W * 0.5,
+        '稀疏局的实例数应远小于"层数 × 全盘格数"，说明确实没画死细胞')
+
+      // 切片：按代数取到的那一层，必须和引擎跑到那一代时的棋盘逐格一致
+      const probe = 17
+      const layer = tower.layerAt(probe)
+      t.ok(!!layer, `应能取到第 ${probe} 代的切片`)
+      const ref = new LifeEngine(W, W, { rule: lifeRule(), boundary: 'torus' }).randomize(99, 0.2)
+      ref.run(probe)
+      const want = []
+      for (let i = 0; i < ref.cur.length; i++) if (ref.cur[i] === 1) want.push(i)
+      t.equal(layer.cells.length, want.length, '切片的活细胞数应与引擎一致')
+      t.equal([...layer.cells].join(','), want.join(','), '切片应与引擎的棋盘逐格一致')
+      t.equal(engine.generation, 30, '构建结束时引擎应停在最后一代')
+    }
+  },
+  {
+    name: '时间之塔：打包 / 还原往返一致（Worker 传输用）',
+    run(t) {
+      const W = 30
+      const { tower } = buildTower({
+        boardSize: [W, W], boundary: 'dead',
+        initCells: patternCells('pulsar', W, 8, 8), gens: 12, maxLayers: 200
+      })
+      const back = unpackTower(packTower(tower))
+      t.equal(back.length, tower.length, '层数应一致')
+      t.equal(back.width, tower.width, '宽度应一致')
+      t.equal(back.maxLayers, tower.maxLayers, '塔高应一致')
+      t.equal(back.instanceCount, tower.instanceCount, '实例数应一致')
+      for (let i = 0; i < tower.length; i++) {
+        t.equal(back.layers[i].gen, tower.layers[i].gen, `第 ${i} 层代数`)
+        t.ok(back.sameLayer(back.layers[i], tower.layers[i]), `第 ${i} 层应逐格一致`)
+      }
+    }
+  },
+  {
+    name: '时间之塔：构建进度按 chunk 回调，最后一次必到 100%',
+    run(t) {
+      const calls = []
+      buildTower(
+        { boardSize: [30, 30], boundary: 'torus', seed: 7, density: 0.3, gens: 100, maxLayers: 200 },
+        (done, total) => calls.push([done, total]),
+        25
+      )
+      t.equal(calls.length, 4, `100 代按 25 一片应回调 4 次，实测 ${calls.length}`)
+      t.equal(calls[0].join('/'), '25/100', '第一次回调')
+      t.equal(calls[calls.length - 1].join('/'), '100/100', '最后一次必须报满')
+
+      // 不能整除时最后一片也要报满
+      const odd = []
+      buildTower({ boardSize: [20, 20], boundary: 'torus', seed: 8, density: 0.3, gens: 30, maxLayers: 200 },
+        (d, tt) => odd.push([d, tt]), 25)
+      t.equal(odd[odd.length - 1].join('/'), '30/30', '不能整除时最后一次也要报满')
+    }
+  }
+)
 
 function now() {
   if (typeof performance !== 'undefined' && performance.now) return performance.now()

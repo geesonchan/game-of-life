@@ -777,3 +777,40 @@ button.danger:hover { background: #713030; border-color: #9a3d3d; color: #fff0f0
 .sel-menu button { padding: 4px 10px; font-size: 12px; }
 .sel-menu #sel-export { background: var(--accent-dim); border-color: #3d8a4c; color: #eaffef; font-weight: 600; }
 .sel-menu #sel-export:hover { background: #38804a; }
+
+/* ---------- 阶段 5.5：时间之塔 ---------- */
+.tower-view {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; flex-direction: column;
+  background: #0b0d12;
+}
+.tower-view[hidden] { display: none; }
+
+.tower-head {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.tower-head b { font-size: 14px; }
+.tower-stat { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tower-head button { margin-left: auto; }
+
+.tower-body { flex: 1; display: flex; min-height: 0; }
+.tower-stage { position: relative; flex: 1; min-width: 0; }
+.tower-stage canvas { display: block; width: 100%; height: 100%; }
+.tower-empty, .tower-hint {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  margin: 0; font-size: 12px; color: var(--muted); text-align: center;
+}
+.tower-empty { top: 50%; max-width: 70%; }
+.tower-hint { bottom: 10px; }
+.tower-progress { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 260px; }
+
+.tower-panel {
+  width: 240px; flex: none; padding: 14px;
+  background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto;
+}
+.tower-mini {
+  display: block; width: 100%; height: 190px; margin-top: 6px;
+  background: #12151c; border: 1px solid var(--line); border-radius: 7px;
+}
+@media (max-width: 900px) { .tower-panel { width: 200px; } }

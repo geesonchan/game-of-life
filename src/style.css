@@ -842,3 +842,13 @@ button.danger:hover { background: #713030; border-color: #9a3d3d; color: #fff0f0
 .fav-row b { font-size: 12px; }
 .fav-row .fav-meta { display: block; font-size: 10px; color: var(--muted); margin: 2px 0 5px; }
 .fav-row button { width: 100%; padding: 4px; font-size: 11px; }
+
+/* 播放按钮随状态换色：待播放 = 绿（.primary），运行中 = 橙（.running）。
+   写在 .primary 之后，同等优先级下后写的赢；两种模式共用同一个按钮，自动同步。 */
+button.running {
+  background: #6d4d16;
+  border-color: #8f6a20;
+  color: #ffeecd;
+  font-weight: 600;
+}
+button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e6; }

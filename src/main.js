@@ -77,7 +77,9 @@ app.setRunning = function (on) {
   app.autoPaused = false
   app.el.play.textContent = t(on ? 'ctrl.pause' : 'ctrl.play')
   app.el.play.title = t(on ? 'tip.pause' : 'tip.play')
+  // 同一个按钮随状态换色：待播放 = 绿（primary），运行中 = 橙（running）
   app.el.play.classList.toggle('primary', !on)
+  app.el.play.classList.toggle('running', on)
   app.windowStart = performance.now()
   app.gensInWindow = 0
   if (!on) app.gps = 0

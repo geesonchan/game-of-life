@@ -18,14 +18,8 @@
         <em data-mode="full" data-i18n="app.subtitle">阶段 3.7 · 布局重构</em>
       </div>
 
-      <div class="tb-seg tb-left">
-        <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
-      </div>
-
-      <div class="tb-seg tb-tabs">
-        <button class="tab" data-tab="pattern" data-mode="full" data-i18n="pattern.section" data-i18n-title="tip.pattern">图案盒子</button>
-        <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>
-      </div>
+      <!-- 窄屏专用：把低频控件收进「更多」。桌面 display:none，零影响 -->
+      <button class="tb-more" id="btn-more" data-i18n="mobile.more" data-i18n-title="mobile.more.tip">更多</button>
 
       <div class="tb-seg tb-run">
         <button id="btn-play" class="primary" data-i18n="ctrl.play" data-i18n-title="tip.play">▶ 播放</button>
@@ -37,6 +31,17 @@
         </label>
       </div>
 
+      <!-- 「更多」组：桌面上 display:contents，三个分段仍是 .topbar 的直接 flex 子项，
+           顺序由 CSS 的 order 固定，桌面呈现逐像素不变；窄屏下它变成一个真正的浮层容器，
+           三段在里面纵向排开 —— 不必再靠写死的 top 值去堆，真机字体度量变了也不会重叠。 -->
+      <div class="tb-more-group" id="tb-more-group">
+      <div class="tb-seg tb-left">
+        <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
+      </div>
+      <div class="tb-seg tb-tabs">
+        <button class="tab" data-tab="pattern" data-mode="full" data-i18n="pattern.section" data-i18n-title="tip.pattern">图案盒子</button>
+        <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>
+      </div>
       <div class="tb-seg tb-right">
         <div class="seg" id="mode-switch" role="group" data-i18n-title="tip.mode">
           <button data-mode-val="simple" data-i18n="mode.simpleLabel">简洁</button>
@@ -49,6 +54,8 @@
         <button id="btn-tower" data-i18n="tower.open" data-i18n-title="tower.legend">观塔</button>
         <button id="btn-explorer" data-i18n="exp.open" data-i18n-title="exp.hint">勘探</button>
         <button class="help-btn" id="btn-help" data-i18n-title="tip.help">?</button>
+        </div>
+        <p class="note more-note" id="more-note" data-i18n="mobile.deskOnly">观塔和勘探暂时只在电脑上开放 —— 手机屏放不下它们的画面和表格。</p>
       </div>
     </header>
 
@@ -86,6 +93,8 @@
       </main>
 
       <aside class="panel">
+        <!-- 窄屏专用：抽屉把手。桌面 display:none -->
+        <button class="drawer-handle" id="drawer-handle" data-i18n="mobile.settings" data-i18n-title="mobile.settings.tip">设置</button>
         <section class="group" data-mode="full">
           <h2 class="group-head"><span data-i18n="board.section">棋盘</span></h2>
           <div class="group-body">

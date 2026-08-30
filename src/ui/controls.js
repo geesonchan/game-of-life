@@ -167,6 +167,37 @@ export function setupControls(app) {
   app.refreshTabHint()
   tabs.forEach(b => b.addEventListener('click', () => app.toggleTab(b.dataset.tab)))
 
+  /* ---------- 窄屏：「更多」浮层与底部抽屉（D66） ---------- */
+
+  // 两个按钮在桌面是 display:none，点不到，所以这里不需要判断屏宽。
+  const moreBtn = $('btn-more')
+  const drawerHandle = $('drawer-handle')
+
+  app.setMore = function (open) {
+    document.body.classList.toggle('more-open', open)
+  }
+  app.setDrawer = function (open) {
+    document.body.classList.toggle('drawer-open', open)
+  }
+
+  moreBtn.addEventListener('click', () => app.setMore(!document.body.classList.contains('more-open')))
+  drawerHandle.addEventListener('click', () => app.setDrawer(!document.body.classList.contains('drawer-open')))
+
+  // 点「更多」里的任何一个按钮就收起浮层 —— 那些控件都是一次性的，
+  // 点完还杵在那儿盖着棋盘，用户得再点一次才能看见效果
+  for (const seg of ['tb-left', 'tb-tabs', 'tb-right']) {
+    const el = document.querySelector('.' + seg)
+    if (el) el.addEventListener('click', e => { if (e.target.closest('button')) app.setMore(false) })
+  }
+
+  // 点棋盘就把两个浮层都收掉
+  app.canvas.addEventListener('pointerdown', () => { app.setMore(false); app.setDrawer(false) })
+
+  // 转屏后重新适配视图：横竖屏的可视区差得远，保中心点会让棋盘跑出画面
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => { app.handleResize(); app.fitView() }, 250)
+  })
+
   /* ---------- 语言与模式开关 ---------- */
 
   const langSwitch = $('lang-switch')

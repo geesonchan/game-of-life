@@ -22,6 +22,7 @@ import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
 import { introPages, introNext } from '../src/ui/intro.js'
+import { pinchDelta, strokeVerdict, PROMOTE_MS } from '../src/ui/input.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -1353,6 +1354,82 @@ cases.push(
         }
       }
       t.equal(missing.length, 0, `绑定落空：\n  ${missing.join('\n  ')}`)
+    }
+  },
+  {
+    name: '触控：记账必须延后到收笔，否则回滚只还原了画面',
+    run(t) {
+      // D67：触控下"这一笔"可能其实是捏合的第一根手指，要能整笔撤销。
+      // 但 noteEdit（重置终止检测器）和 markDirtyRun（本局不能再靠种子重放）
+      // 这两件事撤不回来 —— 画面还原了、账没还原，等于没回滚。
+      // 所以它们只能在收笔时做。这条规矩写在文档里挡不住手滑，所以在这儿查。
+      const src = stripLiterals(readSrc('src/ui/input.js'))
+      const fn = name => {
+        const i = src.indexOf('function ' + name)
+        t.ok(i >= 0, `input.js 里应有 ${name}()`)
+        // 粗略取到下一个顶层 function 之前
+        const next = src.indexOf('\n  function ', i + 1)
+        return src.slice(i, next < 0 ? src.length : next)
+      }
+      const paint = fn('paintLine')
+      t.ok(paint.indexOf('noteEdit') < 0, 'paintLine 里不许直接调 noteEdit —— 那是收笔才做的事')
+      t.ok(paint.indexOf('markDirtyRun') < 0, 'paintLine 里不许直接调 markDirtyRun')
+      t.ok(paint.indexOf('noteCell') >= 0, 'paintLine 必须逐格记下原值，否则回滚无从谈起')
+
+      const commit = fn('commitStroke')
+      t.ok(commit.indexOf('noteEdit') >= 0, 'commitStroke 必须补上 noteEdit')
+      t.ok(commit.indexOf('markDirtyRun') >= 0, 'commitStroke 必须补上 markDirtyRun')
+
+      const back = fn('rollbackStroke')
+      t.ok(back.indexOf('runDirtyBefore') >= 0, 'rollbackStroke 必须把 runDirty 也还原，不能只还原格子')
+    }
+  },
+  {
+    name: '触控：捏合与双指拖的数学（缩放倍率 / 平移量 / 锚点）',
+    run(t) {
+      // 两指从相距 100 拉到 200，中点不动 ⇒ 放大一倍、不平移
+      let d = pinchDelta({ dist: 100, cx: 50, cy: 50 }, { dist: 200, cx: 50, cy: 50 })
+      t.equal(d.factor, 2, '距离翻倍应放大一倍')
+      t.equal(d.dx, 0, '中点没动就不该平移')
+      t.equal(d.dy, 0, '同上')
+
+      // 两指距离不变、整体右下移 ⇒ 纯平移，不缩放
+      d = pinchDelta({ dist: 120, cx: 10, cy: 20 }, { dist: 120, cx: 40, cy: 60 })
+      t.equal(d.factor, 1, '距离没变就不该缩放')
+      t.equal(d.dx, 30, '右移 30')
+      t.equal(d.dy, 40, '下移 40')
+
+      // 边捏边挪：两件事必须同时发生，不能二选一 ——
+      // 真实的捏合总带着漂移，硬分类会让画面不跟手（D67）
+      d = pinchDelta({ dist: 100, cx: 0, cy: 0 }, { dist: 150, cx: 25, cy: -5 })
+      t.equal(d.factor, 1.5, '缩放照算')
+      t.equal(d.dx, 25, '平移也照算')
+      t.equal(d.dy, -5, '同上')
+
+      // 锚点是两指中点，不是画布中心 —— 否则捏哪儿都往中间跑
+      t.equal(d.anchorX, 25, '缩放锚点取当前中点 x')
+      t.equal(d.anchorY, -5, '缩放锚点取当前中点 y')
+
+      // 首帧没有上一帧，必须是恒等变换，不能把画面弹一下
+      d = pinchDelta(null, { dist: 100, cx: 7, cy: 9 })
+      t.equal(d.factor, 1, '首帧不缩放')
+      t.equal(d.dx, 0, '首帧不平移')
+      t.equal(d.anchorX, 7, '首帧锚点仍取中点')
+      // 上一帧距离为 0（两指重合）时不能除出 Infinity
+      d = pinchDelta({ dist: 0, cx: 0, cy: 0 }, { dist: 50, cx: 0, cy: 0 })
+      t.equal(d.factor, 1, '上一帧距离为 0 时必须退化成恒等，不能除出 Infinity')
+    }
+  },
+  {
+    name: '触控：落第二指时这一笔是撤销还是保留',
+    run(t) {
+      // D67：第二根手指永远晚于第一根，所以第一笔总是先画上了。
+      // 快 = 用户本来就想捏合，那一小段是误画；慢 = 真画了一笔再想缩放。
+      t.equal(strokeVerdict(0), 'rollback', '同时落指必然是捏合')
+      t.equal(strokeVerdict(80), 'rollback', '两指落下的实测时间差在 30–80ms 量级')
+      t.equal(strokeVerdict(PROMOTE_MS - 1), 'rollback', '窗口内一律撤销')
+      t.equal(strokeVerdict(PROMOTE_MS), 'commit', '到点即保留，边界取闭区间的右侧')
+      t.equal(strokeVerdict(1200), 'commit', '画了一秒多再捏，画的必须留下')
     }
   },
   {

@@ -422,3 +422,26 @@ Worker 从 `/game-of-life/assets/tower-builder-*.js` 正常加载。
 Actions 变绿只说明构建成功，不说明页面可用 —— 两者之间缺的正是这五步。
 清单全文与选法理由见 [deploy.md 三点五节](deploy.md)。
 
+## v1.1.0 · 移动端适配（竖屏重排 + 触控手势）
+
+- [x] 方案先落档再动手：D66 竖屏重排、D67 触控手势，单独一次提交
+- [x] ① 窄屏（≤767px）上下结构：棋盘吃满宽度、正方形顶到视口上部、开机默认 Fit view
+- [x] ① 运行控件（播放/单步/速度）紧贴棋盘正下方；顶栏只留品牌与「更多」
+- [x] ① 设置面板收进底部抽屉，收起只露把手；玩具盒改横向铺开并在窄屏常驻
+- [x] ① 高度用 dvh 而非 vh —— iOS 地址栏收放不会压住底部控件
+- [x] ② 单指画 / 双指捏合缩放 / 双指拖平移，实测三者均生效（缩放 3.665→8.43，originX 变化）
+- [x] ② 冲突方案：乐观绘制 + 250ms 限时回滚；快落二指整笔还原（存活归 0、runDirty 复位），慢落保留
+- [x] ② 记账（noteEdit / markDirtyRun）延后到收笔，否则回滚只还原画面不还原账；补守卫钉死
+- [x] ② touch-action 只加在画布；补 -webkit-touch-callout / user-select 关掉长按菜单与选中
+- [x] ② 只在画布上拦 iOS 私有 gesturestart/gesturechange，不在 document 上无差别 preventDefault
+- [x] ② 不写 user-scalable=no（剥夺放大权利，且 iOS 10 起已被忽略）
+- [x] ③ 按钮 ≥44px，滑块拇指 14px → 26px
+- [x] ④ 桌面零改动 —— 1280×800 下 7 个盒子坐标改动前后逐项一致
+- [x] ④ engine / data / render 三个目录 git diff 为空
+- [x] ⑤ 观塔与勘探窄屏隐藏入口（D68），「更多」里留说明；理由：175px 内容区放不下，且真机性能无法从本机认证
+- [x] 顺带修：全屏视图打开时抽屉把手与浮层会压在上面（body.view-open）
+- [x] 窄屏窗口实测：375×812 与 375×667（SE）均无横竖溢出；简洁/完整 × 中/英 四种组合文案正确
+- [x] 新增词条含简洁语域（mobile.more / mobile.settings / mobile.deskOnly）
+- [x] 测试 86 通过（原 83 + 新增 3），jsc 与 Vitest 一致；版本 1.0.3 → 1.1.0
+- [ ] ⑤ 真机 iPhone 验收 —— **待首位用户实测**（冒烟五步 + 画细胞/缩放/平移三手势）
+

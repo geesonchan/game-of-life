@@ -391,6 +391,9 @@ app.openView = function (name) {
   if (name !== 'explorer') app.explorer.hide()
   if (name === 'tower') app.tower.show()
   if (name === 'explorer') app.explorer.show()
+  // 窄屏下抽屉把手和「更多」浮层是常驻的，全屏视图打开时得让开，否则会压在上面
+  document.body.classList.toggle('view-open', name === 'tower' || name === 'explorer')
+  if (name === 'tower' || name === 'explorer') { document.body.classList.remove('more-open', 'drawer-open') }
 }
 document.getElementById('btn-tower').addEventListener('click', () => app.openView('tower'))
 document.getElementById('btn-explorer').addEventListener('click', () => app.openView('explorer'))

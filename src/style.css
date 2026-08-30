@@ -34,7 +34,15 @@ body {
   width: 100%;
   height: 100%;
   cursor: crosshair;
+  /* touch-action:none 让浏览器把整套触摸序列交给我们 —— 不加的话 iOS Safari
+     会把第二根手指收走去做页面缩放，双指手势根本收不到事件（D67）。
+     只加在画布上：全局加会把抽屉滚动和面板滑动一起废掉。 */
   touch-action: none;
+  /* 这两条是 touch-action 管不到的：长按弹出的系统菜单、拖动时的文字选中。
+     画细胞时手指停顿一下就弹菜单，是必现的干扰。 */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 #board.panning { cursor: grabbing; }
 
@@ -515,6 +523,16 @@ body.mode-full [data-mode="simple"] { display: none !important; }
 .tb-brand em { font-style: normal; font-size: 10px; color: var(--muted); }
 
 .tb-seg { display: flex; align-items: center; gap: 6px; flex: none; }
+
+/* 「更多」组在桌面不生成盒子 —— 三个分段仍是 .topbar 的直接 flex 子项。
+   HTML 里为了窄屏把它们收进了一个容器，顺序因此变了，所以这里用 order 把
+   桌面的呈现顺序钉回原样（品牌 / 清空 / 标签 / 运行 / 右侧）。 */
+.tb-more-group { display: contents; }
+.tb-brand { order: 1; }
+.tb-left  { order: 2; }
+.tb-tabs  { order: 3; }
+.tb-run   { order: 4; }
+.tb-right { order: 5; }
 /* 运行控件与模式/语言一起靠右；清空单独留在左段，离得远反而不容易误按 */
 .tb-run { margin-left: auto; }
 .tb-right {
@@ -867,3 +885,165 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 .pick-card b { display: block; font-size: 16px; margin-bottom: 6px; }
 .pick-card em { display: block; font-style: normal; font-size: 12px; color: var(--muted); }
 @media (max-width: 640px) { .pick-row { grid-template-columns: 1fr; } }
+
+/* ==================================================================
+   窄屏竖排（方案见 docs/decisions.md D66）
+   ------------------------------------------------------------------
+   整块只在 max-width:767px 下生效，桌面路径的规则一条没动。
+   不加 orientation:portrait —— 手机横过来会掉回桌面布局，那正是要治的病。
+   ================================================================== */
+
+/* 这两个按钮只为窄屏存在，桌面完全不出现 */
+.tb-more, .drawer-handle, .more-note { display: none; }
+
+@media (max-width: 767px) {
+  /* dvh 而不是 vh：iOS 地址栏收放会改变可视高度，vh 量的是"最大"高度，
+     用 vh 会让底部的运行控件被地址栏压住 —— 恰恰是最该点得到的那一排。 */
+  #app {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    /* 顶栏 / 棋盘 / 运行控件 / 玩具盒 / 余量。余量放在最后 ——
+       棋盘顶到视口上部，运行控件紧贴其下，两者之间不留空档。 */
+    grid-template-rows: auto auto auto 1fr;
+    height: 100dvh;
+    padding-bottom: 46px;         /* 给底部露头的抽屉把手让位 */
+  }
+
+  /* header 与 workspace 自己不生成盒子，里面的分段直接变成 #app 的网格子项，
+     于是「运行控件搬到棋盘下方」这种跨层级重排不用改 HTML 就能做到 */
+  .topbar, .workspace { display: contents; }
+
+  /* ---- 第 1 行：品牌 + 「更多」 ---- */
+  .tb-brand {
+    display: flex; grid-row: 1; grid-column: 1;
+    align-items: center; padding: 6px 4px 6px 12px; min-width: 0;
+  }
+  .tb-brand b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb-more {
+    display: block; grid-row: 1; grid-column: 2;
+    margin: 5px 10px 5px 0; padding: 0 16px; height: 40px;
+    font-size: 14px; background: var(--panel-2);
+  }
+
+  /* ---- 第 2 行：棋盘，吃满宽度 ----
+     给正方形宽高比：内置棋盘都是方的，不这样的话方盘塞进高瘦区域，
+     上下会各留一条死区，白占掉最值钱的屏幕。 */
+  .stage {
+    grid-row: 2; grid-column: 1 / -1;
+    aspect-ratio: 1 / 1; max-height: 62dvh;
+    min-height: 0; border-top: 1px solid var(--line);
+  }
+
+  /* ---- 第 4 行：玩具盒改横向滚动条（竖排吃的是最稀缺的宽度） ----
+     手机上常驻显示，不受顶栏那个标签控制：运行控件下方本来就是块空地，
+     而玩具盒是手机上最值得常摆出来的东西，正好填上。 */
+  .toolrail, .toolrail[hidden] {
+    display: block;
+    grid-row: 4; grid-column: 1 / -1;
+    width: auto; border-right: none; border-top: 1px solid var(--line);
+    overflow-x: auto; overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px;
+  }
+  /* 换行铺开：空间够就把 6 个图案一屏摆全，不够就纵向滚。
+     比强行单行横滑好 —— 横滑藏起来的东西，手机上很少有人去翻。 */
+  .toolrail { overflow-x: hidden; overflow-y: auto; align-content: start; }
+  .toolrail .rail-list { display: flex; flex-flow: row wrap; gap: 8px; }
+  .toolrail .card { flex: 0 0 auto; width: calc(25% - 6px); min-width: 68px; padding: 6px 4px; }
+  .toolrail .card-art { width: 28px; height: 28px; }
+  .rail-hint { display: none; }        /* 横条上没地方摆说明，走 title */
+
+  /* ---- 第 3 行：运行控件，紧贴棋盘正下方的拇指区 ---- */
+  .tb-run {
+    grid-row: 3; grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; background: var(--panel);
+    border-top: 1px solid var(--line);
+  }
+  .tb-run #btn-play { flex: 1; }
+  .tb-run button { min-height: 44px; font-size: 15px; padding: 0 18px; }
+  .tb-speed { flex: 1.2; gap: 8px; }
+  .tb-speed input[type="range"] { width: 100%; min-width: 0; }
+  .tb-speed > span { display: none; }  /* 「速度」二字省掉，滑块本身够自明 */
+
+  /* ---- 「更多」浮层：一个真容器，三段在里面自然纵向排开 ----
+     不用写死 top 去堆三个 fixed 元素 —— 那种做法在真机字体度量或英文标签下必然错位。 */
+  .tb-more-group {
+    display: none;
+    position: fixed; top: 54px; left: 8px; right: 8px; z-index: 60;
+    flex-direction: column; gap: 2px;
+    max-height: calc(100dvh - 120px); overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 6px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+  }
+  body.more-open .tb-more-group { display: flex; }
+  /* 桌面那几个 order 是用来钉住顶栏顺序的，在浮层里得让位给 DOM 顺序 ——
+     否则没写 order 的说明文字（默认 0）会排到所有分段前面去 */
+  .tb-more-group > * { order: 0; }
+  .tb-more-group .tb-seg { flex-wrap: wrap; gap: 8px; padding: 8px 6px; }
+  .tb-more-group .tb-seg + .tb-seg { border-top: 1px solid var(--line); }
+  .tb-more-group button { min-height: 44px; padding: 0 16px; font-size: 14px; }
+  .tb-more-group .seg button { min-height: 40px; }
+
+  /* 观塔与勘探在窄屏隐藏入口（理由见 D68），并在「更多」里说清楚去哪儿找 */
+  #btn-tower, #btn-explorer { display: none; }
+  .more-note { display: block; width: 100%; margin: 4px 2px 0; font-size: 12px; line-height: 1.6; }
+
+  /* 全屏视图打开时，抽屉把手和「更多」浮层必须让开，否则会压在视图上面 */
+  body.view-open .panel,
+  body.view-open .tb-more-group,
+  body.view-open .strip { display: none; }
+  body.more-open .tb-more { background: var(--accent); color: #06120a; }
+
+  /* ---- 抽屉：底部推拉板，收起时只露把手 ---- */
+  .panel {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
+    width: auto; max-height: 76dvh;
+    border-left: none; border-top: 1px solid var(--line);
+    border-radius: 14px 14px 0 0;
+    transform: translateY(calc(100% - 46px));   /* 只露出把手 */
+    transition: transform .22s ease;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
+    padding-bottom: 24px;
+  }
+  body.drawer-open .panel { transform: translateY(0); }
+  .drawer-handle {
+    display: block; width: 100%; height: 46px;
+    background: none; border: none; border-radius: 14px 14px 0 0;
+    font-size: 14px; color: var(--muted);
+    position: sticky; top: 0; z-index: 1;
+  }
+  /* 把手上那道横杠 —— 让它看着就该往上拉 */
+  .drawer-handle::before {
+    content: ''; display: block; width: 36px; height: 4px; margin: 0 auto 6px;
+    border-radius: 2px; background: var(--line);
+  }
+  body.drawer-open .drawer-handle::before { background: var(--accent); }
+
+  /* ---- 世界横条：也做成浮层，盖在棋盘上而不是挤掉棋盘 ---- */
+  .strip {
+    position: fixed; left: 0; right: 0; bottom: 46px; z-index: 54;
+    border-top: 1px solid var(--line); max-height: 40dvh; overflow-y: auto;
+  }
+  .strip .card { width: 100%; }
+  .strip-list { display: flex; flex-direction: column; gap: 6px; }
+
+  /* ---- 触控目标：44px 是苹果人机规范的下限（要求③） ---- */
+  .panel button, .panel .seg button { min-height: 44px; }
+  .panel input[type="range"] { height: 44px; }
+  .panel input[type="checkbox"] { width: 22px; height: 22px; }
+  .card { min-height: 44px; }
+  .help-btn { min-width: 44px; }
+
+  /* 滑块拇指热区加大 —— 桌面 14px 的圆点在手机上按不准 */
+  input[type="range"]::-webkit-slider-thumb { width: 26px; height: 26px; }
+  input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; }
+
+  /* HUD 在窄屏只留最要紧的两项，否则会盖住棋盘上半部 */
+  .hud { font-size: 11px; gap: 6px; flex-wrap: wrap; }
+  .hud .hud-item:nth-child(n+4) { display: none; }
+
+  /* 全屏浮层（介绍卡/规则/观塔/勘探）在窄屏铺满 */
+  .modal-card { max-width: none; width: calc(100vw - 20px); max-height: 84dvh; overflow-y: auto; }
+}

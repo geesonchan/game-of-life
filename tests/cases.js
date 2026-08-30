@@ -7,7 +7,7 @@ import { normalizeSeed } from '../src/engine/prng.js'
 import { validateRule, validateClauses } from '../src/engine/validate.js'
 import { presetRule, PRESETS } from '../src/engine/presets.js'
 import { exportRule, importRule } from '../src/engine/rule-io.js'
-import { PATTERNS, getPattern, placePattern, centerOrigin } from '../src/engine/patterns.js'
+import { PATTERNS, getPattern, placePattern, centerOrigin, transformPattern } from '../src/engine/patterns.js'
 import { parseRLE, toRLE, boardToRLE } from '../src/engine/rle.js'
 import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_VERSION } from '../src/engine/save.js'
 import { DICT } from '../src/i18n/dict.js'
@@ -568,17 +568,112 @@ cases.push(
     }
   },
   {
-    name: '图案库：吞食者的本职 —— 吃掉一架滑翔机后原地复原（互动型生平，D64）',
+    name: '图案朝向：8 种朝向构成一个群（D81 ①）',
     run(t) {
-      // 注册标准为「互动型图案」扩的那一档：生平必须含至少一个标准互动场景。
-      // 这个场景的摆位与代数是文档里写给用户照做的（docs/patterns.md），
-      // 所以它必须是断言而不是文案 —— 摆位一变、代数一变，这里先红。
+      const g = getPattern('glider')
+      const key = p => JSON.stringify(p.cells)
+
+      // 转四次回原样
+      let r = g
+      for (let i = 0; i < 4; i++) r = transformPattern(r, { rot: 1 })
+      t.equal(key(r), key(g), '旋转四次必须回到原样')
+      // 翻两次回原样
+      t.equal(key(transformPattern(transformPattern(g, { flip: true }), { flip: true })), key(g),
+        '镜像两次必须回到原样')
+      // 8 种朝向互不相同（滑翔机没有对称性，所以群作用是自由的）
+      const set = {}
+      for (let rot = 0; rot < 4; rot++) for (const flip of [false, true]) {
+        set[key(transformPattern(g, { rot, flip }))] = true
+      }
+      t.equal(Object.keys(set).length, 8, '滑翔机的 8 种朝向应当互不相同')
+      // rot 取模：-1 与 3 是同一个朝向
+      t.equal(key(transformPattern(g, { rot: -1 })), key(transformPattern(g, { rot: 3 })), 'rot 取模 4')
+      t.equal(key(transformPattern(g, { rot: 4 })), key(g), 'rot=4 即原样')
+      // 格数不变、归一到原点
+      for (let rot = 0; rot < 4; rot++) for (const flip of [false, true]) {
+        const p = transformPattern(g, { rot, flip })
+        t.equal(p.cells.length, g.cells.length, '变换不增减格子')
+        t.equal(Math.min(...p.cells.map(c => c[0])), 0, '变换后归一到 x=0')
+        t.equal(Math.min(...p.cells.map(c => c[1])), 0, '变换后归一到 y=0')
+        t.equal(p.w, Math.max(...p.cells.map(c => c[0])) + 1, 'w 与 cells 自洽')
+        t.equal(p.h, Math.max(...p.cells.map(c => c[1])) + 1, 'h 与 cells 自洽')
+      }
+      // 顺序固定为"先镜像后旋转" —— 顺序反了会给出另一半陪集，
+      // 于是"F 再 R×2"和"R×2 再 F"结果不同，用户按不出规律
+      const src = readSrc('src/engine/patterns.js')
+      t.ok(/if \(flip\) cells = cells\.map[\s\S]{0,120}?for \(let i = 0; i < rot; i\+\+\)/.test(src),
+        'transformPattern 必须先镜像后旋转')
+
+      // 默认吞食者按 R 一次是 SW、两次 NW、三次 NE（文档里的旋转指南据此写）
+      const eater = getPattern('eater')
+      const norm = cs => {
+        const mx = Math.min(...cs.map(c => c[0])), my = Math.min(...cs.map(c => c[1]))
+        return JSON.stringify(cs.map(([x, y]) => [x - mx, y - my]).sort((a, b) => a[1] - b[1] || a[0] - b[0]))
+      }
+      const want = {
+        0: '2o$obo$2bo$2b2o!', 1: '2b2o$3bo$3o$o!', 2: '2o$bo$bobo$2b2o!', 3: '3bo$b3o$o$2o!'
+      }
+      for (const rot of [0, 1, 2, 3]) {
+        t.equal(norm(transformPattern(eater, { rot }).cells), norm(parseRLE(want[rot]).cells),
+          `按 R ${rot} 次的朝向必须与文档写的一致`)
+      }
+    }
+  },
+  {
+    name: '图案朝向：R / F 在选中图案时归图案所有（快捷键冲突）',
+    run(t) {
+      // 实测踩到过：R 已经是"随机填充"、F 是"适配视图"，
+      // 不加这一条的话，按 R 转朝向会顺手把整盘随机填充掉。
+      const ctl = readSrc('src/ui/controls.js')
+      t.ok(/if \(app\.stamp && \(k === 'r' \|\| k === 'f'\)\) return/.test(ctl),
+        '选中图案时全局的 R / F 必须让位给旋转 / 镜像')
+      const inp = readSrc('src/ui/input.js')
+      t.ok(/app\.rotateStamp\(1\)/.test(inp) && /app\.flipStamp\(\)/.test(inp),
+        'R / F 应当接到 rotateStamp / flipStamp')
+      // 幽灵与落子必须用同一个变换后的图案，否则"看到的不是放下的"
+      const main = readSrc('src/main.js')
+      t.ok(/const p = app\.stampPattern\(\)/.test(main), '落子必须用变换后的图案')
+      t.ok(/const gp = app\.stampPattern\(\)/.test(main), '幽灵也必须用变换后的图案')
+      // 手机上的两个按钮：44px，且只在选中图案时出现
+      const html = readSrc('index.html')
+      t.ok(html.indexOf('id="btn-rotate"') >= 0 && html.indexOf('id="btn-flip"') >= 0, '窄屏两个朝向按钮')
+      const css = readSrc('src/style.css')
+      t.ok(/\.stamp-tools button \{[^}]*width:\s*44px;\s*height:\s*44px/.test(css), '触控区 44px 不缩水')
+    }
+  },
+  {
+    name: '图案库：吞食者的默认朝向必须开箱即配盒里的滑翔机（D81）',
+    run(t) {
+      // 追加要求的核心：用户从玩具盒拖一个吞食者、再拖一个滑翔机放到它斜上方，
+      // **不用旋转**就该喂成。所以先实测盒里滑翔机往哪飞，再断言默认吞食者配得上。
+      const g = getPattern('glider')
+      const N = 60
+      const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of g.cells) e.set(25 + x, 25 + y, 1)
+      e.stats.alive = e.countAlive()
+      const cen = () => {
+        let sx = 0, sy = 0, n = 0
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (e.get(x, y)) { sx += x; sy += y; n++ }
+        return [sx / n, sy / n]
+      }
+      const c0 = cen()
+      for (let i = 0; i < 40; i++) e.step()
+      const c1 = cen()
+      // 不采信任何说法，实跑取质心位移
+      t.ok(c1[0] - c0[0] > 5, `盒里滑翔机应向右（+x）飞，实测 ${(c1[0] - c0[0]).toFixed(0)}`)
+      t.ok(c1[1] - c0[1] > 5, `盒里滑翔机应向下（+y）飞，实测 ${(c1[1] - c0[1]).toFixed(0)}`)
+    }
+  },
+  {
+    name: '图案库：喂食标准摆位（默认朝向，文档里写给用户照做的那一组）',
+    run(t) {
+      // docs/patterns.md 里那段 RLE 就是这一组。摆位、代数、逐格复原都是断言 ——
+      // 文档写给用户照做的东西必须有断言兜着，否则某次改动后它会悄悄失效，
+      // 而用户照做一次不成功就再也不会试第二次（D64）。
       const EATER = getPattern('eater').cells
-      // 滑翔机的相位与朝向不是随便挑的：是搜遍 8 种朝向 × 4 个相位 × 偏移窗口
-      // 找出来的 48 组可行摆位里，飞行距离最长、最"看得见它飞过来"的那一组。
-      const GLIDER = [[1, 0], [2, 0], [0, 1], [1, 1], [2, 2]]
-      const DX = 10, DY = 10                                     // 滑翔机相对吞食者的偏移
-      const N = 40, OX = 6, OY = 6
+      const GLIDER = getPattern('glider').cells
+      const DX = -10, DY = -10          // 滑翔机在吞食者的左上方
+      const N = 60, OX = 25, OY = 25
       const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
       for (const [x, y] of EATER) e.set(OX + x, OY + y, 1)
       for (const [x, y] of GLIDER) e.set(OX + DX + x, OY + DY + y, 1)
@@ -587,24 +682,66 @@ cases.push(
 
       const eaterKey = EATER.map(c => (OX + c[0]) + ',' + (OY + c[1])).sort().join('|')
       const liveKey = () => {
-        const live = []
-        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (e.get(x, y)) live.push(x + ',' + y)
-        return live.sort().join('|')
+        const out = []
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (e.get(x, y)) out.push(x + ',' + y)
+        return out.sort().join('|')
       }
-
       let ateAt = -1
-      for (let gen = 1; gen <= 40; gen++) {
+      for (let gen = 1; gen <= 60; gen++) {
         e.step()
         if (e.stats.alive === 7 && liveKey() === eaterKey) { ateAt = gen; break }
       }
-      t.equal(ateAt, 27, `滑翔机应在第 27 代被吞完，实测第 ${ateAt} 代`)
-
-      // 「一格不少」不是看总数，是逐格比对绝对坐标
-      t.equal(liveKey(), eaterKey, '吞完之后必须逐格回到原位 —— 吞食者的绝技就在这一条')
-
-      // 吞完之后不该再变
+      t.equal(ateAt, 30, `应在第 30 代吞完，实测第 ${ateAt} 代`)
+      t.equal(liveKey(), eaterKey, '必须逐格回到原位')
       const after = liveKey()
       for (let i = 0; i < 20; i++) { e.step(); t.equal(liveKey(), after, `吞完后第 ${i + 1} 代仍应静止`) }
+    }
+  },
+  {
+    name: '图案库：吞食者四朝向表（他处给的表，用自家引擎逐条实跑验证，不采信）',
+    run(t) {
+      // 关键发现：表里的 RLE 与配对全对，**偏移的符号是反的** ——
+      // 它按"吞食者相对滑翔机"记，我们按"滑翔机相对吞食者"记。
+      // 四条的代数分毫不差（6/12/4/10），正是这一点证明 RLE 本身没问题。
+      const T = [
+        { n: 'SE', eater: '2o$obo$2bo$2b2o!', glider: 'bo$2bo$3o!', dx: -4, dy: -4, gen: 6 },
+        { n: 'SW', eater: '2b2o$3bo$3o$o!', glider: 'bo$o$3o!', dx: 6, dy: -6, gen: 12 },
+        { n: 'NE', eater: '3bo$b3o$o$2o!', glider: '3o$2bo$bo!', dx: -3, dy: 5, gen: 4 },
+        { n: 'NW', eater: '2o$bo$bobo$2b2o!', glider: '3o$o$bo!', dx: 6, dy: 6, gen: 10 }
+      ]
+      const norm = cs => {
+        const mx = Math.min(...cs.map(c => c[0])), my = Math.min(...cs.map(c => c[1]))
+        return cs.map(([x, y]) => [x - mx, y - my]).sort((a, b) => a[1] - b[1] || a[0] - b[0])
+      }
+      const run = (E, G, dx, dy) => {
+        const N = 70, OX = 30, OY = 30
+        const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+        for (const [x, y] of E) e.set(OX + x, OY + y, 1)
+        for (const [x, y] of G) e.set(OX + dx + x, OY + dy + y, 1)
+        e.stats.alive = e.countAlive()
+        if (e.stats.alive !== E.length + G.length) return null
+        const key = E.map(c => (OX + c[0]) + ',' + (OY + c[1])).sort().join('|')
+        for (let gen = 1; gen <= 90; gen++) {
+          e.step()
+          if (e.stats.alive !== E.length) continue
+          const out = []
+          for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (e.get(x, y)) out.push(x + ',' + y)
+          if (out.sort().join('|') === key) return gen
+        }
+        return null
+      }
+      for (const r of T) {
+        const E = norm(parseRLE(r.eater).cells)
+        const G = norm(parseRLE(r.glider).cells)
+        t.equal(E.length, 7, `${r.n} 吞食者 7 格`)
+        t.equal(G.length, 5, `${r.n} 滑翔机 5 格`)
+        t.equal(run(E, G, r.dx, r.dy), r.gen, `${r.n}: 滑翔机置于 (${r.dx},${r.dy}) 应在第 ${r.gen} 代吞完并复原`)
+        // 沿对角线加 (±1,±1) 相位不变：滑翔机 4 代走一格，所以每远一格 +4 代。
+        // 各验两个距离 —— 这条"沿用规则"若不成立，文档里"想放远点就照对角线加"就是假话。
+        const sx = Math.sign(r.dx) || 1, sy = Math.sign(r.dy) || 1
+        t.equal(run(E, G, r.dx + sx, r.dy + sy), r.gen + 4, `${r.n} 远一格应 +4 代`)
+        t.equal(run(E, G, r.dx + sx * 2, r.dy + sy * 2), r.gen + 8, `${r.n} 远两格应 +8 代`)
+      }
     }
   },
   {

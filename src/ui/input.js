@@ -302,6 +302,13 @@ export function setupCanvasInput(app) {
       if (next) { app.stampAt = next; app.dirty = true; app.updateHud(); e.preventDefault() }
       return
     }
+    // R 旋转、F 水平镜像（Golly 惯例）。与方向键微调/回车/Esc 共存 ——
+    // 它们改的是不同的量：方向键改位置，R/F 改朝向，回车落子，Esc 取消。
+    if (app.stamp && !isTyping(e.target) && !e.metaKey && !e.ctrlKey) {
+      const k = e.key.toLowerCase()
+      if (k === 'r') { app.rotateStamp(1); e.preventDefault(); return }
+      if (k === 'f') { app.flipStamp(); e.preventDefault(); return }
+    }
     // 回车落子（位置取幽灵当前所在，不管是鼠标跟着还是方向键钉住的）
     if (app.stamp && !isTyping(e.target) && e.key === 'Enter') {
       const at = app.stampAt || app.hoverCell

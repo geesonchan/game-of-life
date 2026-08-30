@@ -125,6 +125,10 @@ export function setupControls(app) {
   el.glowFrames.parentElement.classList.toggle('disabled', !el.glow.checked)
   el.trailLen.parentElement.classList.toggle('disabled', !el.trails.checked)
 
+  /* ---------- 图案朝向按钮（窄屏；桌面走 R / F 键） ---------- */
+  $('btn-rotate').addEventListener('click', () => app.rotateStamp(1))
+  $('btn-flip').addEventListener('click', () => app.flipStamp())
+
   /* ---------- 滑块数值直接输入（点数字变输入框） ---------- */
   // 12 个滑块一次登记完，包括观塔与勘探视图里的 —— 它们的元素在开机时就在 DOM 里。
   for (const [rangeId, labelId] of NUMERIC_SLIDERS) {
@@ -278,6 +282,10 @@ export function setupControls(app) {
   window.addEventListener('keydown', e => {
     if (isTyping(e.target) || e.metaKey || e.ctrlKey) return
     const k = e.key.toLowerCase()
+    // R 和 F 在"选中图案"时归图案所有（旋转 / 镜像，Golly 惯例），
+    // 否则才是全局的随机填充 / 适配视图。
+    // 不加这一条的话，按 R 转朝向会顺手把整盘随机填充掉 —— 实测踩到过。
+    if (app.stamp && (k === 'r' || k === 'f')) return
     if (k === 'p') { app.setRunning(!app.running); e.preventDefault() }
     else if (k === 'n') { app.setRunning(false); app.stepOnce(); e.preventDefault() }
     else if (k === 'f') { app.fitView(); e.preventDefault() }

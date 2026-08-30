@@ -103,6 +103,13 @@
           <button id="sel-export" data-i18n="sel.export">导出 RLE</button>
           <button id="sel-cancel" data-i18n="sel.cancel">取消</button>
         </div>
+        <!-- 选中图案时才出现的朝向按钮（窄屏用；桌面走 R / F 键）。
+             位置固定在画布右上角，而不是跟着幽灵跑 —— 触屏上根本没有"悬停"，
+             幽灵只在拖动时才有位置，跟着它跑等于没有固定的落点（见 D81）。 -->
+        <div class="stamp-tools" id="stamp-tools" hidden>
+          <button id="btn-rotate" data-i18n-title="stamp.rotate" title="旋转">⟳</button>
+          <button id="btn-flip" data-i18n-title="stamp.flip" title="镜像">⇋</button>
+        </div>
         <div class="toast" id="toast" hidden></div>
       </main>
 

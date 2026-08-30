@@ -18,7 +18,7 @@ import { createTowerView } from './ui/tower-view.js'
 import { createExplorerView } from './ui/explorer-view.js'
 import { boardBaseline } from './engine/save.js'
 import { AGE_MAX } from './render/palette.js'
-import { placePattern, centerOrigin } from './engine/patterns.js'
+import { placePattern, centerOrigin, transformPattern } from './engine/patterns.js'
 import { t, applyStatic, onLangChange, setRegister, setLang, getLang } from './i18n/index.js'
 import { prefs } from './ui/prefs.js'
 import { setupAnalytics } from './analytics.js'
@@ -56,6 +56,7 @@ const app = {
   chartGen: -1,
   mode: 'full',       // 'simple' | 'full'
   stamp: null,        // 当前选中的图案（跟随鼠标待放置）
+  stampOrient: { rot: 0, flip: false },   // 当前图案的朝向（D81）
   runDirty: false,    // 本局是否被手动改过 ⇒ 存档不能再靠种子重放
   baseline: null,     // 手改之后的重放基线 {rle, gen}
   selectArmed: false, // 侧栏按钮预备的一次性框选（Shift+拖则随时可用）
@@ -184,13 +185,38 @@ app.setMode = function (mode, opts = {}) {
 /** 选中图案时幽灵的锚点（左上角格）；没选中则返回 null */
 app.stampAnchor = function () {
   const gc = app.stampAt || app.hoverCell
-  if (!app.stamp || !gc) return null
-  return centerOrigin(app.stamp, gc.x, gc.y)
+  const p = app.stampPattern()
+  if (!p || !gc) return null
+  return centerOrigin(p, gc.x, gc.y)
+}
+
+/** 当前朝向下的图案（幽灵与落子都用它，保证看到的就是放下的） */
+app.stampPattern = function () {
+  if (!app.stamp) return null
+  const o = app.stampOrient
+  return (o.rot || o.flip) ? transformPattern(app.stamp, o) : app.stamp
+}
+
+/** 旋转 / 镜像当前图案（D81）。改的是朝向状态，不改原始图案数据。 */
+app.rotateStamp = function (steps) {
+  if (!app.stamp) return
+  app.stampOrient = { rot: (app.stampOrient.rot + steps + 4) % 4, flip: app.stampOrient.flip }
+  app.dirty = true
+  app.updateHoverReadout()
+}
+app.flipStamp = function () {
+  if (!app.stamp) return
+  app.stampOrient = { rot: app.stampOrient.rot, flip: !app.stampOrient.flip }
+  app.dirty = true
+  app.updateHoverReadout()
 }
 
 app.setStamp = function (pattern) {
   app.stamp = pattern
   app.stampAt = null          // 换图案就解除方向键的钉住
+  app.stampOrient = { rot: 0, flip: false }   // 换图案也复位朝向
+  document.body.classList.toggle('stamp-active', !!pattern)
+  document.getElementById('stamp-tools').hidden = !pattern
   app.library.renderPatterns()
   app.canvas.classList.toggle('stamping', !!pattern)
   app.dirty = true
@@ -200,7 +226,7 @@ app.setStamp = function (pattern) {
 
 /** 在某个格子放下当前图案（以光标为中心） */
 app.placeStampAt = function (cell) {
-  const p = app.stamp
+  const p = app.stampPattern()      // 放下的必须与幽灵一致
   if (!p) return
   const label = p.label || t('pattern.' + p.key)
   if (p.w > app.engine.w || p.h > app.engine.h) {
@@ -527,9 +553,10 @@ function frame(now) {
     app.renderer.draw(app.engine, app.viewport, app.visual, app.visualOpts)
     // 方向键微调后幽灵脱离鼠标跟随（app.stampAt 非空即钉住）
     const gc = app.stampAt || app.hoverCell
-    if (app.stamp && gc) {
-      const o = centerOrigin(app.stamp, gc.x, gc.y)
-      app.renderer.drawGhost(app.viewport, app.stamp, o.x, o.y, app.engine.w, app.engine.h)
+    const gp = app.stampPattern()
+    if (gp && gc) {
+      const o = centerOrigin(gp, gc.x, gc.y)
+      app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h)
     }
     if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)
     app.dirty = false

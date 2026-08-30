@@ -1256,3 +1256,20 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
      用户改完一个数字还得手动缩回去。这里必须 ≥16，不能跟着 HUD 的 13px 走。 */
   .num-input[type="text"] { width: 4.5em; font-size: 16px; }
 }
+
+/* ---------- 图案朝向按钮（D81） ---------- */
+/* 桌面有 R / F 键，不占画布；只在窄屏出现 */
+.stamp-tools { display: none; }
+@media (max-width: 767px) {
+  .stamp-tools {
+    display: flex; gap: 8px;
+    position: absolute; right: 10px; top: 10px; z-index: 6;
+  }
+  .stamp-tools[hidden] { display: none; }
+  .stamp-tools button {
+    width: 44px; height: 44px; padding: 0;      /* 44px 触控下限，不缩水 */
+    font-size: 20px; line-height: 1;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+}

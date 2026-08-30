@@ -122,7 +122,7 @@ export const DICT = {
     'pattern.matt': 'Matt',
     'pattern.matt.desc': '5 格起步，第 823 代冲到 319 格；核心第 1106 代定型为周期 2，另有 6 架滑翔机一去不回',
     'pattern.eater': '吞食者',
-    'pattern.eater.desc': '7 格静物，自己一动不动；滑翔机撞进那个凹口会被吃掉，第 27 代吞完，它一格不少',
+    'pattern.eater.desc': '7 格静物，自己一动不动；它挑方向 —— 只吃从左上方飞来的滑翔机，第 30 代吞完且一格不少。按 R 转朝向',
 
     /* ---- 世界卡片（简洁模式下的规则预设） ---- */
     'world.section': '世界',
@@ -273,7 +273,7 @@ export const DICT = {
     'pattern.matt.simple': 'Matt',
     'pattern.matt.desc.simple': 'Matt 亲手发明的小家伙，看它能闹腾多久。',
     'pattern.eater.simple': '吃船的嘴',
-    'pattern.eater.desc.simple': '一张会吃小船的嘴 —— 小船撞上来就没了，它自己一点没变。',
+    'pattern.eater.desc.simple': '一张会吃小船的嘴 —— 嘴朝哪边就只吃哪边来的船。把船放在它左上方试试；按 R 能把嘴转个向。',
 
     'tips.section.simple': '怎么玩',
     'tips.draw.simple': '<b>按住左键</b>画 —— 拖过的格子会亮起来',
@@ -361,6 +361,8 @@ export const DICT = {
     'tip.mode': '简洁模式只留最基本的几个按钮；完整模式打开全部实验工具',
     'tip.lang': '切换中文 / English',
     'tip.help': '重看介绍',
+    'stamp.rotate': '旋转 —— 把图案转 90°（也可以按 R 键）',
+    'stamp.flip': '镜像 —— 把图案左右翻过来（也可以按 F 键）',
     'tip.pattern': '点一下选中，它会跟着鼠标走；再点画布放下',
     'tip.world': '换一个世界 —— 规矩变了，同样的东西会长成别的样子',
 
@@ -702,7 +704,7 @@ export const DICT = {
     'pattern.matt': 'Matt',
     'pattern.matt.desc': 'Starts at 5 cells, peaks at 319 on generation 823; the core settles into period 2 by 1106, plus 6 gliders that never come back',
     'pattern.eater': 'Eater',
-    'pattern.eater.desc': '7-cell still life that never moves; a glider flying into its notch is swallowed by generation 27, and it comes out unchanged',
+    'pattern.eater.desc': '7-cell still life that never moves; it is picky about direction — it only eats gliders arriving from the upper left, swallowing one by generation 30 unchanged. Press R to turn it',
 
     'world.section': 'Worlds',
     'world.hint': 'Try another world — the very same thing grows into something completely different.',
@@ -847,7 +849,7 @@ export const DICT = {
     'pattern.matt.simple': 'Matt',
     'pattern.matt.desc.simple': 'Matt made this little guy himself — see how long it can keep going.',
     'pattern.eater.simple': 'A hungry mouth',
-    'pattern.eater.desc.simple': 'A mouth that eats little ships — the ship is gone and the mouth is not changed a bit.',
+    'pattern.eater.desc.simple': 'A mouth that eats little ships — it only eats ships coming from the way it faces. Put one above and to the left, and press R to turn the mouth.',
 
     'tips.section.simple': 'How to play',
     'tips.draw.simple': '<b>Hold the left button</b> to draw — squares light up as you drag',
@@ -935,6 +937,8 @@ export const DICT = {
     'tip.mode': 'Simple keeps only the basic buttons; Full opens every experiment tool',
     'tip.lang': 'Switch between 中文 and English',
     'tip.help': 'Show the intro again',
+    'stamp.rotate': 'Turn — rotate the pattern 90° (or press R)',
+    'stamp.flip': 'Mirror — flip the pattern left-right (or press F)',
     'tip.pattern': 'Click to pick it up; it follows your cursor. Click the board to drop it',
     'tip.world': 'Change world — different rules, so the same thing grows into something else',
 

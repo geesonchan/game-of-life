@@ -4,7 +4,7 @@
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)，
 用户反馈记录见 [docs/feedback.md](./docs/feedback.md)。
 
-当前进度：**阶段 5.5（时间之塔）已完成**。
+当前进度：**全部规格阶段（1–6，含 3.5 / 3.6 / 3.7 / 5.5）已完成**。
 
 ## 目录结构
 
@@ -33,6 +33,7 @@ src/data/     数据记录，纯逻辑零 DOM
   ledger.js         实验台账
   csv.js            CSV 生成
   tower.js          时间之塔的数据模型（滑动窗口 / 切片 / 几何度量）
+  explorer.js       规则勘探：单局观测、结局七类分类、多局总判与排序、B/S 采样
 src/i18n/     中英词典与运行时（界面上的每个字都在这里）
   dict.js           中英对照表
   index.js          t() 取词、data-i18n 整树重刷、语言切换广播
@@ -43,8 +44,10 @@ src/ui/       控件绑定与画布交互
   records.js        记录面板、总结卡片与 CSV 导出
   io.js             存档下载读取（分片重放 + 进度条）、RLE 导入与框选导出
   tower-view.js     观塔模式（three.js InstancedMesh + 切片联动）
+  explorer-view.js  规则勘探器（批量结果表 / 候选名单 / 一键复现）
 src/workers/
   tower-builder.js  时间之塔的构建 Worker（只搬运，逻辑在 data/tower.js）
+  explorer.js       规则勘探的批量 Worker（同样只搬运）
 src/main.js   装配与主循环
 tests/        验收用例（Vitest 与 jsc 运行器共用）
 ```

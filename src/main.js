@@ -15,6 +15,7 @@ import { createIntro } from './ui/intro.js'
 import { setupRecords } from './ui/records.js'
 import { setupIO } from './ui/io.js'
 import { createTowerView } from './ui/tower-view.js'
+import { createExplorerView } from './ui/explorer-view.js'
 import { boardBaseline } from './engine/save.js'
 import { AGE_MAX } from './render/palette.js'
 import { placePattern, centerOrigin } from './engine/patterns.js'
@@ -375,7 +376,20 @@ app.library.render()
 app.intro = createIntro(app)
 document.getElementById('btn-help').addEventListener('click', () => app.intro.open(0))
 app.tower = createTowerView(app)
-document.getElementById('btn-tower').addEventListener('click', () => app.tower.show())
+app.explorer = createExplorerView(app)
+
+/**
+ * 观塔与勘探都是整屏接管的独立视图，同一时刻只能开一个 ——
+ * 两个都开会叠在一起，谁在上面取决于 DOM 顺序，用户完全无从预料。
+ */
+app.openView = function (name) {
+  if (name !== 'tower') app.tower.hide()
+  if (name !== 'explorer') app.explorer.hide()
+  if (name === 'tower') app.tower.show()
+  if (name === 'explorer') app.explorer.show()
+}
+document.getElementById('btn-tower').addEventListener('click', () => app.openView('tower'))
+document.getElementById('btn-explorer').addEventListener('click', () => app.openView('explorer'))
 app.renderer.setAgingLayers(app.engine.rule.agingLayers)
 app.updateRuleInfo()
 
@@ -387,6 +401,9 @@ if (savedMode === 'simple' || savedMode === 'full') app.setMode(savedMode, { sil
 app.syncSwitches()
 applyStatic()
 app.library.render()
+// 恢复语言偏好时 setLang 会触发监听器，但下面那个 onLangChange 还没注册上，
+// 所以这里必须再刷一次动态文字（HUD 的世界名就是这么变成中英混排的）
+app.updateRuleInfo()
 
 // 切语言：静态文字整棵树重刷，动态生成的部分各自重绘
 onLangChange(() => {
@@ -401,6 +418,7 @@ onLangChange(() => {
   app.intro.relocalize()
   app.records.relocalize()
   app.tower.relocalize()
+  app.explorer.relocalize()
   app.refreshTabHint()
 })
 function trailLabelOf(v) {

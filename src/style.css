@@ -814,3 +814,31 @@ button.danger:hover { background: #713030; border-color: #9a3d3d; color: #fff0f0
   background: #12151c; border: 1px solid var(--line); border-radius: 7px;
 }
 @media (max-width: 900px) { .tower-panel { width: 200px; } }
+
+/* ---------- 阶段 6：规则勘探器 ---------- */
+.exp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 12px 14px; }
+.exp-table-wrap { flex: 1; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.exp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.exp-table th, .exp-table td { padding: 6px 9px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.exp-table th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; font-size: 11px; z-index: 1; }
+.exp-table tbody tr:hover { background: #1a1f28; }
+.exp-table td.num { font-variant-numeric: tabular-nums; }
+.exp-table .mono { font-family: ui-monospace, Menlo, monospace; }
+.exp-table button { padding: 2px 8px; font-size: 11px; }
+.exp-table .star { background: none; border: none; color: var(--muted); font-size: 14px; padding: 0 4px; }
+.exp-table .star.on { color: #e3b341; }
+
+.out { padding: 2px 7px; border-radius: 999px; font-size: 11px; white-space: nowrap; }
+.out-complex { background: var(--accent-dim); color: #eaffef; font-weight: 600; }
+.out-longCycle { background: #2f4a6b; color: #cfe4ff; }
+.out-shortCycle { background: #33384a; color: #c4ccd9; }
+.out-still { background: #2b3040; color: var(--muted); }
+.out-explosion { background: #6b3a22; color: #ffdcc4; }
+.out-extinct { background: #3a2630; color: #d9b9c6; }
+.out-quickDeath { background: #2a2226; color: #9c8892; }
+
+.exp-sub { margin: 16px 0 8px; font-size: 12px; color: var(--muted); letter-spacing: 1px; }
+.fav-row { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 7px 8px; margin-bottom: 6px; }
+.fav-row b { font-size: 12px; }
+.fav-row .fav-meta { display: block; font-size: 10px; color: var(--muted); margin: 2px 0 5px; }
+.fav-row button { width: 100%; padding: 4px; font-size: 11px; }

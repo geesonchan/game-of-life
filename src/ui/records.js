@@ -268,8 +268,15 @@ export function setupRecords(app) {
     if (!on) { detector.reset(); observeInitial() }
   }
 
+  /** 外部来源的一局（阶段 6 的勘探记录）并入实验台账 */
+  function addExternalRun(entry) {
+    const row = ledger.add(entry)
+    dirtyPanel = true
+    return row
+  }
+
   return {
-    startRun, onGeneration, noteEdit, renderPanel, setReplaying,
+    startRun, onGeneration, noteEdit, renderPanel, setReplaying, addExternalRun,
     get needsPanel() { return dirtyPanel },
     relocalize() { renderPanel(); if (!el.modal.hidden && lastEnd) showSummary(lastEnd) },
     _internals: { log, detector, chronicle, ledger }

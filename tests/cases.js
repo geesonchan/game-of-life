@@ -22,6 +22,8 @@ import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
+import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
+  ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
 
 /** 把 ASCII 图案（O=活，.=死）画到棋盘上，左上角落在 (ox,oy) */
 export function place(engine, pattern, ox, oy) {
@@ -1103,7 +1105,7 @@ cases.push(
 const DOM_SOURCES = [
   'src/main.js', 'src/ui/controls.js', 'src/ui/records.js', 'src/ui/library.js',
   'src/ui/intro.js', 'src/ui/rule-editor.js', 'src/ui/input.js', 'src/ui/io.js',
-  'src/ui/tower-view.js', 'src/render/chart.js'
+  'src/ui/tower-view.js', 'src/ui/explorer-view.js', 'src/render/chart.js'
 ]
 
 function readSrc(path) {
@@ -1738,6 +1740,141 @@ cases.push(
       buildTower({ boardSize: [20, 20], boundary: 'torus', seed: 8, density: 0.3, gens: 30, maxLayers: 200 },
         (d, tt) => odd.push([d, tt]), 25)
       t.equal(odd[odd.length - 1].join('/'), '30/30', '不能整除时最后一次也要报满')
+    }
+  }
+)
+
+/* ================= 阶段 6：规则勘探器 ================= */
+
+cases.push(
+  {
+    name: '勘探器 · 验收：B3/S23 归入持续复杂或长周期',
+    run(t) {
+      const r = exploreRule(ruleFromNotation('B3/S23'))
+      const good = r.runs.filter(x => x.outcome === 'complex' || x.outcome === 'longCycle').length
+      t.info(`B3/S23 三局：${r.runs.map(x => `${x.outcome}@${x.gens}`).join('、')} → 总判 ${r.outcome}`)
+      t.ok(good >= 2, `3 局中至少 2 局应为持续复杂或长周期，实测 ${good} 局`)
+      t.ok(r.outcome === 'complex' || r.outcome === 'longCycle', `总判应是持续复杂或长周期，实测 ${r.outcome}`)
+    }
+  },
+  {
+    name: '勘探器 · 验收：B2/S 归入爆炸',
+    run(t) {
+      const r = exploreRule(ruleFromNotation('B2/S'))
+      t.info(`B2/S 三局：${r.runs.map(x => `${x.outcome} 末尾占比 ${x.finalFill.toFixed(3)} 增长 ${x.growth.toFixed(1)}×`).join('、')}`)
+      t.equal(r.outcome, 'explosion', '总判应是爆炸')
+      t.equal(r.runs.filter(x => x.outcome === 'explosion').length, 3, '三局应全部判为爆炸')
+      for (const x of r.runs) t.ok(x.growth >= 2, `人口应涨到起始的两倍以上，实测 ${x.growth.toFixed(1)}×`)
+    }
+  },
+  {
+    name: '勘探器：爆炸判的是相对起点的增长，不是绝对占比',
+    run(t) {
+      // 第一版拿绝对占比当判据，起始密度 0.3 本身就越过阈值，所有规则都成了"爆炸"。
+      // 这条测试就是钉住这个教训。
+      const dense = { end: null, gens: 2000, cells: 10000, peak: 3000, initialAlive: 3000,
+        finalAlive: 2900, maxFill: 0.30, variation: 0.08, initialFill: 0.30, finalFill: 0.29, growth: 1.0 }
+      t.equal(classifyRun(dense), 'complex', '起点就密、但没有增长的，不该判成爆炸')
+
+      const grown = { ...dense, peak: 7000, finalAlive: 6500, maxFill: 0.70, initialAlive: 800,
+        initialFill: 0.08, finalFill: 0.65, growth: 8.75 }
+      t.equal(classifyRun(grown), 'explosion', '从稀疏涨到占满的才是爆炸')
+
+      // 起点再密，淹了棋盘也算爆炸
+      const flooded = { ...dense, maxFill: 0.62, finalFill: 0.60, growth: 1.4 }
+      t.equal(classifyRun(flooded), 'explosion', '淹了棋盘的兜底判据')
+    }
+  },
+  {
+    name: '勘探器：七类结局的判定边界',
+    run(t) {
+      const base = { cells: 10000, peak: 500, initialAlive: 800, finalAlive: 0,
+        maxFill: 0.05, variation: 0.1, initialFill: 0.08, finalFill: 0, growth: 0.6 }
+      t.equal(classifyRun({ ...base, end: { type: 'extinction', gen: 12 }, gens: 12 }), 'quickDeath',
+        '不到 50 代全灭 = 速死')
+      t.equal(classifyRun({ ...base, end: { type: 'extinction', gen: 900 }, gens: 900 }), 'extinct',
+        '50 代之后才全灭 = 灭绝，不能也叫速死')
+      t.equal(classifyRun({ ...base, end: { type: 'still', gen: 40 }, gens: 40 }), 'still', '静止')
+      t.equal(classifyRun({ ...base, end: { type: 'cycle', gen: 300, period: 2 }, gens: 300 }), 'shortCycle',
+        '周期 2 = 短周期')
+      t.equal(classifyRun({ ...base, end: { type: 'cycle', gen: 900, period: 240 }, gens: 900 }), 'longCycle',
+        '周期 240 = 长周期')
+      t.equal(classifyRun({ ...base, end: null, gens: 2000, variation: 0.2 }), 'complex',
+        '跑满上限且人口波动 = 持续复杂')
+      t.equal(classifyRun({ ...base, end: null, gens: 2000, variation: 0.001 }), 'longCycle',
+        '跑满上限但人口纹丝不动的，不该叫"持续复杂"')
+      // 边界值
+      t.equal(classifyRun({ ...base, end: { type: 'extinction', gen: 49 }, gens: 49 }), 'quickDeath', '第 49 代仍算速死')
+      t.equal(classifyRun({ ...base, end: { type: 'extinction', gen: 50 }, gens: 50 }), 'extinct', '第 50 代起算灭绝')
+      t.equal(classifyRun({ ...base, end: { type: 'cycle', gen: 99, period: 30 }, gens: 99 }), 'shortCycle', '周期 30 仍是短周期')
+      t.equal(classifyRun({ ...base, end: { type: 'cycle', gen: 99, period: 31 }, gens: 99 }), 'longCycle', '周期 31 起算长周期')
+    }
+  },
+  {
+    name: '勘探器：多局总判与"持续复杂优先"排序',
+    run(t) {
+      const mk = os => ({ runs: os.map(o => ({ outcome: o })), outcome: majorityOutcome(os.map(o => ({ outcome: o }))) })
+      t.equal(mk(['complex', 'complex', 'shortCycle']).outcome, 'complex', '多数派')
+      t.equal(mk(['shortCycle', 'shortCycle', 'complex']).outcome, 'shortCycle', '多数派（反向）')
+      // 平手时取更有趣的那一类
+      t.equal(majorityOutcome([{ outcome: 'complex' }, { outcome: 'shortCycle' }]), 'complex',
+        '一比一平手时应取 OUTCOMES 里更靠前的')
+
+      const rows = [
+        { outcome: 'quickDeath', avgEndGen: 10 }, { outcome: 'complex', avgEndGen: 2000 },
+        { outcome: 'explosion', avgEndGen: 2000 }, { outcome: 'shortCycle', avgEndGen: 800 },
+        { outcome: 'longCycle', avgEndGen: 1500 }, { outcome: 'complex', avgEndGen: 1200 }
+      ]
+      const sorted = sortResults(rows)
+      t.equal(sorted[0].outcome, 'complex', '持续复杂排最前')
+      t.equal(sorted[0].avgEndGen, 2000, '同类里代数长的在前')
+      t.equal(sorted[1].outcome, 'complex', '两条持续复杂应相邻')
+      t.equal(sorted[2].outcome, 'longCycle', '其次是长周期')
+      t.equal(sorted[sorted.length - 1].outcome, 'quickDeath', '速死排最后')
+      t.equal(OUTCOMES[0], 'complex', 'OUTCOMES 的顺序就是"有趣程度"')
+    }
+  },
+  {
+    name: '勘探器：B/S 采样空间不重复、不产出必死规则',
+    run(t) {
+      const rules = sampleBSRules(120, 42)
+      t.equal(rules.length, 120, '应恰好采到 120 条')
+      const set = new Set(rules.map(r => r.notation))
+      t.equal(set.size, 120, '不应有重复')
+      for (const r of rules) {
+        t.ok(/^B[0-8]*\/S[0-8]*$/.test(r.notation), `记法应合法：${r.notation}`)
+        t.ok(!/^B\//.test(r.notation), `出生集合为空的规则必然全灭，不该进采样：${r.notation}`)
+      }
+      // 同一个种子必须采出同一批 —— 勘探结果要能复现
+      t.equal(sampleBSRules(20, 7).map(r => r.notation).join(','),
+        sampleBSRules(20, 7).map(r => r.notation).join(','), '同种子应采出同一批规则')
+      t.ok(sampleBSRules(20, 7).map(r => r.notation).join(',') !== sampleBSRules(20, 8).map(r => r.notation).join(','),
+        '不同种子应采出不同批')
+    }
+  },
+  {
+    name: '勘探器：单局观测量与人口起伏',
+    run(t) {
+      t.equal(relativeVariation([]), 0, '空序列')
+      t.equal(relativeVariation([0, 0, 0]), 0, '全零序列不该除以零')
+      t.equal(relativeVariation([5, 5, 5, 5]), 0, '恒定序列起伏为 0')
+      t.ok(relativeVariation([10, 90, 10, 90]) > 0.5, '大幅震荡的起伏应明显')
+
+      const r = probeRule(ruleFromNotation('B3/S23'), { seed: 1000, boardSize: 48, density: 0.12, genCap: 500 })
+      t.equal(r.notation, 'B3/S23', '应带上记法')
+      t.equal(r.fingerprint, '9eba4f34', '应带上规则指纹，方便与主界面对账')
+      t.equal(r.seed, 1000, '应带上种子 —— 候选名单要靠它复现')
+      t.ok(r.cells === 48 * 48, '棋盘格数')
+      t.ok(OUTCOMES.includes(r.outcome), `结局应是七类之一，实测 ${r.outcome}`)
+      t.ok(r.gens > 0 && r.gens <= 500, '代数应落在上限内')
+    }
+  },
+  {
+    name: '勘探器：默认参数就是规格里写的那几个',
+    run(t) {
+      t.equal(DEFAULTS.runsPerRule, 3, '每规则默认 3 局不同种子')
+      t.equal(DEFAULTS.genCap, 2000, '每局默认代数上限 2000')
+      t.equal(DEFAULTS.quickDeathGens, 50, '速死界限 50 代')
     }
   }
 )

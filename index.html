@@ -45,6 +45,7 @@
           <button data-lang="en">EN</button>
         </div>
         <button id="btn-tower" data-i18n="tower.open" data-i18n-title="tower.legend">观塔</button>
+        <button id="btn-explorer" data-i18n="exp.open" data-i18n-title="exp.hint">勘探</button>
         <button class="help-btn" id="btn-help" data-i18n-title="tip.help">?</button>
       </div>
     </header>
@@ -263,6 +264,49 @@
             </ul>
           </div>
         </section>
+      </aside>
+    </div>
+  </div>
+
+  <div class="tower-view" id="explorer-view" hidden>
+    <header class="tower-head">
+      <b data-i18n="exp.title">规则勘探器</b>
+      <span class="tower-stat" id="exp-stat"></span>
+      <button id="exp-back" data-i18n="exp.back">返回</button>
+    </header>
+    <div class="tower-body">
+      <div class="exp-main">
+        <div class="progress" id="exp-progress" hidden>
+          <div class="progress-track"><div class="progress-bar" id="exp-progress-bar"></div></div>
+          <p class="note" id="exp-progress-text"></p>
+        </div>
+        <p class="note" id="exp-empty" data-i18n="exp.empty">还没有勘探结果</p>
+        <div class="exp-table-wrap"><table class="exp-table" id="exp-table"></table></div>
+        <p class="note" data-i18n="exp.hint">按「持续复杂」优先排序。</p>
+      </div>
+      <aside class="tower-panel">
+        <div class="field">
+          <span class="field-label"><span data-i18n="exp.count">采样规则数</span> <b id="exp-lbl-count">60</b></span>
+          <input type="range" id="exp-count" min="10" max="300" step="10" value="60" />
+        </div>
+        <div class="field">
+          <span class="field-label"><span data-i18n="exp.runs">每规则局数</span> <b id="exp-lbl-runs">3</b></span>
+          <input type="range" id="exp-runs" min="1" max="5" step="1" value="3" />
+        </div>
+        <div class="field">
+          <span class="field-label"><span data-i18n="exp.cap">每局代数上限</span> <b id="exp-lbl-cap">2000</b></span>
+          <input type="range" id="exp-cap" min="200" max="4000" step="200" value="2000" />
+        </div>
+        <div class="field">
+          <span class="field-label"><span data-i18n="exp.board">棋盘边长</span> <b id="exp-lbl-board">128</b></span>
+          <input type="range" id="exp-board" min="48" max="192" step="16" value="128" />
+        </div>
+        <div class="row btn-row">
+          <button id="exp-start" class="primary" data-i18n="exp.start">开始勘探</button>
+          <button id="exp-stop" class="danger" data-i18n="exp.stop" disabled>停止</button>
+        </div>
+        <h3 class="exp-sub" data-i18n="exp.favList">候选名单</h3>
+        <div id="exp-favs"></div>
       </aside>
     </div>
   </div>

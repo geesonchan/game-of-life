@@ -1363,7 +1363,10 @@ cases.push(
       // 但 noteEdit（重置终止检测器）和 markDirtyRun（本局不能再靠种子重放）
       // 这两件事撤不回来 —— 画面还原了、账没还原，等于没回滚。
       // 所以它们只能在收笔时做。这条规矩写在文档里挡不住手滑，所以在这儿查。
-      const src = stripLiterals(readSrc('src/ui/input.js'))
+      // 含字符串字面量的断言必须查原文：stripLiterals 会把 'erase' 剥成空串，
+      // 那样下面那条**否定**断言会假通过 —— 比漏掉更糟。
+      const raw = readSrc('src/ui/input.js')
+      const src = stripLiterals(raw)
       const fn = name => {
         const i = src.indexOf('function ' + name)
         t.ok(i >= 0, `input.js 里应有 ${name}()`)
@@ -1838,6 +1841,42 @@ cases.push(
       const withZero = introPages({ chooser: true, mode: 'simple' })
       t.equal(introNext(withZero, 2), 3, '带第零幕时，第 2 页（第二幕）应该翻到下一页而不是收尾')
       t.equal(introNext(withZero, 3), 'finish', '第 3 页才是第三幕')
+    }
+  },
+  {
+    name: '触控擦除：点击取反，整笔方向由起笔格定（D78）',
+    run(t) {
+      // 含字符串字面量的断言必须查原文：stripLiterals 会把 'erase' 剥成空串，
+      // 那样下面那条**否定**断言会假通过 —— 比漏掉更糟。
+      const raw = readSrc('src/ui/input.js')
+      const src = stripLiterals(raw)
+
+      // ---- 写入值必须在落指时定下，整笔沿用 ----
+      // 逐格取反会让划过混合区域变成"翻转花纹"，既不可预测也没人想要。
+      t.ok(/const value = strokeValue/.test(src),
+        'paintLine 的写入值必须来自落指时定下的 strokeValue')
+      t.ok(!/const value = mode === 'erase' \? 0 : 1/.test(raw),
+        'paintLine 里不许再就地按 mode 判断 —— 那样触控就没有擦除的入口')
+
+      // ---- 触控取反、桌面按键，两条分支都要在 ----
+      t.ok(/strokeValue = isTouch\(e\) \? valueFromCell\(c\) : \(mode === 'erase' \? 0 : 1\)/.test(raw),
+        '触控读起笔格取反，桌面仍由按键决定 —— 桌面左键改成取反会是未被要求的行为变更')
+      t.ok(/function valueFromCell/.test(src), '应有起笔格取值函数')
+      // 起笔格在盘外时取"画"：盘外无活格可言，取反无从谈起
+      t.ok(/if \(!inside\) return 1/.test(src), '起笔格在盘外时一律取「画」')
+      t.ok(/app\.engine\.get\(c\.x, c\.y\) === 1 \? 0 : 1/.test(src), '盘内按活/空取反')
+
+      // ---- 与回滚窗口正交：回滚记的是原值，不关心这一笔写 1 还是 0 ----
+      t.ok(/app\.engine\.set\(c\[0\], c\[1\], c\[2\]\)/.test(src),
+        '回滚必须写回记录的原值 —— 这样它对「画」和「擦」一视同仁，无需为取反改动')
+      // 不许为了取反去动 250ms 窗口
+      t.ok(/strokeVerdict\(now\(\) - firstTouchAt\) === 'rollback'/.test(raw),
+        '回滚判定仍走 strokeVerdict，窗口值不因取反而变')
+
+      // ---- 无模式、无开关（先声明模式已被否决两次）----
+      const html = readSrc('index.html')
+      t.ok(!/id="btn-eras|data-tool="eras|id="btn-brush/.test(html),
+        '不许加橡皮擦工具按钮或画笔模式开关 —— 「先声明模式再操作」已被否决两次')
     }
   },
   {

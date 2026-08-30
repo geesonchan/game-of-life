@@ -45,6 +45,25 @@ export function setupCanvasInput(app) {
   /* ---------- 笔画记录：为了能整笔撤销（D67） ---------- */
   let stroke = null          // { cells: [[x,y,旧值],…], runDirtyBefore, startedAt }
 
+  /**
+   * 这一笔往格子里写什么（D78）。落指时定下，整笔沿用 ——
+   * **不是**每划过一格就取反那一格：那样划过混合区域会变成"翻转花纹"，
+   * 既不可预测也没人想要。
+   *
+   * 值的来源按输入方式分：
+   *   桌面：左键恒画、右键恒擦 —— 与现状完全一致，一个像素不动。
+   *   触控：读起笔格的状态取反 —— 点空格画、点活格擦。手机没有第二个键，
+   *         而取反是自逆的：点错了再点一次就回来，修正错误的动作与犯错的是同一个。
+   */
+  let strokeValue = 1
+
+  /** 起笔格在盘内才谈得上取反；盘外一律取"画"（那一笔多半还会被回滚掉） */
+  function valueFromCell(c) {
+    const inside = c.x >= 0 && c.y >= 0 && c.x < app.engine.w && c.y < app.engine.h
+    if (!inside) return 1
+    return app.engine.get(c.x, c.y) === 1 ? 0 : 1
+  }
+
   function beginStroke() {
     stroke = { cells: [], runDirtyBefore: app.runDirty, startedAt: now() }
   }
@@ -167,6 +186,8 @@ export function setupCanvasInput(app) {
     if (mode === 'paint' || mode === 'erase') {
       beginStroke()
       const c = vp.screenToCell(p.x, p.y)
+      // 触控没有第二个键，改用起笔格取反；桌面沿用按键决定（D78）
+      strokeValue = isTouch(e) ? valueFromCell(c) : (mode === 'erase' ? 0 : 1)
       paintLine(c, c)
       lastCell = c
     }
@@ -269,7 +290,7 @@ export function setupCanvasInput(app) {
 
   /** 用 Bresenham 在两个格子之间补齐，避免快速拖动漏格 */
   function paintLine(a, b) {
-    const value = mode === 'erase' ? 0 : 1
+    const value = strokeValue      // 落指时定下（D78），整笔不变
     let x0 = a.x, y0 = a.y
     const x1 = b.x, y1 = b.y
     const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1

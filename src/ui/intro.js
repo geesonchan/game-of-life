@@ -147,12 +147,15 @@ export function createIntro(app) {
     chooser = !!opts.chooser
     page = opts.page ?? 0
     modal.hidden = false
+    // 窄屏的抽屉把手和「更多」浮层是常驻元素，卡片打开时得让开（同 D68 里那个 view-open）
+    document.body.classList.add('modal-open')
     render()
   }
 
   function close() {
     stopStage()
     modal.hidden = true
+    document.body.classList.remove('modal-open')
     // 看过就记住 —— 无论是看完、跳过还是按 Esc 关掉
     prefs.set('introSeen', '1')
   }

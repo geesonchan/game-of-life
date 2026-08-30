@@ -895,6 +895,9 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
 /* 这两个按钮只为窄屏存在，桌面完全不出现 */
 .tb-more, .drawer-handle, .more-note { display: none; }
+/* 第零幕卡片里的那条窄屏说明：.pick-card em 的特异度(0,1,1)压得过 .more-note(0,1,0)，
+   所以这里得用同样具体的选择器把它按住，否则桌面上也会冒出来。 */
+.pick-card .more-note { display: none; }
 
 @media (max-width: 767px) {
   /* dvh 而不是 vh：iOS 地址栏收放会改变可视高度，vh 量的是"最大"高度，
@@ -993,7 +996,14 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   /* 全屏视图打开时，抽屉把手和「更多」浮层必须让开，否则会压在视图上面 */
   body.view-open .panel,
   body.view-open .tb-more-group,
-  body.view-open .strip { display: none; }
+  body.view-open .strip,
+  body.modal-open .panel,
+  body.modal-open .tb-more-group,
+  body.modal-open .strip { display: none; }
+
+  /* 第零幕的「标准版」卡片列举了观塔和勘探，而它们在手机上是藏起来的 ——
+     不补这一句，用户会选完标准版之后找不到，以为坏了。复用同一条词条。 */
+  .pick-card .more-note { display: block; margin-top: 6px; color: var(--muted); }
   body.more-open .tb-more { background: var(--accent); color: #06120a; }
 
   /* ---- 抽屉：底部推拉板，收起时只露把手 ---- */

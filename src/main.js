@@ -321,7 +321,9 @@ app.engine.randomize(4271, app.density)
 app.visual.sync(app.engine)
 app.series.push(app.engine.stats.alive)
 app.records.startRun()
-app.el.seed.value = '4271'
+// 不预填种子框：规格里"留空则随机生成种子并显示"意味着空 = 换一张新盘。
+// 预填的话第一次点「随机填充」会用同一个种子重放出一模一样的棋盘，看上去就像按钮没反应。
+// 开机这局的种子在编年史的「开局」一条里有记录，不会丢。
 app.fitView()
 app.setRunning(false)
 

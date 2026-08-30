@@ -1,6 +1,9 @@
 // 备用测试运行器：在没有 Node 的机器上，用 macOS 自带的 JavaScriptCore 跑同一批用例。
 //   jsc -m tests/run-jsc.js
 // 逻辑与 Vitest 完全共享 tests/cases.js，不是另写一套。
+// 给需要检查源文件的用例提供读文件能力（jsc 的 read 是全局函数）
+globalThis.readTextFile = path => read(path)
+
 import { cases } from './cases.js'
 
 let passed = 0

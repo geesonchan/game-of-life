@@ -79,22 +79,22 @@
         <section class="group" data-mode="full">
           <h2 class="group-head"><span data-i18n="board.section">棋盘</span></h2>
           <div class="group-body">
-            <label class="field" data-i18n-title="tip.size">
-              <span data-i18n="board.size">尺寸</span>
+            <div class="field" data-i18n-title="tip.size">
+              <span class="field-label" data-i18n="board.size">尺寸</span>
               <div class="btn-group grid2" id="in-size">
                 <button data-val="100">100 × 100</button>
                 <button data-val="200">200 × 200</button>
                 <button data-val="300">300 × 300</button>
                 <button data-val="500">500 × 500</button>
               </div>
-            </label>
-            <label class="field" data-i18n-title="tip.boundary">
-              <span data-i18n="board.boundary">边界</span>
+            </div>
+            <div class="field" data-i18n-title="tip.boundary">
+              <span class="field-label" data-i18n="board.boundary">边界</span>
               <div class="btn-group stack" id="in-boundary">
                 <button data-val="torus" data-i18n="board.torus" data-i18n-title="tip.torus">环形（对侧相连）</button>
                 <button data-val="dead" data-i18n="board.dead" data-i18n-title="tip.deadEdge">死边界（界外恒死）</button>
               </div>
-            </label>
+            </div>
             <label class="field" data-i18n-title="tip.density">
               <span><span data-i18n="init.density">密度</span> <b id="lbl-density">0.35</b></span>
               <input type="range" id="in-density" min="0" max="1" step="0.01" value="0.35" />
@@ -113,14 +113,14 @@
         <section class="group" data-mode="full">
           <h2 class="group-head"><span data-i18n="vis.section">视觉</span></h2>
           <div class="group-body">
-            <label class="field" data-i18n-title="tip.palette">
-              <span data-i18n="vis.palette">色带</span>
+            <div class="field" data-i18n-title="tip.palette">
+              <span class="field-label" data-i18n="vis.palette">色带</span>
               <div class="btn-group" id="in-palette">
                 <button data-val="emerald" data-i18n="vis.palette.emerald">翠绿</button>
                 <button data-val="lava" data-i18n="vis.palette.lava">熔岩</button>
                 <button data-val="glacier" data-i18n="vis.palette.glacier">冰川</button>
               </div>
-            </label>
+            </div>
             <label class="check" data-i18n-title="tip.age"><input type="checkbox" id="in-age" checked /><span data-i18n="vis.age">年龄着色</span></label>
             <label class="check" data-i18n-title="tip.glow"><input type="checkbox" id="in-glow" checked /><span data-i18n="vis.glow">死亡余晖</span></label>
             <label class="field indent" data-i18n-title="tip.glowLen">

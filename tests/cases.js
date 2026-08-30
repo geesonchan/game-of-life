@@ -3,6 +3,7 @@
 
 import { LifeEngine } from '../src/engine/board.js'
 import { lifeRule, compileRule, parseBS, bsToClauses } from '../src/engine/rules.js'
+import { normalizeSeed } from '../src/engine/prng.js'
 import { validateRule, validateClauses } from '../src/engine/validate.js'
 import { presetRule, PRESETS } from '../src/engine/presets.js'
 import { exportRule, importRule } from '../src/engine/rule-io.js'
@@ -1085,6 +1086,97 @@ cases.push(
       const produced = ['extinction', 'still', 'cycle', 'capped']
       for (const p of produced) t.ok(allowed.includes(p), `检测器产出的 ${p} 应在允许集合里`)
       t.equal(allowed.length, 5, '规格 3.4 规定的正是这五个值')
+    }
+  }
+)
+
+/* ================= 界面接线守卫（首位用户报「随机初始化按钮没反应」后补） ================= */
+
+/** 会碰 DOM 的源文件；jsc 没有目录遍历，所以显式列出来 */
+const DOM_SOURCES = [
+  'src/main.js', 'src/ui/controls.js', 'src/ui/records.js', 'src/ui/library.js',
+  'src/ui/intro.js', 'src/ui/rule-editor.js', 'src/ui/input.js', 'src/render/chart.js'
+]
+
+function readSrc(path) {
+  if (typeof readTextFile !== 'function') throw new Error('运行器没有提供 readTextFile')
+  return readTextFile(path)
+}
+
+cases.push(
+  {
+    name: '接线：<label> 里不许出现 <button>',
+    run(t) {
+      // 点 <label> 的文字或留白，浏览器会把「激活」转发给它里面第一个可关联控件。
+      // 按钮组一旦被 label 包住，点标题「尺寸」两个字就等于点了第一个按钮 ——
+      // 而「100 × 100」会调 engine.resize()，把整盘棋**静默清空**。
+      // 这正是布局重构引入的那个 bug，必须钉死。
+      const html = readSrc('index.html')
+      const offenders = []
+      const re = /<label\b[^>]*>([\s\S]*?)<\/label>/g
+      let m
+      while ((m = re.exec(html)) !== null) {
+        if (/<button\b/.test(m[1])) offenders.push(m[0].replace(/\s+/g, ' ').slice(0, 100))
+      }
+      t.equal(offenders.length, 0,
+        `这些 <label> 里包了 <button>，点标签文字会误触第一个按钮：\n  ${offenders.join('\n  ')}`)
+    }
+  },
+  {
+    name: '接线：代码里 getElementById 的 id 都在 index.html 里存在',
+    run(t) {
+      // 布局重构最容易出的事：元素被搬走或改名，绑定悄悄落空，按钮看着在、点了没反应。
+      const html = readSrc('index.html')
+      const declared = new Set()
+      const idRe = /\sid="([^"]+)"/g
+      let m
+      while ((m = idRe.exec(html)) !== null) declared.add(m[1])
+      t.ok(declared.size > 50, `index.html 里应有足够多的 id，实测 ${declared.size}`)
+
+      // 有些节点是代码自己 innerHTML 造出来的（介绍卡的迷你棋盘），也算数
+      for (const file of DOM_SOURCES) {
+        const src = readSrc(file)
+        let d
+        const dynRe = /\bid="([A-Za-z][\w-]*)"/g
+        while ((d = dynRe.exec(src)) !== null) declared.add(d[1])
+      }
+
+      const missing = []
+      for (const file of DOM_SOURCES) {
+        const src = readSrc(file)
+        // 匹配 getElementById('x')、$('x')、querySelector('#x')
+        const refRe = /(?:getElementById|\$)\(\s*'([A-Za-z][\w-]*)'\s*\)|querySelector\(\s*'#([\w-]+)'/g
+        let r
+        while ((r = refRe.exec(src)) !== null) {
+          const id = r[1] || r[2]
+          if (!declared.has(id)) missing.push(`${file} 引用了不存在的 #${id}`)
+        }
+      }
+      t.equal(missing.length, 0, `绑定落空：\n  ${missing.join('\n  ')}`)
+    }
+  },
+  {
+    name: '接线：种子输入框开机必须是空的',
+    run(t) {
+      // 规格阶段 1：「种子输入框，留空则随机生成种子并显示」。
+      // 空 = 换一张新盘。若开机就预填一个种子，第一次点「随机填充」会用同一个种子
+      // 重放出一模一样的棋盘 —— 看上去就像按钮坏了。首位用户报的正是这个现象。
+      const html = readSrc('index.html')
+      const m = /<input[^>]*id="in-seed"[^>]*>/.exec(html)
+      t.ok(!!m, 'index.html 里应有种子输入框')
+      t.ok(!/\svalue=/.test(m[0]), `种子框不该带 value 属性：${m[0]}`)
+
+      // 代码里也不许在开机时回填它
+      const main = readSrc('src/main.js')
+      t.ok(!/el\.seed\.value\s*=/.test(main) && !/seed\.value\s*=\s*'/.test(main),
+        'main.js 不该在装配阶段给种子框赋值')
+
+      // 「留空 ⇒ 每次都是新种子」这条契约本身
+      const a = normalizeSeed('')
+      const b = normalizeSeed('')
+      t.ok(a !== b, '留空时两次应生成不同的种子')
+      t.equal(normalizeSeed('4271'), 4271, '填了数字就必须照用，保证可复现')
+      t.equal(normalizeSeed('4271'), normalizeSeed('4271'), '同一个种子输入必须稳定')
     }
   }
 )

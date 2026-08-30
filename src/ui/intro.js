@@ -77,6 +77,9 @@ const DEMO_STAGE = [                                              // 第一幕�
 export function createIntro(app) {
   const modal = document.getElementById('intro-modal')
   const bodyEl = document.getElementById('intro-body')
+  const act0El = document.getElementById('intro-act0')
+  const pickKid = document.getElementById('intro-pick-kid')
+  const pickStd = document.getElementById('intro-pick-std')
   const stepEl = document.getElementById('intro-step')
   const dotsEl = document.getElementById('intro-dots')
   const backBtn = document.getElementById('intro-back')
@@ -96,15 +99,30 @@ export function createIntro(app) {
   })
 
   let page = 0
+  let chooser = false      // 是否包含第零幕（选版本）
   let stageBoard = null
   let stageTimer = 0
   let miniBoards = []
 
-  /** 完整模式多两页参考；简洁模式只有三幕 */
-  function pageCount() { return app.mode === 'full' ? 5 : 3 }
+  /**
+   * 页序：可选的第零幕（选版本）→ 三幕 → 完整模式再加两页参考。
+   * 用一个数组按身份取，而不是硬编码下标 —— 第零幕在不在会让所有下标平移。
+   */
+  function pageList() {
+    const list = chooser ? [actZero] : []
+    list.push(act1, act2, act3)
+    if (app.mode === 'full') list.push(helpAge, helpBS)
+    return list
+  }
 
-  function open(startPage = 0) {
-    page = startPage
+  /**
+   * @param {{chooser?:boolean, page?:number}} [opts]
+   *   chooser: 是否先问"儿童版还是标准版"。开机时只有**没存过模式偏好**的新用户才问；
+   *   点「?」进来时总是问，这样老用户也能重选。
+   */
+  function open(opts = {}) {
+    chooser = !!opts.chooser
+    page = opts.page ?? 0
     modal.hidden = false
     render()
   }
@@ -124,28 +142,62 @@ export function createIntro(app) {
 
   function render() {
     stopStage()
-    const total = pageCount()
-    stepEl.textContent = t('intro.step', { n: page + 1, total })
-    dotsEl.innerHTML = Array.from({ length: total }, (_, i) =>
-      `<span class="dot ${i === page ? 'on' : ''}"></span>`).join('')
+    const list = pageList()
+    const total = list.length
+    if (page >= total) page = total - 1
+    const cur = list[page]
+    const onAct0 = cur === actZero
+
+    // 第零幕的两张卡片写在 index.html 里（接线守卫扫得到），不是 innerHTML 拼出来的
+    act0El.hidden = !onAct0
+    bodyEl.hidden = onAct0
+
+    // 第零幕是个分岔，不是一步：选儿童版之后总共只有三幕，
+    // 在这一页就报「第 1 / 6 幕」是在骗人。所以进度指示在这页直接不显示。
+    // 留着 stepEl 的位置（只清空文字），否则语言开关会往左塌一格
+    dotsEl.hidden = onAct0
+    stepEl.textContent = ''
+    if (!onAct0) {
+      const shown = chooser ? page : page + 1        // 有第零幕时，第一幕才算第 1 幕
+      const shownTotal = chooser ? total - 1 : total
+      stepEl.textContent = t('intro.step', { n: shown, total: shownTotal })
+      dotsEl.innerHTML = Array.from({ length: shownTotal }, (_, i) =>
+        `<span class="dot ${i === shown - 1 ? 'on' : ''}"></span>`).join('')
+    }
     backBtn.hidden = page === 0
     backBtn.textContent = t('intro.back')
     skipBtn.textContent = t('intro.skip')
     langSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.lang === getLang()))
 
     // 第三幕的主按钮是「开始玩」；完整模式下另给一个通往参考页的次按钮
-    const isAct3 = page === 2
+    const isAct3 = cur === act3
     const isLast = page === total - 1
+    // 第零幕的动作就是那两张卡片本身，不需要"下一幕"
+    nextBtn.hidden = onAct0
     nextBtn.textContent = isAct3 ? t('intro.start') : (isLast ? t('intro.close') : t('intro.next'))
-    moreBtn.hidden = !(isAct3 && total > 3)
+    moreBtn.hidden = onAct0 || !(isAct3 && list.includes(helpAge))
     if (!moreBtn.hidden) moreBtn.textContent = t('help.age.title') + ' / ' + t('help.bs.title')
 
-    const renderers = [act1, act2, act3, helpAge, helpBS]
     bodyEl.innerHTML = ''
-    renderers[page]()
+    if (!onAct0) cur()
     // 画布要等布局算完才有尺寸
     requestAnimationFrame(() => { for (const b of miniBoards) b.draw() })
   }
+
+  /* ---------------- 第零幕：选版本 ---------------- */
+  // 内容是静态的（写在 index.html，data-i18n 负责文案），这里只是个占位标记
+  function actZero() {}
+
+  /** 选版本 = 直接用现有的模式机制，不另起一套状态 */
+  function pick(mode) {
+    app.setMode(mode, { silent: true })
+    prefs.set('mode', mode)          // 与侧栏开关同一个偏好键
+    if (app.syncSwitches) app.syncSwitches()
+    page = 1                         // 选完就进第一幕
+    render()
+  }
+  pickKid.addEventListener('click', () => pick('simple'))
+  pickStd.addEventListener('click', () => pick('full'))
 
   /* ---------------- 第一幕 ---------------- */
   function act1() {
@@ -267,7 +319,7 @@ export function createIntro(app) {
     render()
   })
   backBtn.addEventListener('click', () => { if (page > 0) { page--; render() } })
-  moreBtn.addEventListener('click', () => { page = 3; render() })
+  moreBtn.addEventListener('click', () => { page = pageList().indexOf(helpAge); render() })
   skipBtn.addEventListener('click', close)
   document.getElementById('intro-backdrop').addEventListener('click', close)
   window.addEventListener('keydown', e => {

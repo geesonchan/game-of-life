@@ -21,6 +21,7 @@ import { AGE_MAX } from './render/palette.js'
 import { placePattern, centerOrigin } from './engine/patterns.js'
 import { t, applyStatic, onLangChange, setRegister, setLang, getLang } from './i18n/index.js'
 import { prefs } from './ui/prefs.js'
+import { setupAnalytics } from './analytics.js'
 
 const DEFAULT_SIZE = 200
 const HISTORY_LEN = 500   // 折线图窗口：最近 500 代
@@ -376,7 +377,8 @@ app.io = setupIO(app)
 app.library = setupLibrary(app)
 app.library.render()
 app.intro = createIntro(app)
-document.getElementById('btn-help').addEventListener('click', () => app.intro.open(0))
+// 点「?」总是带上第零幕，老用户也能在这里重选版本
+document.getElementById('btn-help').addEventListener('click', () => app.intro.open({ chooser: true }))
 app.tower = createTowerView(app)
 app.explorer = createExplorerView(app)
 
@@ -520,7 +522,15 @@ requestAnimationFrame(frame)
 
 // 首次进入自动弹出介绍卡。规格修订后（D30）"看过了"会记在 localStorage 里，
 // 所以刷新页面不会再弹；存储不可用时（隐私模式）退化成每次打开都弹一次，不影响使用。
-if (prefs.get('introSeen') !== '1') app.intro.open(0)
+// 首次进入自动弹介绍卡。只有**没存过模式偏好**的新用户才先问"儿童版还是标准版"；
+// 老用户已经选过了，不该再被问一遍。
+if (prefs.get('introSeen') !== '1') {
+  const savedMode = prefs.get('mode')
+  app.intro.open({ chooser: savedMode !== 'simple' && savedMode !== 'full' })
+}
 
 // 便于在浏览器控制台里做手工验证
 window.__lab = app
+
+// 访问统计：只有配了 VITE_GOATCOUNTER 的正式构建才会真的加载（见 src/analytics.js）
+setupAnalytics()

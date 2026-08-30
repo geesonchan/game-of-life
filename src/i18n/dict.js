@@ -548,6 +548,19 @@ export const DICT = {
     'out.quickDeath': '速死',
     'out.quickDeath.simple': '很快就死光',
 
+
+    /* ==== 第零幕：选版本 ==== */
+    'intro.act0.title': '先选一个版本',
+    'intro.act0.title.simple': '先选一个',
+    'intro.act0.kid': '儿童版',
+    'intro.act0.kid.desc': '大白话说明，只留最要紧的几个按钮，点一下就能玩。',
+    'intro.act0.kid.desc.simple': '说人话，按钮很少，点一下就能玩。',
+    'intro.act0.std': '标准版',
+    'intro.act0.std.desc': '全部实验工具都在：改规则、看统计、存档、时间之塔、规则勘探。',
+    'intro.act0.std.desc.simple': '所有工具都摆出来，想怎么折腾都行。',
+    'intro.act0.note': '选好之后随时能在右上角切换，这里也能重选。',
+    'intro.act0.note.simple': '选错了也不要紧，右上角随时能换。',
+
     'toast.ruleApplied': '规则已应用 · {notation} · 指纹 {fp}'
   },
 
@@ -1078,6 +1091,19 @@ export const DICT = {
     'out.extinct.simple': 'died out later on',
     'out.quickDeath': 'Quick death',
     'out.quickDeath.simple': 'dies out almost at once',
+
+
+    /* ==== Act zero: pick a version ==== */
+    'intro.act0.title': 'First, pick a version',
+    'intro.act0.title.simple': 'Pick one first',
+    'intro.act0.kid': 'Kids version',
+    'intro.act0.kid.desc': 'Plain words, only the few buttons that matter, ready to play in one click.',
+    'intro.act0.kid.desc.simple': 'Plain words, very few buttons, ready to play right away.',
+    'intro.act0.std': 'Standard version',
+    'intro.act0.std.desc': 'Every tool is here: edit rules, read stats, save runs, the time tower, the rule hunt.',
+    'intro.act0.std.desc.simple': 'Everything is laid out, tinker however you like.',
+    'intro.act0.note': 'You can switch any time from the top right, or come back here to change it.',
+    'intro.act0.note.simple': 'No harm if you pick wrong — you can swap any time at the top right.',
 
     'toast.ruleApplied': 'Rule applied · {notation} · fingerprint {fp}'
   }

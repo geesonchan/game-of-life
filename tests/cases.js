@@ -926,20 +926,32 @@ cases.push(
       const d = new TerminationDetector({ enabled: { extinction: false, still: false, cycle: true, capped: false } })
       t.ok(d.seen instanceof Map, '历史查重结构必须是 Map')
 
-      // 复杂度守卫：条数 ×5，耗时若接近 ×25 就说明退化成了线性扫描
+      // 复杂度守卫。这条测过两版都会偶发飘红，原因值得写下来：
+      //   第一版 2000/10000（×5）：小样本只花 0.1ms，贴着计时器分辨率，量到的全是噪声。
+      //   第二版 10000/50000（×5）+ 中位数：噪声压住了，但**判据本身余量太窄** ——
+      //     Map 实测 6×、判据 10×、线性 25×，三个数挤在一起，一次 GC 停顿就够越界。
+      // 根子在样本倍数只有 ×5。改成 ×10 之后：Map 应在 10× 附近，线性会是 100×，
+      // 判据放在 30× —— 两边各留 3 倍余量，GC 停顿再也顶不动它。
+      // 另一重保险是绝对耗时：真退化成线性扫描的话，20 万条要跑 2×10^10 次比较，
+      // 那是分钟级，500ms 的上限根本轮不到倍率去判。
       const timeFor = n => {
         const det = new TerminationDetector({ enabled: { extinction: false, still: false, cycle: true, capped: false } })
         const t0 = now()
         for (let i = 0; i < n; i++) det.observe(i, 'h' + i, 1)
         return now() - t0
       }
-      timeFor(2000)                       // 预热
-      const small = Math.max(timeFor(2000), 0.05)
-      const big = timeFor(10000)
+      const medianTime = n => {
+        const runs = [timeFor(n), timeFor(n), timeFor(n)].sort((a, b) => a - b)
+        return runs[1]
+      }
+      timeFor(20000)                      // 预热
+      const small = medianTime(20000)
+      const big = medianTime(200000)
       const ratio = big / small
-      t.info(`2000 条 ${small.toFixed(2)}ms，10000 条 ${big.toFixed(2)}ms，倍率 ${ratio.toFixed(1)}×（线性扫描应接近 25×）`)
-      t.ok(ratio < 10, `倍率应远小于 25，实测 ${ratio.toFixed(1)}×`)
-      t.ok(big < 50, `一万条查重应在 50ms 内，实测 ${big.toFixed(2)}ms`)
+      t.info(`2 万条 ${small.toFixed(2)}ms，20 万条 ${big.toFixed(2)}ms，倍率 ${ratio.toFixed(1)}×（线性扫描应接近 100×）`)
+      t.ok(small > 0.5, `小样本耗时应明显高于计时器分辨率，实测 ${small.toFixed(2)}ms`)
+      t.ok(ratio < 30, `倍率应贴近 10 而不是 100，实测 ${ratio.toFixed(1)}×`)
+      t.ok(big < 500, `二十万条查重应在 500ms 内，实测 ${big.toFixed(2)}ms`)
     }
   },
   {
@@ -1163,6 +1175,29 @@ cases.push(
         }
       }
       t.equal(missing.length, 0, `绑定落空：\n  ${missing.join('\n  ')}`)
+    }
+  },
+  {
+    name: '接线：第零幕两张卡片必须走现有的 mode 机制',
+    run(t) {
+      // id 存在性上一条已经管了，这里管的是**接到哪儿**。
+      // 用户的约束原话：「复用现有 mode/intro 机制，别另起一套状态」。
+      // 所以两张卡片必须落到 app.setMode + prefs.set('mode')，
+      // 而不是自己记一个 kidVersion 之类的旁路变量。
+      const src = readSrc('src/ui/intro.js')
+      t.ok(/pickKid\.addEventListener\(\s*'click'/.test(src), '儿童版卡片要有 click 绑定')
+      t.ok(/pickStd\.addEventListener\(\s*'click'/.test(src), '标准版卡片要有 click 绑定')
+      t.ok(/app\.setMode\(\s*mode/.test(src), '选版本要调用 app.setMode，而不是自己改 class')
+      t.ok(/prefs\.set\(\s*'mode'/.test(src), '选完要落进现有的 mode 偏好键')
+      t.ok(/pick\('simple'\)/.test(src) && /pick\('full'\)/.test(src),
+        '两张卡片要分别对应 simple / full，不能引入第三种模式名')
+
+      // 老用户不该再被问一遍：开机只在没存过 mode 偏好时带 chooser
+      const main = readSrc('src/main.js')
+      t.ok(/chooser:\s*savedMode !== 'simple' && savedMode !== 'full'/.test(main),
+        '开机的第零幕条件应当是「没存过模式偏好」')
+      t.ok(/btn-help[\s\S]{0,200}?intro\.open\(\{\s*chooser:\s*true/.test(main),
+        '「?」按钮应当总是带上第零幕，好让老用户重选')
     }
   },
   {

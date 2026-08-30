@@ -1,0 +1,51 @@
+# 推到 main 就自动构建并发布到 GitHub Pages。
+# 手动重跑：仓库 Actions 页面 → 选这个 workflow → Run workflow。
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 发布到 Pages 需要的权限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一次发布，后来的排队而不是打架
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # 测试不过就不发布 —— 别把坏版本推到线上
+      - run: npm test
+      - run: npm run build
+        env:
+          # 在仓库 Settings → Secrets and variables → Actions → Variables
+          # 里加一个名为 GOATCOUNTER 的变量；没加就是不挂统计，构建照常。
+          VITE_GOATCOUNTER: ${{ vars.GOATCOUNTER }}
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

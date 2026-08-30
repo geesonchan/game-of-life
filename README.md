@@ -1,6 +1,37 @@
-# 生命游戏实验台
+# 生命游戏实验台 · Game of Life Lab
 
-基于浏览器的 Conway 生命游戏实验平台。规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
+**在线试玩 / Live demo：** 见仓库右侧 About 区的链接（GitHub Pages）。
+
+一个跑在浏览器里的康威生命游戏**实验台**——不是又一个"点开看方块闪"的小玩具。
+你可以改写规则本身（不止 B3/S23）、把一局的历史堆成一座可以绕着看的 3D「时间之塔」、
+让它在后台批量试上百条规则并告诉你哪几条"最有意思"。
+界面有中英双语，还有**儿童版**：同一套功能，换成大白话，按钮只留最要紧的几个。
+不需要装任何东西，打开网页就能玩。你画的棋盘、存档、实验台账**一律留在你自己的机器上**，
+不会上传到任何地方（存档靠手动导出文件）。线上版本只有一个匿名的访问计数
+（[GoatCounter](https://www.goatcounter.com/)，无 cookie、不采集个人信息），
+自己下载下来跑的话连这个也没有。
+
+A browser-based **laboratory** for Conway's Game of Life — not another blinking-squares toy.
+Rewrite the rules themselves (far beyond B3/S23), stack a run's entire history into a 3-D
+"Tower of Time" you can orbit, and let it batch-test hundreds of rules in the background
+and tell you which ones are actually interesting. Bilingual (中文 / English), with a
+**kids version** that keeps every feature but swaps the jargon for plain words and hides
+all but the essential buttons. Nothing to install. Your boards, saves and experiment log
+**stay on your own machine** — nothing is uploaded (saving means exporting a file yourself).
+The hosted copy carries one anonymous page-view counter
+([GoatCounter](https://www.goatcounter.com/) — no cookies, no personal data); a copy you
+run yourself has not even that.
+
+**主要功能 / What's inside**
+
+| | |
+| --- | --- |
+| 规则编辑器 · Rule editor | 用「条件 → 结果」的条款写规则，带校验器；能和标准 B/S 记法互转 |
+| 时间之塔 · Tower of Time | 一代一层堆成 3D 塔：静物是直柱，闪灯是麻花，滑翔机是斜线 |
+| 规则勘探器 · Rule explorer | 后台批量跑规则，按"持续复杂"排序，一键跳回主界面复现 |
+| 记录与台账 · Records | 人口曲线、死因统计、编年史、CSV 导出、存档与 RLE 互通 |
+
+规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)，
 用户反馈记录见 [docs/feedback.md](./docs/feedback.md)，
 **v1 复盘（流程资产 / 方法清单 / v2 待办）见 [docs/retrospective.md](./docs/retrospective.md)**。
@@ -59,6 +90,8 @@ tests/        验收用例（Vitest 与 jsc 运行器共用）
 npm install
 npm run dev
 ```
+
+发布到 GitHub Pages 的步骤见 [docs/deploy.md](./docs/deploy.md)。
 
 ## 测试
 

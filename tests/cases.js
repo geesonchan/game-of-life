@@ -1502,6 +1502,97 @@ cases.push(
     }
   },
   {
+    name: '样式：按钮一律不折行，且多行卡片有例外（D73）',
+    run(t) {
+      // 「停一下」被断成两行（外部用户实测）：中文没有空格，浏览器可在任意两字间断行。
+      // 修法是 button 全局 nowrap —— 这条守卫钉的就是那个修法本身。
+      const css = readSrc('src/style.css')
+      // 必须锚在行首：\bbutton 会先命中 .topbar button {…} 之类的派生规则
+      const base = /^button\s*\{([\s\S]*?)\}/m.exec(css)
+      t.ok(!!base, 'style.css 里应有 button 的基础规则')
+      t.ok(/white-space:\s*nowrap/.test(base[1]),
+        'button 基础规则里必须有 white-space: nowrap，否则中文按钮会被断行')
+
+      // 但一刀切会把玩具卡片变成横向溢出 —— 从"难看"换成"看不全"，更糟。
+      // 卡片本来就是多行块（72–84px 宽，要放「A little guy that walks」这种名字）。
+      t.ok(/\.card,\s*\.pick-card\s*\{[^}]*white-space:\s*normal/.test(css),
+        '.card / .pick-card 必须保留折行 —— 它们是多行卡片，不是单行动作按钮')
+    }
+  },
+  {
+    name: '文案：按钮词条长度上限（跑偏预警，不是折行守卫）',
+    run(t) {
+      // 说清楚这条管什么：它**抓不到**「停一下」那个 bug —— 那条文案宽度才 6，
+      // 问题出在 CSS 不在文案。这条管的是另一件事：有人往按钮里塞一整句话。
+      // 上限取 32：当前最宽的是 en 的 board.dead（29，侧栏整行按钮，显示正常），
+      // 留一点余量，够拦住离谱的，不至于把正常的误伤。
+      const LIMIT = 32
+      const html = readSrc('index.html')
+      const keys = {}
+      const re = /<button\b[^>]*\sdata-i18n="([^"]+)"/g
+      let m
+      while ((m = re.exec(html)) !== null) keys[m[1]] = true
+      // 从 index.html 扫，新增按钮自动纳入，不用维护清单。
+      // 只有标签由 JS 换掉的那几个扫不到，单列在这里。
+      for (const k of ['ctrl.pause', 'intro.start', 'intro.next', 'intro.back', 'intro.close']) keys[k] = true
+
+      const n = Object.keys(keys).length
+      t.ok(n > 30, `应当扫到足够多的按钮词条，实测 ${n}`)
+
+      // 显示宽度：中日韩字符占两个西文字宽
+      const width = str => {
+        let w = 0
+        for (const ch of String(str)) w += /[\u3000-\u9fff\uff00-\uffef]/.test(ch) ? 2 : 1
+        return w
+      }
+      const over = []
+      for (const k of Object.keys(keys)) {
+        for (const lang of ['zh', 'en']) {
+          for (const suffix of ['', '.simple']) {
+            const v = DICT[lang][k + suffix]
+            if (typeof v !== 'string') continue
+            const w = width(v)
+            if (w > LIMIT) over.push(`${lang} ${k}${suffix}（宽 ${w}）= ${v}`)
+          }
+        }
+      }
+      t.equal(over.length, 0, `这些按钮文案超过 ${LIMIT} 个字宽：\n  ${over.join('\n  ')}`)
+    }
+  },
+  {
+    name: '接线：窄屏的「适配视图」与桌面那颗同属救援档，且各自只出现一次',
+    run(t) {
+      // 外部用户反馈：双指操作后棋盘易飞出视野，找回视图是高频救援动作。
+      const html = readSrc('index.html')
+      t.ok(/<button id="btn-fit"[^>]*class="rescue"/.test(html) ||
+           /<button id="btn-fit" class="rescue"/.test(html),
+        '桌面那颗「适配视图」应归入 rescue 档 —— 语义色若只在手机上成立就不叫语义')
+      t.ok(/<button id="btn-fit-m"[^>]*class="rescue"/.test(html),
+        '窄屏那颗也是 rescue 档')
+
+      // 两颗共用同一批词条，不新增文案
+      const fitKeys = (html.match(/id="btn-fit[^"]*"[^>]*data-i18n="([^"]+)"/g) || [])
+      t.equal(fitKeys.length, 2, `应当正好两颗「适配视图」，实测 ${fitKeys.length}`)
+      t.ok(html.indexOf('id="btn-fit-m"') >= 0 && html.indexOf('id="btn-fit"') >= 0, '两个 id 都要在')
+
+      // 救援色必须与红/绿/橙都不同（D72 的语义表）
+      const css = readSrc('src/style.css')
+      const pick = sel => {
+        const m = new RegExp('button\\.' + sel + '\\s*\\{([\\s\\S]*?)\\}').exec(css)
+        return m ? (/background:\s*([^;]+);/.exec(m[1]) || [])[1] : null
+      }
+      const colors = { rescue: pick('rescue'), danger: pick('danger'), running: pick('running'), primary: pick('primary') }
+      for (const k of Object.keys(colors)) t.ok(!!colors[k], `button.${k} 应当定义了背景色`)
+      const vals = Object.values(colors).map(v => v.trim())
+      t.equal(new Set(vals).size, vals.length, `四个语义档的底色必须互不相同，实测 ${JSON.stringify(colors)}`)
+
+      // 两颗按钮走同一个动作，不另写逻辑
+      const ctl = readSrc('src/ui/controls.js')
+      t.ok(/btn-fit-m'\)\.addEventListener\('click', \(\) => app\.fitView\(\)\)/.test(ctl),
+        '窄屏那颗必须直接调 app.fitView()，不另起一套')
+    }
+  },
+  {
     name: '接线：开局状态按首访/回访分流，清空不许藏进「更多」',
     run(t) {
       // D69：回访者的实际动作是"先清空再开始"，所以回访开空盘。

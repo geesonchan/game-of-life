@@ -116,7 +116,12 @@ body {
 .btn-row button { flex: 1; }
 
 button {
+  /* 中文没有空格，浏览器可以在任意两字之间断行 —— 「停一下」会断成两行（外部用户实测）。
+     按钮统一禁止折行：宁可靠字号和内边距自适应，也不让一个动作名被劈开。
+     词典层另有一条长度守卫在管"别写太长的按钮文案"，见 docs/decisions.md D73。 */
+  white-space: nowrap;
   padding: 8px 10px;
+  /* 例外见文件末尾的 .card / .pick-card —— 那两类按钮本来就是多行卡片 */
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
@@ -712,6 +717,16 @@ button.danger {
 }
 button.danger:hover { background: #713030; border-color: #9a3d3d; color: #fff0f0; }
 
+/* 「适配视图」是无损救援：按下去只改视口、不碰任何一个细胞，永远可以再按一次。
+   它需要一个既不像"推进"（绿）、也不像"危险"（红）的档位 —— 蓝色系。
+   按钮色的完整语义表见 docs/decisions.md D72。 */
+button.rescue {
+  background: #1e3a5f;
+  border-color: #2d5a8a;
+  color: #dceaff;
+}
+button.rescue:hover { background: #26497a; border-color: #3a72ad; color: #f0f7ff; }
+
 /* 所有"一组里选一个"的控件统一：未选中灰底、选中高亮。
    涉及三处 —— 侧栏按钮组、顶栏分段开关、顶栏标签，之前三者样式各写各的。 */
 .btn-group button,
@@ -895,6 +910,8 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
 /* 这两个按钮只为窄屏存在，桌面完全不出现 */
 .tb-more, .drawer-handle, .more-note { display: none; }
+/* 窄屏专用的那颗「适配视图」：桌面上侧栏已有一颗，这里不出现 */
+#btn-fit-m { display: none; }
 /* 第零幕卡片里的那条窄屏说明：.pick-card em 的特异度(0,1,1)压得过 .more-note(0,1,0)，
    所以这里得用同样具体的选择器把它按住，否则桌面上也会冒出来。 */
 .pick-card .more-note { display: none; }
@@ -907,7 +924,8 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
     grid-template-columns: 1fr auto;
     /* 顶栏 / 棋盘 / 运行控件 / 玩具盒 / 余量。余量放在最后 ——
        棋盘顶到视口上部，运行控件紧贴其下，两者之间不留空档。 */
-    grid-template-rows: auto auto auto 1fr;
+    /* 顶栏 / 棋盘 / 运行控件 / 救援排 / 玩具盒 */
+    grid-template-rows: auto auto auto auto 1fr;
     height: 100dvh;
     padding-bottom: 46px;         /* 给底部露头的抽屉把手让位 */
   }
@@ -942,7 +960,7 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
      而玩具盒是手机上最值得常摆出来的东西，正好填上。 */
   .toolrail, .toolrail[hidden] {
     display: block;
-    grid-row: 4; grid-column: 1 / -1;
+    grid-row: 5; grid-column: 1 / -1;
     width: auto; border-right: none; border-top: 1px solid var(--line);
     overflow-x: auto; overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
@@ -960,18 +978,26 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
      清空不进「更多」：手机上误画频繁，它是高频动作，藏两层下面等于没有。
      摆在这一排的右端而不是紧挨播放 —— 它是破坏性操作，别和最常按的键做邻居。 */
   .tb-run {
-    grid-row: 3; grid-column: 1;
+    grid-row: 3; grid-column: 1 / -1;
     display: flex; align-items: center; gap: 10px;
-    padding: 8px 4px 8px 12px; background: var(--panel);
+    padding: 8px 12px; background: var(--panel);
     border-top: 1px solid var(--line);
     min-width: 0;
   }
+  /* 救援排：紧挨运行控件下方，仍在拇指区。
+     375px 上五个控件挤一排会折行错位 —— 与其把「适配视图」塞进缝里，
+     不如给它一整排：它本来就是"棋盘飞出去了、找不回来"时按的键，
+     那种时刻最不该让人去缝里找按钮。 */
   .tb-left {
-    display: flex; grid-row: 3; grid-column: 2;
-    align-items: center; padding: 8px 12px 8px 4px;
-    background: var(--panel); border-top: 1px solid var(--line);
+    display: flex; grid-row: 4; grid-column: 1 / -1;
+    align-items: center; gap: 8px;
+    padding: 0 12px 8px; background: var(--panel);
   }
-  .tb-left #btn-clear { min-height: 44px; padding: 0 16px; font-size: 14px; }
+  .tb-left #btn-fit-m { flex: 1; }        /* 高频的那个占宽 */
+  .tb-left #btn-clear { flex: 0 0 auto; } /* 破坏性的那个不占，也不与播放做邻居 */
+  .tb-left #btn-clear,
+  .tb-left #btn-fit-m { display: block; min-height: 44px; padding: 0 12px; font-size: 14px; }
+  .tb-left { gap: 6px; }
   .tb-run #btn-play { flex: 1; }
   .tb-run button { min-height: 44px; font-size: 15px; padding: 0 18px; }
   .tb-speed { flex: 1.2; gap: 8px; }
@@ -1066,3 +1092,10 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   /* 全屏浮层（介绍卡/规则/观塔/勘探）在窄屏铺满 */
   .modal-card { max-width: none; width: calc(100vw - 20px); max-height: 84dvh; overflow-y: auto; }
 }
+
+/* ---------- 折行例外 ----------
+   button 全局 nowrap 是为了不让「停一下」这种动作名被劈成两行（D73）。
+   但玩具卡片和第零幕的版本卡片本身就是多行块：卡片只有 72–84px 宽，
+   而「A little guy that walks」这类名字必须折行才放得下。
+   一刀切的 nowrap 会把它们变成横向溢出 —— 从"难看"换成"看不全"，更糟。 */
+.card, .pick-card { white-space: normal; }

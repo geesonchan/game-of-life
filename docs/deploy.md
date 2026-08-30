@@ -160,6 +160,15 @@ Actions 变绿只说明**构建**成功了，不说明**页面**是好的。
 3. **跑一局** —— 点播放，看代数和存活数在动
 4. **造塔** —— 进观塔模式，点「造塔」，看塔出来
 5. **切语言** —— 中/EN 切一次，简洁/完整切一次
+6. **窄屏按钮目检**（手机上做）—— 切成英文再看一遍：有没有按钮的文字断成两行、
+   或者被容器切掉半个字。中文按钮尤其要看，中文没有空格、可以在任意两字之间断行。
+
+第 6 步想省事的话，把这段贴进手机浏览器的控制台，它会把折行和溢出的按钮列出来
+（数的是文字行盒，不是盒子高度 —— 触控用的 44px 高度会让每个按钮都像是超过一行）：
+
+```javascript
+[...document.querySelectorAll('button')].filter(el=>{if(el.classList.contains('card')||el.classList.contains('pick-card'))return false;const b=el.getBoundingClientRect();if(!b.width)return false;const r=document.createRange();r.selectNodeContents(el);return r.getClientRects().length>1||el.scrollWidth>Math.ceil(b.width)+1}).map(el=>el.textContent.trim())
+```
 
 **全程开着控制台**（Mac 上 Cmd+Option+J），红字一条都不能有。
 

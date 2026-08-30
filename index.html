@@ -22,6 +22,9 @@
       <button class="tb-more" id="btn-more" data-i18n="mobile.more" data-i18n-title="mobile.more.tip">更多</button>
 
       <div class="tb-seg tb-left">
+        <!-- 窄屏专用的「适配视图」：桌面那颗在侧栏原位不动，两颗共用同一批词条。
+             双指操作后棋盘容易飞出视野，找回视图是高频救援动作（外部用户反馈） -->
+        <button id="btn-fit-m" class="rescue" data-i18n="ctrl.fit" data-i18n-title="tip.fit">适配视图</button>
         <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
       </div>
 
@@ -125,7 +128,7 @@
             </label>
             <div class="row btn-row">
               <button id="btn-random" data-i18n="ctrl.random" data-i18n-title="tip.random">随机填充</button>
-              <button id="btn-fit" data-i18n="ctrl.fit" data-i18n-title="tip.fit">适配视图</button>
+              <button id="btn-fit" class="rescue" data-i18n="ctrl.fit" data-i18n-title="tip.fit">适配视图</button>
             </div>
           </div>
         </section>

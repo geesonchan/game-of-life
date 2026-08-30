@@ -48,6 +48,8 @@ export function setupControls(app) {
   el.step.addEventListener('click', () => { app.setRunning(false); app.stepOnce() })
   el.clear.addEventListener('click', () => app.clear())
   el.fit.addEventListener('click', () => app.fitView())
+  // 窄屏那颗「适配视图」走同一个动作，不另写逻辑
+  $('btn-fit-m').addEventListener('click', () => app.fitView())
   el.random.addEventListener('click', () => app.randomize())
 
   el.speed.addEventListener('input', () => {

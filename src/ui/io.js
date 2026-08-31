@@ -3,6 +3,7 @@
 import { buildSave, parseSave, saveToText, restoreInitial, boardBaseline } from '../engine/save.js'
 import { parseRLE, boardToRLE } from '../engine/rle.js'
 import { centerOrigin, placePattern } from '../engine/patterns.js'
+import { liveBounds } from '../data/favorites.js'
 import { t } from '../i18n/index.js'
 
 const $ = id => document.getElementById(id)
@@ -166,6 +167,52 @@ export function setupIO(app) {
     el.rleStamp.disabled = !on
   }
   setButtons(false)
+
+  /* ---------- 供收藏用的三个能力（D82）---------- */
+
+  /** 把整盘（或当前选区）导成带 rule 头行的 RLE。没有活格时返回 null。 */
+  app.currentLayoutRle = function () {
+    const sel = app.selection
+    const box = sel
+      ? { x: sel.x0, y: sel.y0, w: sel.w, h: sel.h }
+      : { x: 0, y: 0, w: app.engine.w, h: app.engine.h }
+    // 裁到活细胞的外接框：存下来的是"这个局长什么样"，不是"当时棋盘多大"。
+    // 不裁的话整盘收藏会带上 200×200 的头行，日后把棋盘调小就再也复现不了了。
+    const b = liveBounds((x, y) => app.engine.get(x, y), box)
+    if (!b) return null
+    // rule 头行必须带上 —— 「复现」时要按它切规则，没有它保证不了是同一个世界
+    return boardToRLE(app.engine, b.x, b.y, b.w, b.h, {
+      rule: app.engine.rule.notation || 'B3/S23'
+    })
+  }
+
+  /** 把一段 RLE 填进面板的输入框并解析（收藏里的「填入 RLE」） */
+  app.fillRleBox = function (text) {
+    el.rleText.value = text
+    el.rleImport.click()
+    app.openPanelGroupOf(el.rleText)
+  }
+
+  /** 解析一段 RLE 并居中铺到棋盘上（收藏里的「复现」） */
+  app.importRleText = function (text, opts = {}) {
+    let p
+    try { p = parseRLE(text) } catch (e) { app.toast(t('io.rleFail', { reason: String(e.message) })); return false }
+    if (p.w > app.engine.w || p.h > app.engine.h) { app.toast(t('io.rleTooBig', { w: p.w, h: p.h })); return false }
+    const ox = opts.center ? ((app.engine.w - p.w) >> 1) : 0
+    const oy = opts.center ? ((app.engine.h - p.h) >> 1) : 0
+    for (const [x, y] of p.cells) app.engine.set(ox + x, oy + y, 1)
+    app.engine.stats.alive = app.engine.countAlive()
+    app.visual.reconcile(app.engine)
+    app.records.noteEdit()
+    app.markDirtyRun()
+    app.captureBaseline()
+    app.dirty = true
+    app.updateHud()
+    return true
+  }
+
+  /** 下载一段文本（收藏导出用；与存档走同一个下载实现） */
+  app.downloadText = function (text, filename) { download(filename, text) }
 
   el.rleImport.addEventListener('click', () => {
     try {

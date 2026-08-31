@@ -25,6 +25,7 @@
       <div class="tb-seg tb-tabs">
         <button class="tab" data-tab="pattern" data-mode="full" data-i18n="pattern.tab" data-i18n-title="tip.pattern">图案</button>
         <button class="tab" data-tab="world" data-i18n="world.section" data-i18n-title="tip.world">世界</button>
+        <button class="tab" data-tab="show" data-i18n="fav.showTab" data-i18n-title="fav.showTip">精彩局</button>
       </div>
 
       <button class="tb-more" id="btn-more" data-i18n="mobile.more" data-i18n-title="mobile.more.tip">更多</button>
@@ -76,6 +77,12 @@
     <div class="strip" id="card-strip" hidden>
       <div class="card-list strip-list" id="world-list"></div>
       <p class="note strip-hint" id="strip-hint"></p>
+    </div>
+
+    <!-- 精彩局：与图案盒子、世界卡片同处取用区，同一形态（D75 ①） -->
+    <div class="strip" id="show-strip" hidden>
+      <div class="card-list strip-list" id="show-list"></div>
+      <p class="note strip-hint" id="show-hint"></p>
     </div>
 
     <p class="note topbar-note" id="throttle-note" hidden data-i18n="ctrl.throttled">⚠ 单代计算超时，已自动降速</p>
@@ -237,7 +244,27 @@
           </div>
         </section>
 
-        <!-- 阶段 4：记录 / 编年史 / 台账。位置就是当初预留的 #slot-records。 -->
+        <!-- 收藏：填补玩具盒（单图案）与勘探器（规则）之间的空位 —— 收藏"摆好的局"（D82） -->
+        <section class="group" data-mode="full">
+          <h2 class="group-head"><span data-i18n="fav.section">收藏</span></h2>
+          <div class="group-body">
+            <div class="btn-group" id="fav-tabs" role="group">
+              <button data-fav-tab="layout" class="on" data-i18n="fav.tabLayout">布局</button>
+              <button data-fav-tab="rule" data-i18n="fav.tabRule">规则</button>
+            </div>
+            <div id="fav-list"></div>
+            <div class="row btn-row">
+              <button id="btn-fav-add" data-i18n="fav.addCurrent" data-i18n-title="fav.addTip">收藏当前布局</button>
+            </div>
+            <div class="row btn-row">
+              <button id="btn-fav-export" data-i18n="fav.export">导出收藏</button>
+              <button id="btn-fav-import" data-i18n="fav.import">导入收藏</button>
+              <input type="file" id="fav-file" accept="application/json,.json" hidden />
+            </div>
+            <p class="note" id="fav-budget"></p>
+          </div>
+        </section>
+
         <div id="slot-records">
           <section class="group" data-mode="full">
             <h2 class="group-head"><span data-i18n="rec.section">记录与终止</span></h2>

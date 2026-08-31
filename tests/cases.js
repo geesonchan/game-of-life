@@ -2,7 +2,7 @@
 // 同时被 Vitest（tests/engine.test.js）与 jsc 运行器（tests/run-jsc.js）复用。
 
 import { LifeEngine } from '../src/engine/board.js'
-import { lifeRule, compileRule, parseBS, bsToClauses } from '../src/engine/rules.js'
+import { lifeRule, compileRule, parseBS, bsToClauses, compileNotation } from '../src/engine/rules.js'
 import { normalizeSeed } from '../src/engine/prng.js'
 import { validateRule, validateClauses } from '../src/engine/validate.js'
 import { presetRule, PRESETS } from '../src/engine/presets.js'
@@ -11,7 +11,8 @@ import { PATTERNS, getPattern, placePattern, centerOrigin, transformPattern } fr
 import { parseRLE, toRLE, boardToRLE } from '../src/engine/rle.js'
 import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_VERSION } from '../src/engine/save.js'
 import { DICT } from '../src/i18n/dict.js'
-import { createPrefs, PREF_KEYS } from '../src/ui/prefs.js'
+import { createPrefs, PREF_KEYS, BOOKMARK_KEYS } from '../src/ui/prefs.js'
+import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, MAX_BYTES } from '../src/data/favorites.js'
 import { SnapshotLog } from '../src/data/snapshots.js'
 import { TerminationDetector } from '../src/data/detector.js'
 import { Chronicle } from '../src/data/chronicle.js'
@@ -565,6 +566,144 @@ cases.push(
         t.equal(snap(), before, `第 ${i + 1} 代应当与第 0 代逐格相同 —— 它是静物`)
       }
       t.equal(e.stats.alive, 7, '20 代后仍是 7 格')
+    }
+  },
+  {
+    name: '收藏：内置精选局的实测生平（D64 互动型标准）',
+    run(t) {
+      t.equal(BUILTIN_LAYOUTS.length, 3, '三条内置精选局')
+      for (const b of BUILTIN_LAYOUTS) {
+        t.ok(ruleOf(b.rle) === 'B3/S23', `${b.id} 的 RLE 必须带 rule 头行 —— 没有它就没法保证复现的是同一个世界`)
+        t.ok(parseRLE(b.rle).cells.length > 0, `${b.id} 的 RLE 能解析`)
+      }
+
+      const byId = id => BUILTIN_LAYOUTS.find(b => b.id === id)
+      const liveKey = (e, N) => {
+        const o = []
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) if (e.get(x, y)) o.push(x + ',' + y)
+        return o.sort().join('|')
+      }
+
+      // ---- 一号：野火。22 格起步的大号 methuselah ----
+      // 口径是**用户实际会看到的那一局**：应用默认的 200×200 环形盘 + 应用自己的检测器。
+      // 曾经用"大盘 + 核心窗口"量过，得到 5185 / 1822 / 1243 —— 那组数是错的：
+      // 末态残骸包围盒到 ±199，比窗口 ±140 还大，数字是被窗口裁出来的（详见 D82）。
+      {
+        const w = byId('builtin:wildfire')
+        const cells = parseRLE(w.rle).cells
+        t.equal(cells.length, w.life.start, '起步 22 格')
+        const N = w.life.board
+        const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: w.life.boundary })
+        const pw = Math.max(...cells.map(c => c[0])) + 1
+        const ph = Math.max(...cells.map(c => c[1])) + 1
+        const ox = (N >> 1) - (pw >> 1), oy = (N >> 1) - (ph >> 1)
+        for (const [x, y] of cells) e.set(ox + x, oy + y, 1)
+        e.stats.alive = e.countAlive()
+        const det = new TerminationDetector({ genCap: 20000 })
+        let peak = e.stats.alive, peakGen = 0, end = null
+        for (let i = 0; i < 20000; i++) {
+          const st = e.step()
+          if (st.alive > peak) { peak = st.alive; peakGen = st.gen }
+          const r = det.observe(st.gen, e.hash(), st.alive)
+          if (r) { end = r; break }
+        }
+        t.equal(end && end.type, 'cycle', '应当以循环收场')
+        t.equal(end && end.period, 2, '周期 2')
+        t.equal(end && end.gen, w.life.settle, `应在第 ${w.life.settle} 代定型`)
+        t.equal(peak, w.life.peak, `峰值应为 ${w.life.peak}`)
+        t.equal(peakGen, w.life.peakGen, `峰值应在第 ${w.life.peakGen} 代`)
+        t.equal(e.stats.alive, w.life.final, `末代存活应为 ${w.life.final}`)
+      }
+
+      // ---- 二号：喂食局。与 docs/patterns.md 那一段是同一局 ----
+      {
+        const f = byId('builtin:feeding')
+        const cells = parseRLE(f.rle).cells
+        t.equal(cells.length, f.life.start, '起步 12 格')
+        const N = 60, O = 20
+        const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+        for (const [x, y] of cells) e.set(O + x, O + y, 1)
+        e.stats.alive = e.countAlive()
+        let ate = -1
+        for (let g = 1; g <= 60; g++) { e.step(); if (e.stats.alive === f.life.after) { ate = g; break } }
+        t.equal(ate, f.life.eatenAt, `应在第 ${f.life.eatenAt} 代吞完`)
+        const after = liveKey(e, N)
+        for (let i = 0; i < 20; i++) { e.step(); t.equal(liveKey(e, N), after, '吞完后应静止') }
+      }
+
+      // ---- 三号：永动喂食机。枪对着吞食者，跑稳后整盘严格周期 30 ----
+      {
+        const p = byId('builtin:feeder')
+        const cells = parseRLE(p.rle).cells
+        t.equal(cells.length, p.life.start, '起步 43 格')
+        const N = 260, O = 10
+        const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+        for (const [x, y] of cells) e.set(O + x, O + y, 1)
+        e.stats.alive = e.countAlive()
+        for (let i = 0; i < 700; i++) e.step()      // 先跑到稳态
+        const a = liveKey(e, N)
+        const steady = e.stats.alive
+        t.equal(steady, p.life.steady, `稳态人口应为 ${p.life.steady}，实测 ${steady}`)
+        for (let i = 0; i < p.life.period; i++) e.step()
+        t.equal(liveKey(e, N), a, `跑稳后整盘应严格周期 ${p.life.period} —— 这正是"永动"的判据`)
+      }
+    }
+  },
+  {
+    name: '收藏：数据层的校验、预算与导入导出（D82）',
+    run(t) {
+      const good = { name: '测试局', rle: 'x = 1, y = 1, rule = B3/S23\no!', note: '', life: '' }
+      t.ok(validateLayout(good).ok, '合法条目')
+      t.equal(validateLayout({ ...good, name: '' }).key, 'fav.err.noName', '空名字要拒')
+      t.equal(validateLayout({ ...good, rle: 'o!' }).key, 'fav.err.noRule',
+        'RLE 必须带 rule 头行 —— 复现时要按它切规则，没有就保证不了是同一个世界')
+      t.equal(validateLayout({ ...good, rle: '' }).key, 'fav.err.noRle', '空 RLE 要拒')
+      t.equal(validateLayout(null).key, 'fav.err.shape', '非对象要拒')
+
+      // 体积上限：满了明确拒绝，不静默丢最旧的
+      const r = addLayout([], good)
+      t.ok(r.ok && r.list.length === 1, '加得进去')
+      const fat = { name: 'x', rle: 'rule = B3/S23\n' + 'o'.repeat(40000) + '!' }
+      t.equal(addLayout([], fat).key, 'fav.err.tooBig', '单条超限要拒')
+      const many = []
+      for (let i = 0; i < 400; i++) many.push({ id: 'i' + i, name: 'n' + i, rle: 'rule = B3/S23\n' + 'o'.repeat(900) + '!', note: '', life: '' })
+      t.ok(!fitsBudget(many), '400 条大条目应当超预算')
+      t.equal(addLayout(many, good).key, 'fav.err.full', '列表满了要明确拒绝')
+
+      // 导出导入往返
+      const state = { layouts: [{ id: 'a', name: '甲', rle: good.rle, note: '备注', life: '生平' }], rules: [{ notation: 'B3/S23', fingerprint: 'abc' }] }
+      const json = exportFavorites(state)
+      const back = importFavorites(json)
+      t.ok(back.ok, '往返应成功')
+      t.equal(back.layouts.length, 1, '布局回来了')
+      t.equal(back.rules.length, 1, '规则回来了')
+      t.equal(back.layouts[0].name, '甲', '名字保真')
+
+      // 宽进严出：坏条目跳过而不是整包拒绝 —— 一条坏数据废掉整个收藏文件是最差的结果
+      const mixed = JSON.stringify({ kind: 'gol.favorites', version: 1, layouts: [state.layouts[0], { name: '' }], rules: [] })
+      const m = importFavorites(mixed)
+      t.ok(m.ok && m.layouts.length === 1 && m.skipped === 1, '坏条目跳过，好的照收')
+
+      t.equal(importFavorites('{').key, 'fav.err.badJson', '坏 JSON')
+      t.equal(importFavorites('{"kind":"other"}').key, 'fav.err.notFav', '不是收藏文件')
+      t.equal(importFavorites('{"kind":"gol.favorites","version":9}').key, 'fav.err.version', '版本不认')
+
+      // 存储边界：书签走另一条通道，台账这类键仍旧被拒
+      const store = {}
+      const fake = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = v }, removeItem: k => { delete store[k] } }
+      const p = createPrefs(fake)
+      t.ok(p.setBookmark('favorites', '[]').ok, '收藏可以落 localStorage')
+      t.equal(p.getBookmark('favorites'), '[]', '读得回来')
+      let threw = false
+      try { p.setBookmark('ledger', 'x') } catch (e) { threw = true }
+      t.ok(threw, '台账仍旧不许走书签通道 —— D30 的边界只是精修，不是取消')
+      threw = false
+      try { p.set('favorites', 'x') } catch (e) { threw = true }
+      t.ok(threw, '书签也不许混进界面偏好的白名单')
+      t.equal(BOOKMARK_KEYS.length, 1, '书签白名单只有 favorites 一个')
+      // 写失败必须能被调用方看见（收藏是用户的劳动，静默丢掉比报错难受）
+      const full = createPrefs({ getItem: () => null, setItem: () => { throw new Error('quota') }, removeItem: () => {} })
+      t.equal(full.setBookmark('favorites', '[]').key, 'fav.err.quota', '配额满要报出来，不能静默')
     }
   },
   {
@@ -1385,7 +1524,8 @@ cases.push(
 const DOM_SOURCES = [
   'src/main.js', 'src/ui/controls.js', 'src/ui/records.js', 'src/ui/library.js',
   'src/ui/intro.js', 'src/ui/rule-editor.js', 'src/ui/input.js', 'src/ui/io.js',
-  'src/ui/tower-view.js', 'src/ui/explorer-view.js', 'src/render/chart.js', 'src/analytics.js'
+  'src/ui/tower-view.js', 'src/ui/explorer-view.js', 'src/ui/favorites-view.js',
+  'src/render/chart.js', 'src/analytics.js'
 ]
 
 /**
@@ -1829,8 +1969,10 @@ cases.push(
       t.equal(rows.length, 3, `第 3/4/5 行各应只被声明一次，实测 ${rows.join('、')}`)
 
       // ---- 页签定在顶栏：低频动作不向主视觉收高度税 ----
-      t.ok(/\.tb-tabs \{[^}]*grid-row:\s*1;\s*grid-column:\s*2/.test(css),
-        '页签在顶栏第 2 列 —— 放取用区正上方要吃掉 SE 上棋盘 14% 的面积')
+      // 第 1 行即顶栏。列号从 2 改成 1/3 是因为窄屏不再显示品牌（第三个页签挤掉了它），
+      // 但"页签属于顶栏、不占取用区上方"这条不变 —— 那才是这条守卫护的东西。
+      t.ok(/\.tb-tabs \{[^}]*grid-row:\s*1;/.test(css),
+        '页签在顶栏那一行 —— 放取用区正上方要吃掉 SE 上棋盘 14% 的面积')
       const html = readSrc('index.html')
       const group = /<div class="tb-more-group"[\s\S]*?\n      <\/div>/.exec(html)
       t.ok(!!group && group[0].indexOf('tb-tabs') < 0,
@@ -2209,9 +2351,13 @@ cases.push(
         '渲染器的默认上限不许改 —— 这是界面策略，不是渲染器的固有属性')
 
       // ⑤ 品牌垂直居中：桌面的 flex-direction: column 漏进窄屏，
-      //    column 下 align-items 管水平，纵向靠 justify-content，于是标题贴顶（实测差 10.2px）
-      t.ok(/\.tb-brand \{[^}]*flex-direction:\s*row/.test(css),
-        '窄屏必须显式写 flex-direction: row —— 这是「桌面属性漏进窄屏」的第五次')
+      //    column 下 align-items 管水平，纵向靠 justify-content，于是标题贴顶（实测差 10.2px）。
+      //    D82 之后窄屏索性不显示品牌了（三个页签装不下它），这条 bug 也就不存在；
+      //    但守卫留着 —— 哪天品牌回到窄屏，必须同时把 row 补回来，否则老毛病原样复发。
+      const brand = /@media \(max-width: 767px\)[\s\S]*?\.tb-brand \{[^}]*\}/.exec(css)
+      t.ok(!!brand, '窄屏必须显式处置品牌，不许靠桌面规则继承')
+      t.ok(/display:\s*none/.test(brand[0]) || /flex-direction:\s*row/.test(brand[0]),
+        '窄屏的品牌要么不显示，要么显式写 flex-direction: row —— 这是「桌面属性漏进窄屏」的第五次')
 
       // ⑥ 等间距交给网格，不让各元素自己带外边距（原来两条缝一个 6 一个 0）
       t.ok(/grid-template-columns:\s*1fr auto auto;[\s\S]{0,120}?column-gap:\s*8px/.test(css),
@@ -3020,6 +3166,151 @@ cases.push(
       t.ok(r.cells === 48 * 48, '棋盘格数')
       t.ok(OUTCOMES.includes(r.outcome), `结局应是七类之一，实测 ${r.outcome}`)
       t.ok(r.gens > 0 && r.gens <= 500, '代数应落在上限内')
+    }
+  },
+  {
+    name: '收藏：B/S 记法编译成规则（复现路径的第一步）',
+    run(t) {
+      // 这条守卫是补的：applyNotation 里原本写的是 bsToClauses(parseBS(n)) ——
+      // parseBS 返回的已经是条款，再喂给 bsToClauses 就成了垃圾，
+      // 结果整条"换规则再复现"的路径静默失灵（切了等于没切）。埋在 DOM 回调里测不到。
+      const r = compileNotation('B36/S23')
+      t.equal(r.notation, 'B36/S23', '记法要留在规则对象上，界面靠它显示')
+      t.ok(r.lookup instanceof Uint8Array, '应是编译好的规则（有查表），不是规则说明')
+      // 硬判据：正中那个死格恰有 6 个活邻居 —— B36 下出生，标准 Life 下绝不出生
+      const ring = 'OOO\nO.O\n.O.'
+      const e = new LifeEngine(20, 20, { rule: r, boundary: 'dead' })
+      place(e, ring, 5, 5)
+      e.step()
+      t.equal(e.get(6, 6), 1, 'B36：6 个邻居应当出生')
+      const e2 = new LifeEngine(20, 20, { rule: lifeRule(), boundary: 'dead' })
+      place(e2, ring, 5, 5)
+      e2.step()
+      t.equal(e2.get(6, 6), 0, '标准 Life 下同一格不该出生 —— 证明规则确实换了')
+      let threw = false
+      try { compileNotation('B9/S23') } catch { threw = true }
+      t.ok(threw, '读不懂的记法要抛，不能悄悄给个默认规则')
+    }
+  },
+  {
+    name: '收藏：整盘收藏裁到活细胞外接框',
+    run(t) {
+      // 不裁的话头行会写成 x = 200, y = 200，日后把棋盘调小就再也复现不了
+      const cells = new Set(['10,20', '12,23'])
+      const get = (x, y) => cells.has(x + ',' + y) ? 1 : 0
+      const b = liveBounds(get, { x: 0, y: 0, w: 200, h: 200 })
+      t.equal(b.x, 10, '左边界'); t.equal(b.y, 20, '上边界')
+      t.equal(b.w, 3, '宽 = 右-左+1'); t.equal(b.h, 4, '高 = 下-上+1')
+      t.equal(liveBounds(() => 0, { x: 0, y: 0, w: 5, h: 5 }), null, '全空盘应回 null，交给调用方拒绝')
+      // 只削外圈：框内的相对间距一格不动（滑翔机与吞食者的距离就是那一局的全部内容）
+      const b2 = liveBounds(get, { x: 5, y: 5, w: 100, h: 100 })
+      t.equal(b2.w + ',' + b2.h, '3,4', '换个搜索范围，外接框不变')
+    }
+  },
+  {
+    name: '收藏：导入是合并不是覆盖',
+    run(t) {
+      // 覆盖的话，导入一份别人的收藏就把自己的全洗掉 —— 不可撤销；
+      // 合并的反面（多出几条）用户删得掉。两害相权。
+      const mine = {
+        layouts: [{ id: 'a', name: '我的', rle: 'x = 1, y = 1, rule = B3/S23\no!', note: '', life: '' }],
+        rules: [{ notation: 'B3/S23', fingerprint: 'fp1', clauses: [], agingLayers: 0 }]
+      }
+      const incoming = {
+        layouts: [{ id: 'a', name: '重名的', rle: 'x = 1, y = 1, rule = B3/S23\no!', note: '', life: '' },
+                  { id: 'b', name: '别人的', rle: 'x = 1, y = 1, rule = B3/S23\no!', note: '', life: '' }],
+        rules: [{ notation: 'B36/S23', fingerprint: 'fp2', clauses: [], agingLayers: 0 }]
+      }
+      const m = mergeFavorites(mine, incoming)
+      t.equal(m.layouts.length, 2, '自己的那条还在，别人的加进来')
+      t.equal(m.layouts[0].name, '我的', '同 id 不覆盖，先来的赢')
+      t.equal(m.rules.length, 2, '规则同样合并')
+      t.equal(m.added, 2, '真加进去的算 2 条')
+      t.equal(m.skipped, 1, '重复的算跳过，要说给用户听')
+      // 超预算的条目明确跳过，不静默丢
+      const big = { layouts: [{ id: 'c', name: 'x', rle: 'x'.repeat(400), note: '', life: '' }], rules: [] }
+      const m2 = mergeFavorites(mine, big, 200)
+      t.equal(m2.added, 0, '塞不下就不塞')
+      t.equal(m2.skipped, 1, '塞不下要记成跳过')
+      t.equal(m2.layouts.length, 1, '原有的一条不受影响')
+    }
+  },
+  {
+    name: '收藏：规则条目留住复现所需的全部字段',
+    run(t) {
+      // clauses/agingLayers 定世界，seed 定那一盘 —— 少一个就复现不出来。
+      // 迁入收藏前它们只活在勘探器的内存里，落盘后掉字段的话，刷新一次候选名单就废了。
+      const r = normalizeRule({ notation: 'B3/S23', fingerprint: 'fp', seed: 42, outcome: 'still',
+        clauses: [{ when: 'dead', neighbors: { op: 'in', values: [3] }, then: 'alive' }], agingLayers: 2, junk: 'x' })
+      t.equal(r.clauses.length, 1, 'clauses 要留住')
+      t.equal(r.agingLayers, 2, 'agingLayers 要留住')
+      t.equal(r.seed, 42, 'seed 要留住')
+      t.equal(r.junk, undefined, '不认识的字段不留 —— 导入的文件别夹带私货')
+      const round = importFavorites(exportFavorites({ layouts: [], rules: [r] }))
+      t.equal(round.rules[0].clauses.length, 1, '导出再导入，clauses 仍在')
+      t.equal(round.rules[0].agingLayers, 2, '导出再导入，agingLayers 仍在')
+    }
+  },
+  {
+    name: '接线守卫：界面里出现的每个词典 key 都有中英词条',
+    run(t) {
+      // 这条是补的：收藏功能第一版把 HTML 和 JS 都写完了、测试全绿，
+      // 一开浏览器满屏是 fav.replay 这样的裸 key —— 词条根本没写。
+      // 静态扫一遍就能抓住，比开浏览器便宜得多。
+      const files = ['index.html'].concat(DOM_SOURCES)
+      const used = new Map()
+      for (const f of files) {
+        const src = readSrc(f)
+        // HTML：data-i18n / data-i18n-title / data-i18n-placeholder 等
+        for (const m of src.matchAll(/data-i18n(?:-[a-z]+)?="([^"]+)"/g)) used.set(m[1], f)
+        // JS：t('literal') —— 拼接出来的 key（t(x + '.desc')）不在此列，扫不到也不该扫
+        for (const m of src.matchAll(/\bt\(\s*'([a-zA-Z][\w.]*)'\s*[,)]/g)) used.set(m[1], f)
+      }
+      t.ok(used.size > 100, `应扫到足够多的 key，实际 ${used.size}`)
+      const missZh = [...used].filter(([k]) => !(k in DICT.zh)).map(([k, f]) => `${k}(${f})`)
+      const missEn = [...used].filter(([k]) => !(k in DICT.en)).map(([k, f]) => `${k}(${f})`)
+      t.equal(missZh.join(', '), '', '中文词典缺词条')
+      t.equal(missEn.join(', '), '', '英文词典缺词条')
+    }
+  },
+  {
+    name: '接线守卫：取用区三个页签各有其块，且互斥',
+    run(t) {
+      const html = readSrc('index.html')
+      const ctl = readSrc('src/ui/controls.js')
+      for (const id of ['show-strip', 'show-list', 'show-hint'])
+        t.ok(html.includes(`id="${id}"`), `index.html 缺 #${id}`)
+      t.ok(/data-tab="show"/.test(html), '顶栏缺「精彩局」页签')
+      // 页签名 → 取用区的映射必须三个都在，否则点了没反应（老 bug：syntax 是三元式，第三个页签落不到）
+      const map = /const PICKERS = \{([^}]*)\}/.exec(stripLiterals(ctl))
+      t.ok(!!map, 'controls.js 里应有 PICKERS 映射')
+      for (const name of ['pattern', 'world', 'show'])
+        t.ok(map[1].includes(name + ':'), `PICKERS 缺 ${name}`)
+      // 窄屏互斥：setPicker 要把三个都摆一遍（漏一个就会两块同时开着）
+      const sp = /app\.setPicker = function[\s\S]*?\n  \}/.exec(ctl)[0]
+      for (const fn of ['setRail', 'setWorlds', 'setShows'])
+        t.ok(sp.includes(fn), `setPicker 没有摆 ${fn} —— 窄屏会两块同时开`)
+      // 精彩局与世界都是顶部横条，桌面下也必须互斥
+      const tt = /app\.toggleTab = function[\s\S]*?\n  \}/.exec(ctl)[0]
+      t.ok(/setShows\(false\)/.test(tt) && /setWorlds\(false\)/.test(tt),
+        'toggleTab 里两条顶部横条要互相关掉 —— 它们占同一条边')
+    }
+  },
+  {
+    name: '接线守卫：收藏面板的按钮与内置精选局的词条齐备',
+    run(t) {
+      const html = readSrc('index.html')
+      for (const id of ['fav-tabs', 'fav-list', 'fav-budget', 'btn-fav-add', 'btn-fav-export', 'btn-fav-import', 'fav-file'])
+        t.ok(html.includes(`id="${id}"`), `index.html 缺 #${id}`)
+      // 内置精选局的名称、说明、生平三样都要有词条（含简洁语域的名称）
+      for (const b of BUILTIN_LAYOUTS) {
+        for (const suffix of ['', '.desc', '.life']) {
+          t.ok((b.nameKey + suffix) in DICT.zh, `中文缺 ${b.nameKey}${suffix}`)
+          t.ok((b.nameKey + suffix) in DICT.en, `英文缺 ${b.nameKey}${suffix}`)
+        }
+        t.ok((b.nameKey + '.simple') in DICT.zh, `简洁语域缺 ${b.nameKey}.simple`)
+        t.ok((b.nameKey + '.simple') in DICT.en, `简洁语域缺英文 ${b.nameKey}.simple`)
+      }
     }
   },
   {

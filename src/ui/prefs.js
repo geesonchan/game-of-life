@@ -7,10 +7,19 @@
 // 这条边界不靠自觉，靠白名单：写一个不在 ALLOWED 里的键会直接抛异常，
 // 并且有测试专门拿 board / save / ledger 这类键去撞它。
 
-/** 唯一允许持久化的三个键 */
+/** 唯一允许持久化的三个界面偏好键 */
 export const PREF_KEYS = Object.freeze(['introSeen', 'lang', 'mode'])
 
+/**
+ * 书签类数据的键（D82 对 D30 的精修）。收藏列表允许落 localStorage，
+ * 但它走**另一条通道**、有自己的体积上限，且写失败必须能被调用方看见 ——
+ * 不与三个界面偏好混在一个白名单里，是为了让"哪些东西允许留在浏览器里"
+ * 一眼就看得出分两类，而不是一个越来越长的清单。
+ */
+export const BOOKMARK_KEYS = Object.freeze(['favorites'])
+
 const NAMESPACE = 'gol.pref.'
+const BOOKMARK_NS = 'gol.bookmark.'
 
 /**
  * @param {{getItem:Function, setItem:Function, removeItem:Function}|null} storage
@@ -18,6 +27,16 @@ const NAMESPACE = 'gol.pref.'
  */
 export function createPrefs(storage) {
   const allowed = new Set(PREF_KEYS)
+  const bookmarks = new Set(BOOKMARK_KEYS)
+
+  function assertBookmark(key) {
+    if (!bookmarks.has(key)) {
+      throw new Error(
+        `书签键「${key}」不在白名单里。localStorage 的书签通道只放收藏这类"指针"（${BOOKMARK_KEYS.join(' / ')}）；` +
+        '实验台账、存档、快照仍旧必须走显式的文件导出。见 docs/decisions.md D82。'
+      )
+    }
+  }
 
   function assertAllowed(key) {
     if (!allowed.has(key)) {
@@ -62,6 +81,44 @@ export function createPrefs(storage) {
     },
 
     isAllowed(key) { return allowed.has(key) },
+
+    /* ---------- 书签通道（D82）：只放收藏这类"指针"，与三个界面偏好分开 ---------- */
+
+    /** 读一个书签（字符串，通常是 JSON） */
+    getBookmark(key, fallback = null) {
+      assertBookmark(key)
+      if (!storage) return fallback
+      try {
+        const raw = storage.getItem(BOOKMARK_NS + key)
+        return raw === null || raw === undefined ? fallback : raw
+      } catch (e) { return fallback }
+    },
+
+    /**
+     * 写一个书签。**与偏好不同，写失败必须能被调用方看见** ——
+     * 收藏是用户的劳动，静默丢掉比报错难受得多。
+     * @returns {{ok:boolean, key?:string}} 失败时给出词典 key
+     */
+    setBookmark(key, value) {
+      assertBookmark(key)
+      if (!storage) return { ok: false, key: 'fav.err.noStorage' }
+      try {
+        storage.setItem(BOOKMARK_NS + key, String(value))
+        return { ok: true }
+      } catch (e) {
+        // 配额满是这里最常见的失败，且用户完全有办法应对（导出后删几条）
+        return { ok: false, key: 'fav.err.quota' }
+      }
+    },
+
+    clearBookmarks() {
+      if (!storage) return
+      for (const k of BOOKMARK_KEYS) {
+        try { storage.removeItem(BOOKMARK_NS + k) } catch (e) { /* 忽略 */ }
+      }
+    },
+
+    isBookmark(key) { return bookmarks.has(key) },
     available: !!storage
   }
 }

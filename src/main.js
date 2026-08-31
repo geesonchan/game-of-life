@@ -1,7 +1,8 @@
 // 应用装配与主循环。
 // 节拍解耦：引擎与视觉状态按代推进（每代必录），渲染每帧最多一次（高速时自然跳帧）。
 import { LifeEngine } from './engine/board.js'
-import { lifeRule } from './engine/rules.js'
+import { lifeRule, compileNotation } from './engine/rules.js'
+import { createFavorites } from './ui/favorites-view.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
 import { VisualState } from './render/visual-state.js'
@@ -125,6 +126,27 @@ app.randomize = function () {
 }
 
 /** 应用一条新编译的规则（引擎会把不可达状态的细胞清成死亡，见 D18） */
+/** 按 B/S 记法切规则（收藏「复现」时按 RLE 头行调用） */
+app.applyNotation = function (notation) {
+  if (!notation) return false
+  if (app.engine.rule.notation === notation) return true    // 已经是这个规则就别白折腾
+  try {
+    app.applyRule(compileNotation(notation))
+    return true
+  } catch (e) {
+    app.toast(t('fav.err.badRule', { rule: notation }))
+    return false
+  }
+}
+
+/** 展开某个控件所在的侧栏分组并滚到它（收藏「填入 RLE」之后要让用户看得见） */
+app.openPanelGroupOf = function (node) {
+  const g = node && node.closest ? node.closest('.group') : null
+  if (!g) return
+  g.classList.remove('collapsed')
+  if (g.scrollIntoView) g.scrollIntoView({ block: 'nearest' })
+}
+
 app.applyRule = function (rule, message) {
   app.engine.setRule(rule)
   app.renderer.setAgingLayers(rule.agingLayers)
@@ -424,6 +446,7 @@ app.ruleEditor = createRuleEditor(app)
 document.getElementById('btn-rule').addEventListener('click', () => app.ruleEditor.open())
 app.records = setupRecords(app)
 app.io = setupIO(app)
+app.favorites = createFavorites(app)
 app.library = setupLibrary(app)
 app.library.render()
 app.intro = createIntro(app)
@@ -476,6 +499,7 @@ onLangChange(() => {
   app.records.relocalize()
   app.tower.relocalize()
   app.explorer.relocalize()
+  app.favorites.relocalize()
   app.refreshTabHint()
 })
 function trailLabelOf(v) {

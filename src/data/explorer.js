@@ -188,6 +188,7 @@ export function sampleBSRules(n, seed = 1) {
 }
 
 /** 从 B/S 记法字符串造规则定义 */
+// 造的是**规则说明**（未编译）——要发给 Worker 的那种。要编译好的对象请用 engine/rules.js 的 compileNotation。
 export function ruleFromNotation(notation) {
   return { notation, clauses: parseBS(notation), agingLayers: 0 }
 }

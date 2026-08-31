@@ -148,11 +148,18 @@ export function setupControls(app) {
   const railHint = $('rail-hint')
   const strip = $('card-strip')
   const stripHint = $('strip-hint')
+  const show = $('show-strip')
+  const showHint = $('show-hint')
   const tabs = [...document.querySelectorAll('.tb-tabs .tab')]
 
+  // 页签名 → 它管的那块取用区。三个页签共用一套开合逻辑，别再各写各的
+  const PICKERS = { pattern: rail, world: strip, show: show }
+
   function syncTabs() {
-    tabs.forEach(b => b.classList.toggle('on',
-      b.dataset.tab === 'pattern' ? !rail.hidden : !strip.hidden))
+    tabs.forEach(b => {
+      const el = PICKERS[b.dataset.tab]
+      b.classList.toggle('on', !!el && !el.hidden)
+    })
   }
 
   /** 左缘工具条：展开会让画布变窄，而不是盖在画布上 */
@@ -165,6 +172,13 @@ export function setupControls(app) {
   /** 顶部世界横条 */
   app.setWorlds = function (open) {
     strip.hidden = !open
+    syncTabs()
+    app.handleResize()
+  }
+
+  /** 顶部精彩局横条。与世界横条占同一条边，所以两者永不同时开 */
+  app.setShows = function (open) {
+    show.hidden = !open
     syncTabs()
     app.handleResize()
   }
@@ -195,6 +209,7 @@ export function setupControls(app) {
   app.setPicker = function (name) {
     app.setRail(name === 'pattern')
     app.setWorlds(name === 'world')
+    app.setShows(name === 'show')
   }
 
   app.toggleTab = function (name) {
@@ -203,14 +218,19 @@ export function setupControls(app) {
       app.setPicker(name)
       return
     }
-    // 桌面照旧：图案在左缘、世界在顶部，占的是不同的边，可以同时开着
-    if (name === 'pattern') app.setRail(rail.hidden)
-    else app.setWorlds(strip.hidden)
+    // 桌面照旧：图案在左缘，与顶部横条占不同的边，可以同时开着；
+    // 世界与精彩局都是顶部横条，占同一条边，开一个就关掉另一个
+    if (name === 'pattern') { app.setRail(rail.hidden); return }
+    if (name === 'world') { const open = strip.hidden; app.setShows(false); app.setWorlds(open); return }
+    const open = show.hidden
+    app.setWorlds(false)
+    app.setShows(open)
   }
 
   app.refreshTabHint = function () {
     railHint.textContent = t('pattern.hint')
     stripHint.textContent = t('world.hint')
+    showHint.textContent = t('fav.showHint')
   }
   app.refreshTabHint()
   tabs.forEach(b => b.addEventListener('click', () => app.toggleTab(b.dataset.tab)))

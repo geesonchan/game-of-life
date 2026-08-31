@@ -174,6 +174,19 @@ export function bsToClauses(born, survive) {
   return clauses
 }
 
+/**
+ * B/S 记法 → 可用的规则对象。解析失败照常抛。
+ * 单独抽出来是因为它曾被写在 UI 的回调里，且写错过一次
+ * （把已经是条款的 parseBS 结果又喂给 bsToClauses，整条复现路径静默失灵）——
+ * 纯函数才测得动（见 docs/decisions.md D82 §4）。
+ *
+ * 与 data/explorer.js 的 ruleFromNotation 别混：那个只造**规则说明**（未编译，要发给 Worker），
+ * 这个直接给**编译好的规则对象**。名字分开就是为了不让人接错。
+ */
+export function compileNotation(notation) {
+  return compileRule({ name: String(notation), agingLayers: 0, clauses: parseBS(notation) })
+}
+
 /** 默认规则：标准生命游戏 B3/S23，恰好 3 条条款 */
 export function lifeRule() {
   return compileRule({ name: 'Life', agingLayers: 0, clauses: parseBS('B3/S23') })

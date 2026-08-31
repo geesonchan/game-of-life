@@ -19,7 +19,11 @@ export function createExplorerView(app) {
 
   let worker = null
   let results = []
-  let favs = []          // 候选名单：{notation, fingerprint, clauses, agingLayers, seed, outcome}
+  // 候选名单不再是这里的局部状态：它已迁入收藏（规则页签），由 app 持有并落书签通道。
+  // 这里只读它、改它，星标与列表的行为一个字没变（见 docs/decisions.md D82）。
+  // 条目形状仍是 {notation, fingerprint, clauses, agingLayers, seed, outcome}。
+  const getFavs = () => app.getRuleFavorites()
+  const putFavs = next => { app.setRuleFavorites(next); renderTable(); renderFavs() }
   let ledgerCount = 0
   let open = false
   let runSeq = 0
@@ -119,7 +123,7 @@ export function createExplorerView(app) {
       </tr></thead>
       <tbody>${rows.map(r => `
         <tr data-fp="${r.fingerprint}">
-          <td><button class="star ${favs.some(f => f.fingerprint === r.fingerprint) ? 'on' : ''}"
+          <td><button class="star ${getFavs().some(f => f.fingerprint === r.fingerprint) ? 'on' : ''}"
             data-star="${r.fingerprint}" title="${t('exp.fav')}">★</button></td>
           <td class="mono">${r.notation || '—'}</td>
           <td>${outcomeChip(r.outcome)}</td>
@@ -131,6 +135,7 @@ export function createExplorerView(app) {
   }
 
   function renderFavs() {
+    const favs = getFavs()
     el.favs.innerHTML = favs.length
       ? favs.map(f => `
           <div class="fav-row">
@@ -143,7 +148,7 @@ export function createExplorerView(app) {
 
   /** 一键回主界面复现：换规则 + 用那一局的种子重开 */
   function jumpTo(fp) {
-    const r = results.find(x => x.fingerprint === fp) || favs.find(x => x.fingerprint === fp)
+    const r = results.find(x => x.fingerprint === fp) || getFavs().find(x => x.fingerprint === fp)
     if (!r) return
     const seed = r.seed ?? (r.runs && r.runs[0].seed)
     const rule = compileRule({ name: r.notation || t('rule.custom'), agingLayers: r.agingLayers | 0, clauses: r.clauses })
@@ -164,6 +169,7 @@ export function createExplorerView(app) {
     const jump = e.target.closest('[data-jump]')
     if (star) {
       const fp = star.dataset.star
+      const favs = getFavs()
       const i = favs.findIndex(f => f.fingerprint === fp)
       if (i >= 0) favs.splice(i, 1)
       else {
@@ -171,7 +177,7 @@ export function createExplorerView(app) {
         if (r) favs.push({ notation: r.notation, fingerprint: r.fingerprint, clauses: r.clauses,
           agingLayers: r.agingLayers, seed: r.runs[0].seed, outcome: r.outcome })
       }
-      renderTable(); renderFavs()
+      putFavs(favs)
     } else if (jump) jumpTo(jump.dataset.jump)
   })
   el.favs.addEventListener('click', e => {
@@ -197,6 +203,9 @@ export function createExplorerView(app) {
     show, hide,
     get isOpen() { return open },
     relocalize() { if (results.length) renderTable(); renderFavs() },
-    _internals: { get results() { return results }, get favs() { return favs }, start, stop }
+    // 收藏页删掉一条规则后，这边的星标与名单要跟着变 —— 同一份名单，两个入口
+    refreshFavs() { if (results.length) renderTable(); renderFavs() },
+    useRule: jumpTo,
+    _internals: { get results() { return results }, get favs() { return getFavs() }, start, stop }
   }
 }

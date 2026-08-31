@@ -878,6 +878,17 @@ button.rescue:hover { background: #26497a; border-color: #3a72ad; color: #f0f7ff
 .fav-row .fav-meta { display: block; font-size: 10px; color: var(--muted); margin: 2px 0 5px; }
 .fav-row button { width: 100%; padding: 4px; font-size: 11px; }
 
+/* 收藏面板。勘探器的候选名单也用 .fav-row，那边一行只有一个「跳过去」按钮，
+   这边一行有两三个 —— 所以只在 #fav-list 里把它们排成等宽一排，不动那边。 */
+#fav-list { margin-top: 8px; }
+#fav-list .fav-row .row { display: flex; gap: 4px; }
+#fav-list .fav-row .row button { width: auto; flex: 1; padding: 5px 4px; }
+#fav-budget { margin-top: 8px; }
+
+/* 精彩局卡片：与世界卡片同处取用区、同一形态（D75 ①） */
+.strip .card.show-card { width: 200px; }
+.show-card .card-text em { color: var(--muted); }
+
 /* 播放按钮随状态换色：待播放 = 绿（.primary），运行中 = 橙（.running）。
    写在 .primary 之后，同等优先级下后写的赢；两种模式共用同一个按钮，自动同步。 */
 button.running {
@@ -938,22 +949,19 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
      于是「运行控件搬到棋盘下方」这种跨层级重排不用改 HTML 就能做到 */
   .topbar, .workspace { display: contents; }
 
-  /* ---- 第 1 行：品牌 + 「更多」 ---- */
-  /* ⑤ 品牌垂直居中。桌面基础规则是 flex-direction: column，漏进窄屏后
-     align-items 管的是**水平**方向，纵向靠 justify-content（默认 flex-start），
-     于是标题贴着行顶 —— 实测中心 14.8 而页签在 25，差 10.2px。
-     这是"桌面属性漏进窄屏"的第五次，处理办法同前：显式覆盖，不靠继承。 */
-  .tb-brand {
-    display: flex; flex-direction: row; grid-row: 1; grid-column: 1;
-    align-items: center; padding: 0 4px 0 12px; min-width: 0;
-  }
-  .tb-brand b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* ---- 第 1 行：页签 + 「更多」 ---- */
+  /* 第三个页签（精彩局）进来后，375 宽的英文档实测：三个页签 203px + 「更多」51px
+     + 间距，只剩 75px 给品牌，而「Game of Life Lab」要 120px —— 标题被截成
+     「Game of Li…」（简洁语域更惨，只剩 36px）。
+     处置：窄屏索性不显示品牌。这不是新决定，是照已有的先例办 ——
+     768–1100px 的桌面窄侧栏早就把它藏了，它是空间紧张时第一个让位的装饰。
+     顺带的好处：页签从此左对齐到固定位置（12px），不再随语言/语域漂移
+     （原先中文在 136、英文简洁在 64），这才真正满足 D75 ③ 的位置恒定。 */
+  .tb-brand { display: none; }
   .tb-tabs {
-    display: flex; grid-row: 1; grid-column: 2;
-    align-items: center; gap: 8px; margin: 0;
+    display: flex; grid-row: 1; grid-column: 1 / 3;
+    align-items: center; gap: 8px; margin: 0; padding-left: 12px;
   }
-  /* 页签与「更多」各收 2px 内边距，把 column-gap 吃掉的宽度还给品牌 ——
-     否则英文标题会被截成「Game of Life L…」 */
   .tb-tabs .tab { min-height: 40px; padding: 0 10px; font-size: 13px; }
   /* 简洁模式默认藏掉 data-mode="full" 的控件，但窄屏下这两个页签是**取用区唯一的开关**：
      藏掉「图案」之后，儿童版用户一旦点了「世界」就再也回不到玩具盒 —— 单向陷阱。

@@ -25,7 +25,9 @@ import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
 import { introPages, introNext, appendixPages, placeStarterGift } from '../src/ui/intro.js'
 import { pinchDelta, strokeVerdict, PROMOTE_MS, nudgeCell } from '../src/ui/input.js'
-import { clampToRange, NUMERIC_SLIDERS } from '../src/ui/numeric-entry.js'
+import { clampToRange, NUMERIC_SLIDERS, CODEC_SLIDERS } from '../src/ui/numeric-entry.js'
+import { Viewport, fitScaleOf, zoomFromSlider, sliderFromZoom, ZOOM_STEPS } from '../src/render/viewport.js'
+import { zoomLabel, parseZoomInput, DIM_AFTER_MS, ZOOM_BUTTON_STEP } from '../src/ui/zoom-bar.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -1134,10 +1136,16 @@ function fakeStorage() {
 
 cases.push(
   {
-    name: '偏好：白名单恰好是三样界面偏好',
+    name: '偏好：白名单只放界面偏好，逐个点名',
     run(t) {
-      t.equal(PREF_KEYS.length, 3, '只允许三个键')
-      t.equal(PREF_KEYS.slice().sort().join(','), 'introSeen,lang,mode', '就是这三样')
+      // 白名单挡的是**游戏数据**，不是键的数量。新加一个要同时满足三条（D84 ③）：
+      // 是界面偏好而非实验数据、丢了不损失用户劳动、只影响这台设备的这个浏览器。
+      // zoomBar（缩放滑条开关）是照这三条收进来的第四个。
+      t.equal(PREF_KEYS.length, 4, '白名单里只有这几个')
+      t.equal(PREF_KEYS.slice().sort().join(','), 'introSeen,lang,mode,zoomBar', '逐个点名')
+      // 反面照旧：游戏数据一个都不许进（下面那条用真存储撞过一遍）
+      for (const k of ['board', 'save', 'ledger', 'snapshots'])
+        t.ok(!PREF_KEYS.includes(k), `${k} 不许进白名单`)
     }
   },
   {
@@ -2221,8 +2229,8 @@ cases.push(
 
       // 取值以滑块为准，不解析标签文字 —— 有几个标签根本不是纯数字
       const src = readSrc('src/ui/numeric-entry.js')
-      t.ok(/input\.value = range\.value/.test(src),
-        '编辑框的初值应取自滑块，不是解析标签文字（拖尾显示「短/中/长」，解析必崩）')
+      t.ok(/input\.value = toDisplay\(range\.value\)/.test(src),
+        '编辑框的初值应取自滑块（可经 toDisplay 换算），不是解析标签文字（拖尾显示「短/中/长」，解析必崩）')
       t.ok(/dispatchEvent\(new Event\('input'/.test(src),
         '提交后要派发 input 事件，让既有监听器照常更新 —— 不复制一份更新逻辑')
       t.ok(/inputMode = 'decimal'/.test(src), '手机上要唤起数字键盘')
@@ -3572,6 +3580,206 @@ cases.push(
       t.ok(/this computer/i.test(DICT.en['fav.showHint.simple']), '英文简洁语域同理')
       const readme = readSrc('README.md')
       t.ok(/收藏存在哪儿/.test(readme), 'README 里要有「收藏存在哪儿」一节')
+    }
+  },
+  {
+    name: '缩放滑条：两端就是「适配视图」与现有上限，刻度是对数的（D84 ①）',
+    run(t) {
+      const fit = 8.33, max = 40
+      // 两端必须**精确**落在这两个值上 —— 差一点点的表现是"推到底了棋盘还差一圈没露全"
+      t.equal(zoomFromSlider(0, fit, max), fit, '最小档 = 适配视图')
+      t.equal(zoomFromSlider(ZOOM_STEPS, fit, max), max, '最大档 = 现有上限')
+      t.equal(sliderFromZoom(fit, fit, max), 0, '适配视图 → 最小档')
+      t.equal(sliderFromZoom(max, fit, max), ZOOM_STEPS, '上限 → 最大档')
+
+      // 往返：捏合改了缩放 → 同步回滑条 → 再读回来，必须还是同一个倍数
+      for (const v of [0, 137, 500, 813, ZOOM_STEPS]) {
+        const scale = zoomFromSlider(v, fit, max)
+        t.equal(sliderFromZoom(scale, fit, max), v, `档位 ${v} 往返一致`)
+      }
+
+      // 对数刻度的判据：等长的行程 = 等比例的放大，与起点无关
+      const ratio = (a, b) => zoomFromSlider(b, fit, max) / zoomFromSlider(a, fit, max)
+      const r1 = ratio(0, 100), r2 = ratio(400, 500), r3 = ratio(900, ZOOM_STEPS)
+      t.ok(Math.abs(r1 - r2) < 1e-9 && Math.abs(r2 - r3) < 1e-9,
+        `同样走 100 档，放大倍率应处处相同：${r1.toFixed(4)} / ${r2.toFixed(4)} / ${r3.toFixed(4)}`)
+      // 线性刻度会把低倍数挤没：这里正面钉一下"中点不是算术中点"
+      t.ok(zoomFromSlider(ZOOM_STEPS / 2, fit, max) < (fit + max) / 2,
+        '中点应当是几何中点，不是算术中点 —— 线性刻度会把看整盘要用的那一段挤没')
+
+      // 越界一律钳到两端，不许算出负档或超上限
+      t.equal(sliderFromZoom(fit / 4, fit, max), 0, '比适配还小（捏合可以）→ 钳到最小档')
+      t.equal(sliderFromZoom(max * 10, fit, max), ZOOM_STEPS, '超出上限 → 钳到最大档')
+      t.equal(zoomFromSlider(-50, fit, max), fit, '档位越界也钳')
+      t.equal(zoomFromSlider(ZOOM_STEPS + 50, fit, max), max, '档位越上界也钳')
+
+      // 退化情形：小棋盘上"适配"本身就可能顶到上限，此时全程只有一个值，不许除以零
+      t.equal(zoomFromSlider(500, 60, 40), 60, '适配 ≥ 上限时退化为一个值')
+      t.equal(sliderFromZoom(50, 60, 40), 0, '退化时档位恒为 0')
+      t.ok(Number.isFinite(zoomFromSlider(500, 40, 40)), '两端相等也不许出 NaN')
+    }
+  },
+  {
+    name: '缩放滑条：最小档与「适配视图」是同一个函数算出来的（D84 ①）',
+    run(t) {
+      // 两处各算一遍公式的东西迟早会差一点。这里从两头钉死：
+      // 一是行为上相等，二是源码里 fit() 就是调的那个函数。
+      const vp = new Viewport()
+      const W = 1736, H = 1701, BW = 200, BH = 200
+      vp.fit(W, H, BW, BH)
+      t.equal(vp.scale, fitScaleOf(W, H, BW, BH), '适配之后的缩放 = fitScaleOf 的返回值')
+      t.equal(sliderFromZoom(vp.scale, fitScaleOf(W, H, BW, BH), vp.maxScale), 0,
+        '适配视图之后，滑条应当正好落在最小档')
+      const src = stripLiterals(readSrc('src/render/viewport.js'))
+      t.ok(/this\.scale = fitScaleOf\(/.test(src),
+        'fit() 必须调用 fitScaleOf —— 照着公式再写一遍就会有"推到底还差一圈"的那天')
+
+      // 非方形画布：短边说了算（棋盘要整个看得见）
+      t.equal(fitScaleOf(1000, 500, 100, 100), 4.9, '短边决定适配倍数')
+    }
+  },
+  {
+    name: '缩放滑条：倍数的读写（D84 ③）',
+    run(t) {
+      t.equal(zoomLabel(8.325), '8.3×', '一位小数 + ×')
+      t.equal(zoomLabel(40), '40.0×', '整数也带一位小数，宽度才稳定')
+      // 用户看到的是「8.3×」，允许他把 × 一起打回来
+      t.equal(parseZoomInput('15×'), 15, '带×号照收')
+      t.equal(parseZoomInput(' 12.5 '), 12.5, '前后空格不算数')
+      t.equal(parseZoomInput('20x'), 20, '半角 x 也认')
+      t.equal(parseZoomInput(''), null, '空串 = 这次不改（不是回落成最小值）')
+      t.equal(parseZoomInput('abc'), null, '认不出 = 这次不改')
+
+      // 与钳位串起来走一遍：输入 → 档位 → 钳位，两端都不许越界
+      const fit = 8.33, max = 40
+      const range = { min: '0', max: String(ZOOM_STEPS), step: '1', value: '0' }
+      const enter = text => {
+        const n = parseZoomInput(text)
+        return n === null ? null : clampToRange(sliderFromZoom(n, fit, max), range)
+      }
+      t.equal(enter('999'), ZOOM_STEPS, '远超上限 → 钳到最大档（不是拒绝）')
+      t.equal(enter('0.1'), 0, '远低于适配 → 钳到最小档')
+      t.equal(enter(''), null, '空串一路回 null')
+      t.ok(Math.abs(zoomFromSlider(enter('20'), fit, max) - 20) < 0.05, '输入 20 应当真的落在 20×')
+    }
+  },
+  {
+    name: '接线守卫：缩放滑条是画布上的浮层，不进控制区行结构（D84 ①④）',
+    run(t) {
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+      for (const id of ['zoombar', 'in-zoom', 'btn-zoom-in', 'btn-zoom-out', 'zoom-readout', 'in-zoombar', 'hud-scale'])
+        t.ok(html.includes(`id="${id}"`), `index.html 缺 #${id}`)
+
+      // 它必须长在 <main class="stage"> 里（画布那块），而不是顶栏/控制区里 ——
+      // 进了控制区就会改动 D74 的六行与 D75 的位置恒定
+      const stage = /<main class="stage">[\s\S]*?<\/main>/.exec(html)
+      t.ok(!!stage && stage[0].includes('id="zoombar"'), '滑条必须在画布那块里')
+      const topbar = /<(nav|header)[^>]*class="topbar"[\s\S]*?<\/\1>/.exec(html)
+      t.ok(!topbar || !topbar[0].includes('id="zoombar"'), '滑条不许进顶栏')
+
+      // 浮层：绝对定位 + D79 的「贴附」层（5），且**不许**带 grid-row（那是行结构才有的东西）
+      const rule = /\.zoombar \{([^}]*)\}/.exec(css)
+      t.ok(!!rule, 'CSS 里应有 .zoombar 规则')
+      t.ok(/position:\s*absolute/.test(rule[1]), '滑条是浮层，绝对定位')
+      t.ok(/z-index:\s*5\b/.test(rule[1]),
+        '层级取 D79 的「贴附」层 5 —— 它贴着画布，抽屉与模态盖住它是对的')
+      t.ok(!/grid-row/.test(rule[1]), '浮层不许进网格行结构（D74 六行、D75 位置恒定）')
+      // 六行仍旧是六行：grid-row 的取值集合没有因为这轮多出新成员
+      t.ok(/grid-template-rows:\s*auto 1fr auto auto auto/.test(css), '控制区仍是那几行')
+
+      // 两端按钮 44px 触控下限
+      const step = /\.zoombar \.zoom-step \{([^}]*)\}/.exec(css)
+      t.ok(!!step && /width:\s*44px/.test(step[1]) && /height:\s*44px/.test(step[1]),
+        '＋/－ 必须是 44×44，桌面上也不缩水')
+
+      // 竖向滑块：现代写法与老 WebKit 写法都要写
+      const vert = /#in-zoom \{([^}]*)\}/.exec(css)
+      t.ok(!!vert && /writing-mode:\s*vertical/.test(vert[1]), '竖排要有 writing-mode 写法')
+      t.ok(/-webkit-appearance:\s*slider-vertical/.test(vert[1]), '老 WebKit 的竖排写法也要留着')
+    }
+  },
+  {
+    name: '接线守卫：淡出只在播放时，且 reduced-motion 下不做动画（D84 ②）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      const code = stripLiterals(readSrc('src/ui/zoom-bar.js'))
+      t.equal(DIM_AFTER_MS, 2000, '播放后 2 秒淡出')
+      t.equal(ZOOM_BUTTON_STEP, ZOOM_STEPS / 10, '一按 ＋/－ 走全程的 10% —— 与滑条同一把刻度')
+
+      // 只有播放中才装淡出的计时器；暂停时永远留着（那时用户多半在调构图）
+      t.ok(/if \(app\.running\)[^\n]*setTimeout/.test(code),
+        '淡出计时器必须挂在"正在播放"这个条件上')
+      // 碰画布浮回来。位置要在原文里找（事件名是字符串，剥掉就没了），
+      // 是不是真调用则查剥过的版本 —— 两头都查，注释糊弄不过去（D83 §5）
+      const rawInput = readSrc('src/ui/input.js')
+      const input = stripLiterals(rawInput)
+      const pd = /canvas\.addEventListener\('pointerdown'[\s\S]*?\n  \}\)/.exec(rawInput)
+      t.ok(!!pd && /zoomBar\.wake\(\)/.test(pd[0]), '碰一下画布，淡出去的滑条要浮回来')
+      t.ok(/zoomBar\.wake\(\)/.test(input), '那一句必须是真代码，不是注释里提了一嘴')
+
+      // 淡出保留 ＋/－ 微弱可见：滑条 0，按钮 > 0
+      const dimRange = /\.zoombar\.dim #in-zoom \{([^}]*)\}/.exec(css)
+      const dimStep = /\.zoombar\.dim \.zoom-step \{([^}]*)\}/.exec(css)
+      t.ok(!!dimRange && /opacity:\s*0\b/.test(dimRange[1]), '淡出时滑条退场')
+      t.ok(!!dimStep, '淡出时 ＋/－ 要单独给不透明度')
+      const stepOpacity = Number((/opacity:\s*([\d.]+)/.exec(dimStep[1]) || [])[1])
+      t.ok(stepOpacity > 0 && stepOpacity < 0.5,
+        `＋/－ 要留一点点可见（0 < ${stepOpacity} < 0.5）—— "还在这儿，只是让开了"`)
+
+      // reduced-motion：不做淡入淡出
+      t.ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]{0,200}\.zoombar[^}]*transition:\s*none/.test(css),
+        'prefers-reduced-motion 下不许做淡入淡出')
+    }
+  },
+  {
+    name: '接线守卫：方向键归图案，滑条显式让位（D84 ④）',
+    run(t) {
+      // 这一条查的是"有没有真的调用"，所以扫剥过注释的源码 —— 注释里写着函数名不算数（D83 §5）
+      const rawZb = readSrc('src/ui/zoom-bar.js')
+      const zb = stripLiterals(rawZb)
+      const input = stripLiterals(readSrc('src/ui/input.js'))
+      // 判据分两头：条件是真代码（剥过的版本里查），'Arrow' 这个字面量在原文里查
+      t.ok(/if \(!app\.stamp \|\| !e\.key\.startsWith\(/.test(zb),
+        '滑条要认出"选中图案时的方向键"这一情形')
+      t.ok(/startsWith\('Arrow'\)/.test(rawZb), '认的是方向键这一组')
+      t.ok(/preventDefault\(\)/.test(zb), '让位要显式 preventDefault —— 否则滑条也会动')
+      t.ok(/app\.nudgeStamp\(/.test(zb), '让位之后走图案微调那条现成的路，不另写一份')
+      t.ok(/app\.nudgeStamp = function/.test(input), 'nudgeStamp 应当是 app 上的一个动作')
+      // 窗口按键也必须走同一个函数（两处各写一份的话，只有一份会记得"幽灵要脱开鼠标"）
+      t.ok(/if \(app\.nudgeStamp\(e\.key\)\)/.test(input), '窗口按键也走 nudgeStamp')
+      t.ok(/app\.stampAt = next/.test(input), '微调仍旧把位置钉进 app.stampAt')
+
+      // 滚轮行为不变：滑条这一轮不许碰 wheel
+      t.ok(!/wheel/.test(zb), '缩放滑条不许插手滚轮 —— 滚轮行为这一轮明确不变')
+
+      // 缩放滑条自带换算，不能再被通用循环接一遍（接两遍会插出两个输入框）
+      const controls = stripLiterals(readSrc('src/ui/controls.js'))
+      t.ok(/CODEC_SLIDERS\.zoom/.test(controls), '通用接线循环要跳过自带换算的滑条')
+      t.equal(CODEC_SLIDERS.zoom, 'in-zoom', '自带换算的就是缩放这一个')
+      t.ok(NUMERIC_SLIDERS.some(([r, l]) => r === 'in-zoom' && l === 'hud-scale'),
+        '缩放滑条仍要登记在册，标签是 HUD 上那一格')
+    }
+  },
+  {
+    name: '词条：缩放滑条的中英与简洁语域齐备（D84）',
+    run(t) {
+      const keys = ['vis.zoomBar', 'tip.zoomBar', 'tip.zoom', 'tip.zoomIn', 'tip.zoomOut',
+        'tip.zoomEntry', 'zoom.in', 'zoom.out']
+      for (const lang of ['zh', 'en']) {
+        for (const k of keys) {
+          t.ok(typeof DICT[lang][k] === 'string', `${lang} 缺 ${k}`)
+          t.ok(typeof DICT[lang][k + '.simple'] === 'string', `${lang} 缺简洁语域的 ${k}`)
+        }
+      }
+      // 关掉滑条不等于关掉缩放 —— 提示里要说清这一点，否则用户以为自己把功能关没了
+      t.ok(/滚轮/.test(DICT.zh['tip.zoomBar']) && /捏合/.test(DICT.zh['tip.zoomBar']),
+        '中文提示要说明关掉后滚轮与捏合仍然可用')
+      t.ok(/wheel/i.test(DICT.en['tip.zoomBar']) && /pinch/i.test(DICT.en['tip.zoomBar']),
+        '英文提示同理')
+      // 最小档就是「适配视图」，提示里也要说
+      t.ok(/适配视图/.test(DICT.zh['tip.zoom']), '中文提示要点出最下面一档是适配视图')
+      t.ok(/fit view/i.test(DICT.en['tip.zoom']), '英文提示同理')
     }
   },
   {

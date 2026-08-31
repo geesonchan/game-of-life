@@ -1288,6 +1288,80 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   .num-input[type="text"] { width: 4.5em; font-size: 16px; }
 }
 
+/* ---------- 缩放滑条（D84） ---------- */
+/* 浮层：绝对定位在画布右缘、竖直居中。它不进控制区的行结构 ——
+   D74 的六行与 D75 的位置恒定因此完全不受影响。
+   层级取 D79 的「贴附」层（5）：它贴着画布，抽屉/模态盖住它是对的。 */
+.zoombar {
+  position: absolute;
+  right: 10px; top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 6px;
+  background: rgba(14, 16, 21, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+  transition: opacity .35s ease;
+}
+.zoombar[hidden] { display: none; }        /* 关掉时是真的不在，不是透明的挡路板 */
+
+.zoombar .zoom-step {
+  width: 44px; height: 44px; padding: 0;   /* 44px 触控下限，桌面上也不缩水 */
+  font-size: 18px; line-height: 1;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  transition: opacity .35s ease;
+}
+.zoom-track { position: relative; display: flex; align-items: center; justify-content: center; }
+/* 竖向滑块：现代写法（writing-mode）与老 WebKit 写法各写一遍，
+   两条互不冲突 —— 认得哪条就用哪条。direction:rtl 让"往上 = 放大"。 */
+#in-zoom {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  width: 24px; height: 150px;
+  margin: 0;
+}
+/* 拖动时的倍数读数：贴在滑条左边，不占位置（窄屏 HUD 上没有「缩放」那一项，
+   第 4 项起就藏了 —— 手机上这是唯一能读到倍数的地方）。 */
+.zoom-readout {
+  position: absolute;
+  right: 100%; top: 50%; transform: translateY(-50%);
+  margin-right: 8px;
+  padding: 3px 7px;
+  background: rgba(14, 16, 21, 0.92);
+  border: 1px solid var(--line); border-radius: 6px;
+  font-size: 12px; color: var(--text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.zoom-readout[hidden] { display: none; }
+
+/* 播放中淡出：底板与滑条退场，＋/－ 留一点点 ——
+   "还在这儿，只是让开了"，而不是"没有了"（D84 ②）。 */
+.zoombar.dim { background: none; border-color: transparent; backdrop-filter: none; }
+.zoombar.dim #in-zoom { opacity: 0; }
+.zoombar.dim .zoom-step { opacity: .22; }
+@media (prefers-reduced-motion: reduce) {
+  /* 明确要求：这类用户不做淡入淡出。状态照常切，只是不animate。 */
+  .zoombar, .zoombar .zoom-step { transition: none; }
+}
+
+/* HUD 上的缩放那一格要能点（.hud 整体是 pointer-events:none） */
+.hud .hud-zoom { pointer-events: auto; }
+
+@media (max-width: 767px) {
+  /* 手机上画布更矮：滑条相应收短，仍留足两端 44px 的按钮 */
+  #in-zoom { height: 120px; }
+  .zoombar { right: 8px; gap: 6px; padding: 6px 5px; }
+}
+
 /* ---------- 图案朝向按钮（D81） ---------- */
 /* 桌面有 R / F 键，不占画布；只在窄屏出现 */
 .stamp-tools { display: none; }

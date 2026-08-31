@@ -10,6 +10,7 @@ import { Chart } from './render/chart.js'
 import { RingSeries } from './data/series.js'
 import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
+import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
@@ -86,6 +87,7 @@ app.setRunning = function (on) {
   app.windowStart = performance.now()
   app.gensInWindow = 0
   if (!on) app.gps = 0
+  if (app.zoomBar) app.zoomBar.onRunning()    // 播放中才淡出；暂停时永远留着（D84 ②）
   app.updateHud()
 }
 
@@ -428,7 +430,10 @@ app.updateHud = function () {
   hud.gps.textContent = app.running ? app.gps.toFixed(0) : '0'
   hud.fps.textContent = app.running ? app.fps.toFixed(0) : '–'
   app.updateHoverReadout()
-  hud.scale.textContent = `${t('hud.zoom')} ${app.viewport.scale.toFixed(1)}×`
+  // 「缩放」四个字是静态标签（data-i18n），这里只写数值 —— 因为它现在是可点击输入的那一格（D84 ③）
+  hud.scale.textContent = zoomLabel(app.viewport.scale)
+  // 滑条不持有自己的状态：捏合、滚轮、适配视图改了缩放，它跟着走（D84 ④）
+  if (app.zoomBar) app.zoomBar.sync()
 
   st.gen.textContent = app.engine.generation
   st.alive.textContent = s.alive
@@ -445,6 +450,7 @@ setupCanvasInput(app)
 app.ruleEditor = createRuleEditor(app)
 document.getElementById('btn-rule').addEventListener('click', () => app.ruleEditor.open())
 app.records = setupRecords(app)
+app.zoomBar = setupZoomBar(app)
 app.io = setupIO(app)
 app.favorites = createFavorites(app)
 app.library = setupLibrary(app)
@@ -500,6 +506,7 @@ onLangChange(() => {
   app.tower.relocalize()
   app.explorer.relocalize()
   app.favorites.relocalize()
+  app.zoomBar.relocalize()
   app.refreshTabHint()
 })
 function trailLabelOf(v) {

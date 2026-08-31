@@ -36,9 +36,16 @@ export function clampToRange(raw, range) {
  * 给一个滑块 + 它的数值标签接上「点一下直接输入」。
  * 提交后走 dispatchEvent('input')，让既有的 oninput 监听器照常更新界面 ——
  * 不复制一份更新逻辑，就不会有两份逻辑对不上的那天。
+ *
+ * `opts.toDisplay` / `opts.fromDisplay`：滑块的值与用户看到的数**不是同一个量**时用
+ * （缩放滑条是这样：滑块存的是对数档位，用户读写的是"几倍"，见 D84）。
+ * 转换只在这一层做，钳位仍旧在滑块单位里进行 —— 映射是单调的，钳完再换算回去照样落在两端。
+ * `fromDisplay` 认不出就回 null，当作"这次不改"，与空串走同一条路。
  */
 export function attachNumericEntry(range, label, opts = {}) {
   if (!range || !label) return
+  const toDisplay = opts.toDisplay || (v => String(v))
+  const fromDisplay = opts.fromDisplay || (text => text)
   label.classList.add('num-editable')
   label.tabIndex = 0
   label.setAttribute('role', 'button')
@@ -52,7 +59,8 @@ export function attachNumericEntry(range, label, opts = {}) {
   }
   const commit = () => {
     if (!input) return
-    const v = clampToRange(input.value, range)
+    const raw = fromDisplay(input.value)
+    const v = raw === null ? null : clampToRange(raw, range)
     close()
     if (v === null) return                  // 输入不是数字：当作没改过
     range.value = String(v)
@@ -66,7 +74,8 @@ export function attachNumericEntry(range, label, opts = {}) {
     input.type = 'text'
     input.inputMode = 'decimal'             // 手机上唤起数字键盘
     input.className = 'num-input'
-    input.value = range.value
+    // 初值取自**滑块**，不解析标签文字 —— 有几个标签压根不是数字（拖尾的「短/中/长」）
+    input.value = toDisplay(range.value)
     input.setAttribute('aria-label', opts.ariaLabel || range.id)
     label.hidden = true
     label.parentNode.insertBefore(input, label)
@@ -86,6 +95,13 @@ export function attachNumericEntry(range, label, opts = {}) {
   })
 }
 
+/**
+ * 自带换算、因此**不由通用循环接线**的滑块。
+ * 列在这里而不是在 controls.js 里写死一个 id，是为了让"为什么它是例外"有个落点：
+ * 这些滑块的值与用户读写的量不是同一个量（缩放：档位 vs 倍数），要带 toDisplay/fromDisplay。
+ */
+export const CODEC_SLIDERS = Object.freeze({ zoom: 'in-zoom' })
+
 /** 全部带数值标签的滑块：滑块 id → 标签 id。新增滑块必须登记，守卫会查。 */
 export const NUMERIC_SLIDERS = Object.freeze([
   ['in-speed', 'lbl-speed'],
@@ -99,5 +115,6 @@ export const NUMERIC_SLIDERS = Object.freeze([
   ['tower-gens', 'tower-lbl-gens'],
   ['tower-height', 'tower-lbl-height'],
   ['tower-slice', 'tower-lbl-slice'],
-  ['re-aging', 're-lbl-aging']
+  ['re-aging', 're-lbl-aging'],
+  ['in-zoom', 'hud-scale']        // 缩放滑条：它的"数值标签"就是 HUD 上那一项（D84 ③）
 ])

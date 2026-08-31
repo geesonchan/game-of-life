@@ -160,6 +160,8 @@ export function setupCanvasInput(app) {
   }
 
   canvas.addEventListener('pointerdown', e => {
+    // 碰一下画布 = "我又要动视图了"：淡出去的缩放滑条浮回来（D84 ②）
+    if (app.zoomBar) app.zoomBar.wake()
     const p0 = devicePos(e)
     if (isTouch(e)) {
       if (touches.size >= 2) return           // 第三根手指一概不理
@@ -282,6 +284,26 @@ export function setupCanvasInput(app) {
     if (app.stamp) app.dirty = true
   })
 
+  /**
+   * 按方向键把幽灵挪一格。抽成 app 上的一个动作，是因为**有两处要用它**：
+   * 画布的全局按键，以及缩放滑条聚焦时的让位（滑条自己是个 input，
+   * 方向键本来归它，选中图案时它显式交出来 —— 见 D84 ④ / D81 §4）。
+   * 两处各写一份的话，迟早只有一份记得"幽灵要从鼠标上脱开"。
+   * @returns {boolean} 有没有真的挪（不是方向键、或钳在边界外时为 false）
+   */
+  app.nudgeStamp = function (key) {
+    if (!app.stamp) return false
+    const from = app.stampAt || app.hoverCell ||
+      { x: app.engine.w >> 1, y: app.engine.h >> 1 }   // 鼠标不在画布上时从中心起步
+    const next = nudgeCell(from, key, app.engine.w, app.engine.h)
+    if (!next) return false
+    // 一按方向键，幽灵就从鼠标上脱开、钉在 app.stampAt —— 否则鼠标一动就把微调抹掉了。
+    app.stampAt = next
+    app.dirty = true
+    app.updateHud()
+    return true
+  }
+
   canvas.addEventListener('wheel', e => {
     e.preventDefault()
     const p = devicePos(e)
@@ -296,10 +318,7 @@ export function setupCanvasInput(app) {
     // 方向键微调图案位置（桌面专属；手机有拖放，不需要）。
     // 一按方向键，幽灵就从鼠标上脱开、钉在 app.stampAt —— 否则鼠标一动就把微调抹掉了。
     if (app.stamp && !isTyping(e.target) && e.key.startsWith('Arrow')) {
-      const from = app.stampAt || app.hoverCell ||
-        { x: app.engine.w >> 1, y: app.engine.h >> 1 }   // 鼠标不在画布上时从中心起步
-      const next = nudgeCell(from, e.key, app.engine.w, app.engine.h)
-      if (next) { app.stampAt = next; app.dirty = true; app.updateHud(); e.preventDefault() }
+      if (app.nudgeStamp(e.key)) e.preventDefault()
       return
     }
     // R 旋转、F 水平镜像（Golly 惯例）。与方向键微调/回车/Esc 共存 ——

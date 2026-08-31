@@ -3,7 +3,7 @@ import { normalizeSeed, randomSeed } from '../engine/prng.js'
 import { isTyping } from './input.js'
 import { t, setLang, getLang } from '../i18n/index.js'
 import { prefs } from './prefs.js'
-import { attachNumericEntry, NUMERIC_SLIDERS } from './numeric-entry.js'
+import { attachNumericEntry, NUMERIC_SLIDERS, CODEC_SLIDERS } from './numeric-entry.js'
 
 const $ = id => document.getElementById(id)
 
@@ -130,8 +130,11 @@ export function setupControls(app) {
   $('btn-flip').addEventListener('click', () => app.flipStamp())
 
   /* ---------- 滑块数值直接输入（点数字变输入框） ---------- */
-  // 12 个滑块一次登记完，包括观塔与勘探视图里的 —— 它们的元素在开机时就在 DOM 里。
+  // 登记表里的滑块一次接完，包括观塔与勘探视图里的 —— 它们的元素在开机时就在 DOM 里。
+  // 唯独缩放滑条例外：它的滑块单位（对数档位）与用户读写的量（几倍）不是一回事，
+  // 要带一层换算，由 zoom-bar.js 自己接（D84 ③）。接两遍会插出两个输入框。
   for (const [rangeId, labelId] of NUMERIC_SLIDERS) {
+    if (rangeId === CODEC_SLIDERS.zoom) continue
     attachNumericEntry($(rangeId), $(labelId), { ariaLabel: rangeId })
   }
 

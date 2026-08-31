@@ -12,7 +12,7 @@ export class Viewport {
 
   /** 让整块棋盘居中铺满画布 */
   fit(canvasW, canvasH, boardW, boardH, margin = 0.98) {
-    this.scale = Math.min(canvasW / boardW, canvasH / boardH) * margin
+    this.scale = fitScaleOf(canvasW, canvasH, boardW, boardH, margin)
     this.minScale = Math.min(0.5, this.scale * 0.5)
     this.originX = boardW / 2 - canvasW / (2 * this.scale)
     this.originY = boardH / 2 - canvasH / (2 * this.scale)
@@ -51,3 +51,36 @@ export class Viewport {
 }
 
 export function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v }
+
+/* ---------------- 缩放滑条的刻度（D84） ---------------- */
+
+/**
+ * 适配视图那一档的缩放。`fit()` 用的就是这个函数 ——
+ * 滑条的最小档因此**天生等于「适配视图」**，而不是在别处照着公式再算一遍。
+ * 两处各算一遍的东西迟早会差一点，而"差一点"在这里的表现是：
+ * 滑条推到底了，棋盘却还差一圈没露全。
+ */
+export function fitScaleOf(canvasW, canvasH, boardW, boardH, margin = 0.98) {
+  return Math.min(canvasW / boardW, canvasH / boardH) * margin
+}
+
+/** 滑条的档位数。0 = 适配视图，ZOOM_STEPS = 现有上限。 */
+export const ZOOM_STEPS = 1000
+
+/**
+ * 档位 → 缩放倍数。**对数刻度**：等长的一段行程，换来的是等比例的放大。
+ * 线性刻度在这里是错的 —— 适配到上限往往跨一个数量级，
+ * 线性下"前四分之一行程"就把可用的低倍数全挤没了，而那正是看整盘时要用的一段。
+ */
+export function zoomFromSlider(v, fit, max) {
+  if (!(max > fit)) return fit          // 小棋盘上适配倍数可能已经顶到上限
+  const k = clamp(Number(v), 0, ZOOM_STEPS) / ZOOM_STEPS
+  return fit * Math.pow(max / fit, k)
+}
+
+/** 缩放倍数 → 档位（捏合、滚轮、适配之后要把滑条同步回来）。超出两端的一律钳到两端。 */
+export function sliderFromZoom(scale, fit, max) {
+  if (!(max > fit)) return 0
+  const k = Math.log(Math.max(Number(scale), 1e-9) / fit) / Math.log(max / fit)
+  return Math.round(clamp(k, 0, 1) * ZOOM_STEPS)
+}

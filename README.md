@@ -74,7 +74,7 @@ src/engine/   纯逻辑，零 DOM 依赖，可在 Node 里跑测试
   rle.js        标准 RLE 格式解析与生成
   save.js       存档格式（规格 3.1）与读档重建
 src/render/   只读引擎状态，负责画
-  viewport.js       棋盘坐标 ↔ 屏幕坐标
+  viewport.js       棋盘坐标 ↔ 屏幕坐标 + 缩放滑条的对数刻度
   renderer.js       Canvas 渲染（ImageData 放大方案 + 拖尾图层）
   palette.js        色带与颜色查找表
   visual-state.js   细胞年龄 / 死亡余晖（渲染层自有缓冲，引擎无感知）
@@ -102,6 +102,7 @@ src/ui/       控件绑定与画布交互
   tower-view.js     观塔模式（three.js InstancedMesh + 切片联动）
   explorer-view.js  规则勘探器（批量结果表 / 候选名单 / 一键复现）
   favorites-view.js 收藏面板与简洁模式的「精彩局」卡片条
+  zoom-bar.js       画布右缘的缩放滑条（浮层、播放时淡出、HUD 倍数可输入）
 src/workers/
   tower-builder.js  时间之塔的构建 Worker（只搬运，逻辑在 data/tower.js）
   explorer.js       规则勘探的批量 Worker（同样只搬运）
@@ -149,4 +150,7 @@ python3 -m http.server 5174
 | 右键拖动 | 擦除 |
 | 中键 / 空格+左键 拖动 | 平移视口 |
 | 滚轮 | 以光标为锚点缩放 |
+| 画布右缘的竖向滑条 | 缩放：最下面一档就是「适配视图」，最上面是上限；＋/－ 各走一档。
+  播放两秒后自动淡出，碰一下画布就回来；不想要可以在「视觉」里关掉（关了滚轮和捏合照旧） |
+| HUD 上的「缩放 8.3×」 | 点一下可以直接输入倍数 |
 | P / N / F / R / C | 播放暂停 / 单步 / 适配视图 / 随机填充 / 清空 |

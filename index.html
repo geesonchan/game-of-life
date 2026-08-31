@@ -103,7 +103,9 @@
           <span class="hud-item hud-world" data-i18n-title="tip.world"><span data-i18n="world.section">世界</span> <b id="hud-world">经典</b></span>
           <span class="hud-item" data-mode="full"><span data-i18n="hud.gps">实速</span> <b id="hud-gps">0</b> <span data-i18n="unit.gps">代/秒</span></span>
           <span class="hud-item" data-mode="full"><span data-i18n="hud.fps">帧率</span> <b id="hud-fps">–</b></span>
-          <span class="hud-item muted" id="hud-scale">缩放 4.0×</span>
+          <!-- 缩放数值可点击直接输入（D84 ③，沿用 D80 的机制）。
+               .hud 整体 pointer-events:none，所以这一项要单独把事件收回来。 -->
+          <span class="hud-item muted hud-zoom" id="hud-zoom-item" data-i18n-title="tip.zoomEntry"><span data-i18n="hud.zoom">缩放</span> <b id="hud-scale">4.0×</b></span>
         </div>
         <div class="sel-menu" id="sel-menu" hidden>
           <span class="sel-size" id="sel-size"></span>
@@ -116,6 +118,17 @@
         <div class="stamp-tools" id="stamp-tools" hidden>
           <button id="btn-rotate" data-i18n-title="stamp.rotate" title="旋转">⟳</button>
           <button id="btn-flip" data-i18n-title="stamp.flip" title="镜像">⇋</button>
+        </div>
+        <!-- 缩放滑条（D84）。捏合既不可发现也不精确，这是它的可见、可精确的那一份。
+             绝对定位在画布右缘的浮层 —— 不进控制区的行结构，
+             D74 的六行与 D75 的位置恒定都不受影响；层级走 D79 的「贴附」层（5）。 -->
+        <div class="zoombar" id="zoombar">
+          <button class="zoom-step" id="btn-zoom-in" data-i18n-title="tip.zoomIn">＋</button>
+          <div class="zoom-track">
+            <input type="range" id="in-zoom" min="0" max="1000" step="1" value="0" data-i18n-title="tip.zoom" />
+            <b class="zoom-readout" id="zoom-readout" hidden>4.0×</b>
+          </div>
+          <button class="zoom-step" id="btn-zoom-out" data-i18n-title="tip.zoomOut">－</button>
         </div>
         <div class="toast" id="toast" hidden></div>
       </main>
@@ -175,6 +188,7 @@
               <input type="range" id="in-glow-frames" min="3" max="5" step="1" value="4" />
             </label>
             <label class="check" data-i18n-title="tip.trails"><input type="checkbox" id="in-trails" /><span data-i18n="vis.trails">拖尾模式</span></label>
+            <label class="check" data-i18n-title="tip.zoomBar"><input type="checkbox" id="in-zoombar" checked /><span data-i18n="vis.zoomBar">缩放滑条</span></label>
             <label class="field indent" data-i18n-title="tip.trailLen">
               <span><span data-i18n="vis.trailLen">拖尾长度</span> <b id="lbl-trail">中</b></span>
               <input type="range" id="in-trail-len" min="1" max="20" step="1" value="10" />

@@ -2264,11 +2264,13 @@ cases.push(
 
       // 幽灵脱离鼠标：一按方向键就钉在 stampAt，否则鼠标一动就把微调抹掉
       const inp = readSrc('src/ui/input.js')
-      t.ok(/app\.stampAt = next/.test(inp), '方向键必须把位置钉进 app.stampAt')
+      t.ok(/app\.armStampAt\(next\)/.test(inp),
+        '方向键把位置钉进**同一个**待放态状态源 —— 桌面钉住与触屏摆放本来就是同一件事（D90 §4）')
       const main = readSrc('src/main.js')
-      t.ok(/const gc = app\.stampAt \|\| app\.hoverCell/.test(main),
-        '幽灵优先用钉住的位置，其次才跟鼠标')
-      t.ok(/app\.stampAt = null/.test(main), '换图案要解除钉住')
+      t.ok(/const gc = app\.pendingStamp \|\| app\.hoverCell/.test(main),
+        '幽灵优先用钉住的位置（待放态），其次才跟鼠标')
+      t.ok(/app\.cancelPending\(\{ keepRef: true \}\)/.test(main),
+        '换图案要解除钉住，但参照线留着 —— 拿起下一个图案正是要拿它来对（D91）')
 
       // ② 坐标读数：必须单独刷新，不能只等 updateHud
       t.ok(/app\.updateHoverReadout = function/.test(main), '坐标读数应有独立的刷新函数')
@@ -3758,7 +3760,7 @@ cases.push(
       t.ok(/app\.nudgeStamp = function/.test(input), 'nudgeStamp 应当是 app 上的一个动作')
       // 窗口按键也必须走同一个函数（两处各写一份的话，只有一份会记得"幽灵要脱开鼠标"）
       t.ok(/if \(app\.nudgeStamp\(e\.key\)\)/.test(input), '窗口按键也走 nudgeStamp')
-      t.ok(/app\.stampAt = next/.test(input), '微调仍旧把位置钉进 app.stampAt')
+      t.ok(/app\.armStampAt\(next\)/.test(input), '微调仍旧把位置钉进那唯一的待放态状态源')
 
       // 滚轮行为不变：滑条这一轮不许碰 wheel
       t.ok(!/wheel/.test(zb), '缩放滑条不许插手滚轮 —— 滚轮行为这一轮明确不变')
@@ -4366,7 +4368,7 @@ cases.push(
       }
       const confirm = /app\.confirmStamp = function[\s\S]*?\n\}/.exec(main)
       t.ok(!!confirm && /app\.placeStampAt\(/.test(confirm[0]), '确认那一步才落子')
-      t.ok(/app\.clearPending\(\)/.test(confirm[0]), '落子之后要退出待放态')
+      t.ok(/app\.cancelPending\(/.test(confirm[0]), '落子之后要走那唯一的出口退出待放态')
 
       // 触屏走两步、桌面照旧一步
       const rawInp = readSrc('src/ui/input.js')
@@ -4377,7 +4379,7 @@ cases.push(
       t.ok(/app\.armStampAt\(/.test(inp) && /app\.confirmStamp\(\)/.test(inp) && /app\.cancelPending\(\)/.test(inp),
         '三条出路都要接上')
       // Esc 一次退一层：先退待放，再退选中
-      t.ok(/if \(app\.pending\) app\.cancelPending\(\)/.test(inp), 'Esc 先取消待放')
+      t.ok(/if \(app\.pendingStamp\) app\.cancelPending\(/.test(inp), 'Esc 先取消待放')
 
       // 「放下」按钮：待放态才出现
       const html = readSrc('index.html')
@@ -4673,7 +4675,7 @@ cases.push(
       const place = /app\.placeStampConfirm = function[\s\S]*?\n\}/.exec(main)
       t.ok(!!place && /if \(btn\.style\.left !== x\)/.test(place[0]),
         '位置没变就别写 style —— 每帧写一次会把布局搅得没完')
-      t.ok(/if \(app\.pending\) app\.placeStampConfirm\(\)/.test(main), '幽灵被拖被缩放时按钮要跟上')
+      t.ok(/if \(app\.pendingStamp\) app\.placeStampConfirm\(\)/.test(main), '幽灵被拖被缩放时按钮要跟上')
       const orient = /function afterOrientChange[\s\S]*?\n\}/.exec(main)
       t.ok(!!orient && /placeStampConfirm/.test(orient[0]), '转过之后外接框换了边，按钮也要跟着挪')
       // ⟳/⇋ 仍旧钉在右上角
@@ -4735,9 +4737,10 @@ cases.push(
       const place = /app\.placeStampAt = function[\s\S]*?\n\}/.exec(main)
       t.ok(!!place && /setRefRay\(refFromPlacement\(/.test(place[0]), '落子时留下参照线')
       const run = /app\.setRunning = function[\s\S]*?\n\}/.exec(main)
-      t.ok(!!run && /if \(on\) app\.setRefRay\(null\)/.test(run[0]), '一开跑就清掉 —— 棋盘已不是那一刻的棋盘')
+      t.ok(!!run && /if \(on\) app\.cancelPending\(\)/.test(run[0]),
+        '一开跑就整体退场 —— 棋盘已不是那一刻的棋盘（待放态与参照线一起清）')
       const clear = /app\.clear = function[\s\S]*?\n\}/.exec(main)
-      t.ok(!!clear && /app\.setRefRay\(null\)/.test(clear[0]), '清空时一并清掉')
+      t.ok(!!clear && /app\.cancelPending\(\)/.test(clear[0]), '清空时整体退场（含参照线）')
       const inp = stripLiterals(readSrc('src/ui/input.js'))
       const commit = /function commitStroke\(\)[\s\S]*?\n  \}/.exec(inp)
       t.ok(!!commit && /app\.setRefRay\(null\)/.test(commit[0]),
@@ -4768,6 +4771,67 @@ cases.push(
       // 画在最底下：参照线先画，幽灵与它的线压在上面
       t.ok(/app\.refRay\)[\s\S]{0,400}drawMotionRay[\s\S]{0,900}drawGhost/.test(main),
         '参照线画在幽灵与待放线之下 —— 手上那条要压过刚才那条')
+    }
+  },
+  {
+    name: '待放态的退出集合：每一条路都走同一个出口（D90 §4）',
+    run(t) {
+      // 真机 bug：待放态下按「全部擦掉」，棋盘清了，幽灵与动向线还留在原位。
+      // 病根是**两个状态源**：幽灵看 app.stampAt，按钮看 app.pending —— 清一个不清另一个，
+      // 就出现"清了一半"。现在只有一个源 pendingStamp，三样（幽灵/动向线/「放这」）全看它。
+      const main = stripLiterals(readSrc('src/main.js'))
+      t.ok(/pendingStamp: null/.test(main), '待放态要有一个明确的初值')
+      // 查的是"这个名字还在不在"，所以连属性写法一起挡（`stampAt: null` 也算复活）。
+      // `armStampAt` / `placeStampAt` 里的是大写 S，不会误伤。
+      t.ok(!/stampAt/.test(main) && !/\bpending\b/.test(main),
+        '旧的两个状态源必须消失（含属性写法）—— 留着一个就会有"清了一半"的那天')
+      const inp = stripLiterals(readSrc('src/ui/input.js'))
+      // 输入层查的是"有没有再去碰 app 上那两个旧字段"。
+      // 这里不能像 main.js 那样连词形一起挡：`tapAction({pending, insideGhost})` 的形参
+      // 本来就叫 pending，那是这个纯函数自己的 API，与 app 的状态源无关。
+      t.ok(!/app\.stampAt/.test(inp) && !/app\.pending\b/.test(inp), '输入层也不许再碰旧状态源')
+
+      // 幽灵、动向线、按钮三样都只认那一个源
+      t.ok(/const gc = app\.pendingStamp \|\| app\.hoverCell/.test(main), '幽灵认它')
+      t.ok(/if \(app\.pendingStamp\) app\.placeStampConfirm\(\)/.test(main), '按钮位置认它')
+      t.ok(/if \(!app\.pendingStamp\) return/.test(main), '摆按钮之前先看它')
+
+      // **单一出口**：cancelPending 是唯一的退场路径
+      const cancel = /app\.cancelPending = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!cancel, '要有那个唯一出口')
+      t.ok(/app\.pendingStamp = null/.test(cancel[0]), '出口清状态源')
+      t.ok(/hidden = true/.test(cancel[0]), '出口收按钮')
+      t.ok(/if \(!opts\.keepRef\) app\.setRefRay\(null\)/.test(cancel[0]),
+        '出口按规则处理参照线：默认清掉，只有明说 keepRef 才留')
+      t.ok(!/app\.clearPending/.test(main), '不许再有第二个"半退出"的函数')
+
+      // 退出集合：每一种进入方式都必须调那个出口
+      const paths = [
+        ['app\\.clear = function', 'clear', false],            // 清空 → 连参照线一起清
+        ['app\\.setRunning = function', 'setRunning', false],  // 播放
+        ['app\\.stepOnce = function', 'stepOnce', false],      // 单步
+        ['app\\.adoptEngine = function', 'adoptEngine', false],// 读档/换盘
+        ['app\\.applyRule = function', 'applyRule', false],    // 换世界
+        ['app\\.openView = function', 'openView', true],       // 进全屏视图 → 参照线留着
+        ['app\\.setStamp = function', 'setStamp', true]        // 换图案 → 参照线留着
+      ]
+      for (const [head, name, keepRef] of paths) {
+        const fn = new RegExp(head + '[\\s\\S]*?\\n\\}').exec(main)
+        t.ok(!!fn, `找得到 ${name}`)
+        t.ok(/app\.cancelPending\(/.test(fn[0]), `${name} 必须走那个唯一出口`)
+        const keeps = /app\.cancelPending\(\{ keepRef: true \}\)/.test(fn[0])
+        t.equal(keeps, keepRef,
+          `${name} 的参照线处置：${keepRef ? '应当留着（棋盘没变）' : '应当一并清掉（棋盘变了或整个换掉了）'}`)
+      }
+      // Esc / 点空白：留参照线
+      t.ok(/app\.cancelPending\(\{ keepRef: true \}\)/.test(inp), 'Esc / 点空白也走出口，且留着参照线')
+
+      // 规则本身写进文档，免得下一个人再想一遍
+      const doc = readSrc('docs/decisions.md')
+      t.ok(/待放态的退出集合/.test(doc), 'D90 里要有那张退出集合表')
+      for (const word of ['清空', '播放', '单步', '读档', '换世界', '换图案'])
+        t.ok(new RegExp(word).test(doc), `退出集合里要点名「${word}」`)
+      t.ok(/待放态 × 每个退出动作/.test(doc), '状态清单排查要加上这一组组合')
     }
   },
   {

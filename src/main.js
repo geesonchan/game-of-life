@@ -64,6 +64,12 @@ const app = {
   mode: 'full',       // 'simple' | 'full'
   stamp: null,        // 当前选中的图案（跟随鼠标待放置）
   stampOrient: { rot: 0, flip: false },   // 当前图案的朝向（D81）
+  /**
+   * **待放态的唯一状态源**（D90 §4）：钉住的落点，或 null。
+   * 幽灵画不画、动向线画不画、「放这」出不出现，三样全看它 ——
+   * 上一版幽灵看 `stampAt`、按钮看 `pending`，两个源就有"清了一半"的那天（真机撞上了）。
+   */
+  pendingStamp: null,
   refRay: null,                          // 最近一次落子留下的参照线（D91）
   refSeq: 0,                             // 参照线的序号：挡住在途的旧量测回调
   runDirty: false,    // 本局是否被手动改过 ⇒ 存档不能再靠种子重放
@@ -84,8 +90,9 @@ app.tick = function () {
 }
 
 app.setRunning = function (on) {
-  // 一开跑，"我刚才把它对着哪儿放的"就成了旧闻：棋盘已经不是那一刻的棋盘了（D91）
-  if (on) app.setRefRay(null)
+  // 一开跑，"我刚才把它对着哪儿放的"就成了旧闻：棋盘已经不是那一刻的棋盘了（D91）。
+  // 待放态也一并退场：手上举着的那个幽灵，等棋盘跑起来之后已经对不上任何东西了（D90 §4）。
+  if (on) app.cancelPending()
   app.running = on
   app.autoPaused = false
   app.el.play.textContent = t(on ? 'ctrl.pause' : 'ctrl.play')
@@ -101,6 +108,8 @@ app.setRunning = function (on) {
 }
 
 app.stepOnce = function () {
+  // 单步也让棋盘往前走了一格：手上那个幽灵与刚才那条参照线都对不上新盘了（D90 §4）
+  app.cancelPending()
   const t0 = performance.now()
   app.tick()
   app.recordStepCost(performance.now() - t0, 1)
@@ -110,7 +119,7 @@ app.stepOnce = function () {
 
 app.clear = function (opts = {}) {
   app.setRunning(false)
-  app.setRefRay(null)               // 盘都清了，参照线自然也不留（D91）
+  app.cancelPending()               // 待放态整体退场，参照线一并清（D90 §4）
   app.engine.clear()
   app.visual.sync(app.engine)
   app.runDirty = false
@@ -160,6 +169,8 @@ app.openPanelGroupOf = function (node) {
 }
 
 app.applyRule = function (rule, message) {
+  // 换世界 = 换了规则，这一盘已经是另一盘：待放态整体退场，参照线一并清（D90 §4）
+  app.cancelPending()
   app.engine.setRule(rule)
   app.renderer.setAgingLayers(rule.agingLayers)
   app.visual.sync(app.engine)   // 被清掉的衰老细胞不该留下年龄或残影
@@ -218,7 +229,7 @@ app.setMode = function (mode, opts = {}) {
 /** 选中 / 取消选中一个待放置的图案 */
 /** 选中图案时幽灵的锚点（左上角格）；没选中则返回 null */
 app.stampAnchor = function () {
-  const gc = app.stampAt || app.hoverCell
+  const gc = app.pendingStamp || app.hoverCell
   const p = app.stampPattern()
   if (!p || !gc) return null
   return centerOrigin(p, gc.x, gc.y)
@@ -299,8 +310,7 @@ app.setRefRay = function (ref) {
  */
 app.armStampAt = function (cell) {
   if (!app.stamp || !cell) return
-  app.stampAt = { x: cell.x, y: cell.y }
-  app.pending = true
+  app.pendingStamp = { x: cell.x, y: cell.y }
   document.getElementById('btn-drop').hidden = false
   app.placeStampConfirm()           // 按钮跟着幽灵走（D90 ③）
   app.dirty = true
@@ -309,25 +319,27 @@ app.armStampAt = function (cell) {
 
 /** 确认落子。这一步才动引擎 */
 app.confirmStamp = function (cell) {
-  const at = cell || app.stampAt
+  const at = cell || app.pendingStamp
   if (!app.stamp || !at) return
-  app.clearPending()
+  app.cancelPending({ keepRef: true })     // 先退出待放态，再落子（参照线由落子自己贴）
   app.placeStampAt(at)
 }
 
-/** 取消待放：幽灵收走，图案还拿在手上（再点棋盘可以重摆） */
-app.cancelPending = function () {
-  if (!app.pending) return
-  app.clearPending()
-  app.stampAt = null
+/**
+ * **待放态的唯一出口**（D90 §4）。幽灵、动向线、「放这」三样一起退场 ——
+ * 它们本来就只有一个状态源，所以这里也只需要清那一个。
+ *
+ * 什么时候顺带清掉参照线，规则只有一句：**棋盘往前走了或整个换掉了就清，只换手上的图案不清。**
+ *   · 清空、读档、换世界、播放、单步 → 连参照线一起清（那条线画的是另一盘棋了）
+ *   · 换图案、Esc、点空白、进全屏视图 → 参照线留着（棋盘没变，它仍然说得准）
+ * @param {{keepRef?:boolean}} opts
+ */
+app.cancelPending = function (opts = {}) {
+  app.pendingStamp = null
+  document.getElementById('btn-drop').hidden = true
+  if (!opts.keepRef) app.setRefRay(null)
   app.dirty = true
   app.updateHoverReadout()
-}
-
-/** 只清状态与按钮，不动别的 —— 落子与取消都要走它 */
-app.clearPending = function () {
-  app.pending = false
-  document.getElementById('btn-drop').hidden = true
 }
 
 /**
@@ -340,9 +352,9 @@ app.clearPending = function () {
  */
 app.placeStampConfirm = function () {
   const btn = document.getElementById('btn-drop')
-  if (!app.pending) return
+  if (!app.pendingStamp) return
   const gp = app.stampPattern()
-  const gc = app.stampAt
+  const gc = app.pendingStamp
   if (!gp || !gc) return
   const o = centerOrigin(gp, gc.x, gc.y)
   const vp = app.viewport, dpr = app.renderer.dpr || 1
@@ -363,8 +375,9 @@ app.placeStampConfirm = function () {
 
 app.setStamp = function (pattern) {
   app.stamp = pattern
-  app.clearPending()          // 换图案（或取消）时，待放的那个幽灵一并收走
-  app.stampAt = null          // 换图案就解除方向键的钉住
+  // 换图案（或取消选择）时，待放的那个幽灵一并收走；**参照线留着** ——
+  // 棋盘没变，刚才那条线仍然说得准，而拿起下一个图案正是要拿它来对（D91）
+  app.cancelPending({ keepRef: true })
   app.stampOrient = { rot: 0, flip: false }   // 换图案也复位朝向
   document.body.classList.toggle('stamp-active', !!pattern)
   document.getElementById('stamp-tools').hidden = !pattern
@@ -460,6 +473,9 @@ app.clearSelection = function () {
 
 /** 读档后换上新引擎：所有跟棋盘尺寸/规则挂钩的东西都要重新对齐 */
 app.adoptEngine = function (engine) {
+  // 读档 / 换盘：整盘换掉，待放态与参照线一起退场（D90 §4）。
+  // 放在这里而不是放在 io.js 的读档回调里 —— 凡是"整盘换掉"都走这个口，一处管住所有来路。
+  app.cancelPending()
   app.engine = engine
   app.visual.sync(engine)
   app.series.clear()
@@ -612,6 +628,9 @@ app.critical = createCriticalView(app)
  */
 const VIEWS = { tower: () => app.tower, explorer: () => app.explorer, critical: () => app.critical }
 app.openView = function (name) {
+  // 进全屏视图：手上举着的幽灵不该在回来之后还举着（D90 §4）。
+  // 参照线留着 —— 棋盘没变，回来还要拿它对线。
+  if (VIEWS[name]) app.cancelPending({ keepRef: true })
   // 名单驱动，不逐个 if —— 加第四个视图时漏掉一处 hide 就会两块叠在一起（D86 ④）
   for (const key of Object.keys(VIEWS)) if (key !== name) VIEWS[key]().hide()
   if (VIEWS[name]) VIEWS[name]().show()
@@ -736,8 +755,8 @@ function frame(now) {
       const ends = rayEnds(r.kind, r.center, r, { w: app.engine.w, h: app.engine.h })
       app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd, { ref: true })
     }
-    // 方向键微调后幽灵脱离鼠标跟随（app.stampAt 非空即钉住）
-    const gc = app.stampAt || app.hoverCell
+    // 方向键微调后幽灵脱离鼠标跟随（pendingStamp 非空即钉住）
+    const gc = app.pendingStamp || app.hoverCell
     const gp = app.stampPattern()
     if (gp && gc) {
       const o = centerOrigin(gp, gc.x, gc.y)
@@ -754,7 +773,7 @@ function frame(now) {
         }
       }
       app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h)
-      if (app.pending) app.placeStampConfirm()   // 幽灵动了、转了、缩放了，按钮都要跟上
+      if (app.pendingStamp) app.placeStampConfirm()   // 幽灵动了、转了、缩放了，按钮都要跟上
     }
     if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)
     app.dirty = false

@@ -278,7 +278,7 @@ export function setupCanvasInput(app) {
       if (!stampMoved) {
         const origin = app.stampAnchor()
         const what = tapAction({
-          pending: !!app.pending,
+          pending: !!app.pendingStamp,
           insideGhost: insideGhostBox(stampDownAt, origin, app.stampPattern())
         })
         if (what === 'arm') app.armStampAt(stampDownAt)
@@ -335,12 +335,13 @@ export function setupCanvasInput(app) {
    */
   app.nudgeStamp = function (key) {
     if (!app.stamp) return false
-    const from = app.stampAt || app.hoverCell ||
+    const from = app.pendingStamp || app.hoverCell ||
       { x: app.engine.w >> 1, y: app.engine.h >> 1 }   // 鼠标不在画布上时从中心起步
     const next = nudgeCell(from, key, app.engine.w, app.engine.h)
     if (!next) return false
-    // 一按方向键，幽灵就从鼠标上脱开、钉在 app.stampAt —— 否则鼠标一动就把微调抹掉了。
-    app.stampAt = next
+    // 一按方向键，幽灵就从鼠标上脱开、钉住 —— 否则鼠标一动就把微调抹掉了。
+    // 钉住 = 进入待放态：这与触屏点一下摆出幽灵是同一件事，所以用的是同一个状态源（D90 §4）。
+    app.armStampAt(next)
     app.dirty = true
     app.updateHud()
     return true
@@ -358,7 +359,7 @@ export function setupCanvasInput(app) {
   // 空格键按住 = 临时平移模式；Esc 取消图案选择
   window.addEventListener('keydown', e => {
     // 方向键微调图案位置（桌面专属；手机有拖放，不需要）。
-    // 一按方向键，幽灵就从鼠标上脱开、钉在 app.stampAt —— 否则鼠标一动就把微调抹掉了。
+    // 一按方向键，幽灵就从鼠标上脱开、钉住待放（同一个状态源，D90 §4）。
     if (app.stamp && !isTyping(e.target) && e.key.startsWith('Arrow')) {
       if (app.nudgeStamp(e.key)) e.preventDefault()
       return
@@ -372,7 +373,7 @@ export function setupCanvasInput(app) {
     }
     // 回车落子（位置取幽灵当前所在，不管是鼠标跟着还是方向键钉住的）
     if (app.stamp && !isTyping(e.target) && e.key === 'Enter') {
-      const at = app.stampAt || app.hoverCell
+      const at = app.pendingStamp || app.hoverCell
       if (at) { app.confirmStamp(at); e.preventDefault() }
       return
     }
@@ -381,7 +382,7 @@ export function setupCanvasInput(app) {
       && document.getElementById('rule-modal').hidden
       && document.getElementById('intro-modal').hidden) {
       // 待放态先退回"拿着图案"，再按一次才放下图案本身 —— 一次 Esc 退一层
-      if (app.pending) app.cancelPending()
+      if (app.pendingStamp) app.cancelPending({ keepRef: true })
       else app.setStamp(null)
       e.preventDefault()
     }

@@ -4,6 +4,7 @@ import { LifeEngine } from './engine/board.js'
 import { lifeRule, compileNotation } from './engine/rules.js'
 import { createFavorites } from './ui/favorites-view.js'
 import { createConfirm } from './ui/confirm.js'
+import { visualFor, isBigBoard } from './data/board-sizes.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
 import { VisualState } from './render/visual-state.js'
@@ -83,9 +84,16 @@ const app = {
 
 /** 推进一代：引擎 → 视觉状态 → 数据记录，三者严格同拍 */
 /** 推进一代：引擎 → 视觉状态 → 数据记录，三者严格同拍。返回终止信息（没终止则为 null） */
+/**
+ * 当前这一档盘实际生效的视觉选项（D94）。大盘上年龄/余晖/拖尾一律不生效 ——
+ * 它们那一层每代要把整盘再扫一遍，2048² 实测 15.5ms/代，占那一档四成开销。
+ * **用户的设置不改**，只是在大盘上不起作用；换回小盘原样恢复。
+ */
+app.visualNow = function () { return visualFor(app.visualOpts, app.engine.w) }
+
 app.tick = function () {
   const s = app.engine.step()
-  app.visual.advance(app.engine, app.visualOpts.glow ? app.renderer.glowFrames : 0)
+  app.visual.advance(app.engine, app.visualNow().glow ? app.renderer.glowFrames : 0)
   app.series.push(s.alive)
   return app.records ? app.records.onGeneration(s) : null
 }
@@ -215,7 +223,7 @@ app.updateRuleInfo = function () {
   document.getElementById('lbl-states').textContent = n
 }
 
-app.resizeBoard = function (w, h) {
+app.resizeBoard = function (w, h, opts = {}) {
   app.setRunning(false)
   app.engine.resize(w, h)
   app.visual.sync(app.engine)
@@ -225,7 +233,10 @@ app.resizeBoard = function (w, h) {
   app.records.startRun()
   app.fitView()
   app.updateHud()
-  app.toast(t('toast.resized', { w, h }))
+  if (app.syncBigBoard) app.syncBigBoard()
+  if (app.el && app.el.size && app.el.size.set) app.el.size.set(String(w))   // 按钮组跟着变
+  // 复现一局时换盘是"这一步的一部分"，那一刻会另有一句话说明整件事，别抢在它前面
+  if (!opts.silent) app.toast(isBigBoard(w) ? t('toast.resizedBig', { w, h }) : t('toast.resized', { w, h }))
 }
 
 /** 简洁 / 完整模式切换：只改 body 上的 class，具体哪些区块显示由 CSS 的 data-mode 决定 */
@@ -466,7 +477,7 @@ app.replayStep = function (remaining) {
   // 所以"补跑 VISUAL_WARMUP 代"与"从头跑满"渲染出来的颜色逐格相同，代价却小得多。
   if (remaining === VISUAL_WARMUP) app.visual.sync(app.engine)
   if (remaining <= VISUAL_WARMUP) {
-    app.visual.advance(app.engine, app.visualOpts.glow ? app.renderer.glowFrames : 0)
+    app.visual.advance(app.engine, app.visualNow().glow ? app.renderer.glowFrames : 0)
   }
 }
 app.VISUAL_WARMUP = VISUAL_WARMUP
@@ -748,7 +759,7 @@ function frame(now) {
       app.dirty = true
     }
     // 拖尾模式下即使这一帧没换代，也要继续淡出残影
-    if (app.visualOpts.trails) app.dirty = true
+    if (app.visualNow().trails) app.dirty = true
     // 每 500ms 统计一次实际代/秒
     if (now - app.windowStart >= 500) {
       app.gps = (app.gensInWindow * 1000) / (now - app.windowStart)
@@ -766,7 +777,7 @@ function frame(now) {
   }
 
   if (app.dirty) {
-    app.renderer.draw(app.engine, app.viewport, app.visual, app.visualOpts)
+    app.renderer.draw(app.engine, app.viewport, app.visual, app.visualNow())
     // 参照线：最近一次落子留下的那条，画在最底下（D91）。
     // 它与待放的那条用的是同一套几何（rayEnds），只是样式退一档。
     if (app.visualOpts.motionRay && app.refRay) {

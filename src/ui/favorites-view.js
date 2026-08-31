@@ -7,6 +7,7 @@ import {
 } from '../data/favorites.js'
 import { parseRLE } from '../engine/rle.js'
 import { compileNotation } from '../engine/rules.js'
+import { neededBoard, BIG_FROM } from '../data/board-sizes.js'
 import { createLifeProbe, PROBE_CHUNK } from '../data/life-probe.js'
 import { prefs } from './prefs.js'
 
@@ -46,6 +47,10 @@ export function createFavorites(app) {
    */
   app.replayLayout = function (entry) {
     const rule = ruleOf(entry.rle)
+    // 中量级经典要更大的盘才摆得下（D94 ②）。换盘会清盘，所以顺序是"先换盘再铺"，
+    // 而且这一步之前必须已经问过用户 —— 问在 openShowEntry 那里，不在这里。
+    const need = boardNeededBy(entry)
+    if (need && app.engine.w < need) app.resizeBoard(need, need, { silent: true })
     app.clear({ silent: true })
     if (rule) app.applyNotation(rule)
     const ok = app.importRleText(entry.rle, { center: true })
@@ -123,10 +128,13 @@ export function createFavorites(app) {
   function renderShowStrip() {
     el.showList.innerHTML = rowsNow().map(r => {
       const on = !!(app.stamp && app.stamp.key === stampKey(r.id))
-      const swap = !sameRuleAsBoard(r)
+      // 两枚小标合成一条：窄屏的卡片只有 96px 宽，两枚分开摆必然打架
+      const tags = []
+      if (!sameRuleAsBoard(r)) tags.push(t('fav.show.swapTag'))
+      if (r.board >= BIG_FROM) tags.push(t('fav.scale.note', { n: r.board }))
       return `
       <button class="card show-card ${on ? 'on' : ''}" data-show="${esc(r.id)}" title="${esc(r.note || r.name)}">
-        ${swap ? `<i class="show-swap">${esc(t('fav.show.swapTag'))}</i>` : ''}
+        ${tags.length ? `<i class="show-swap">${esc(tags.join(' · '))}</i>` : ''}
         <span class="card-text"><b>${esc(r.name)}</b><em>${esc(r.note || '')}</em></span>
       </button>`
     }).join('')
@@ -138,6 +146,33 @@ export function createFavorites(app) {
 
   /** 拿在手上的那个图案用什么 key —— 与卡片高亮共用一处，免得两边算法不一样 */
   function stampKey(id) { return 'show:' + id }
+
+  /**
+   * 解出来的尺寸。**缓存**：深胞那条 RLE 有 16KB，每次重画卡片带都解一遍太浪费，
+   * 而 RLE 是常量，解出来的尺寸不会变。
+   */
+  const dimCache = new Map()
+  function dimsOf(entry) {
+    if (!dimCache.has(entry.id)) {
+      try { const p = parseRLE(entry.rle); dimCache.set(entry.id, { w: p.w, h: p.h }) }
+      catch (e) { dimCache.set(entry.id, null) }
+    }
+    return dimCache.get(entry.id)
+  }
+
+  /** 这一局至少要多大的盘：条目自己声明的档位优先，否则按它的包围盒算 */
+  function boardNeededBy(entry) {
+    const d = dimsOf(entry)
+    const byDims = d ? neededBoard(d.w, d.h) : null
+    return Math.max(entry.board || 0, byDims || 0) || null
+  }
+
+  /** 现在这个盘摆不摆得下 */
+  function fitsBoard(entry) {
+    const d = dimsOf(entry)
+    if (!d) return true                    // 解不出来的交给后面的报错路径，别在这里拦
+    return d.w <= app.engine.w && d.h <= app.engine.h && (!entry.board || app.engine.w >= entry.board)
+  }
 
   /**
    * 这一局的规则与当前棋盘是不是同一个世界。**比指纹，不比字符串** ——
@@ -159,8 +194,10 @@ export function createFavorites(app) {
 
   /** 点一张精彩局卡片。返回走了哪条路（测试与守卫要看它） */
   app.openShowEntry = function (entry) {
+    const sameRule = sameRuleAsBoard(entry)
+    const fits = fitsBoard(entry)
     const plan = showEntryPlan({
-      sameRule: sameRuleAsBoard(entry),
+      sameRule, fits,
       boardEmpty: app.engine.stats.alive === 0,
       running: !!app.running
     })
@@ -173,10 +210,14 @@ export function createFavorites(app) {
     // 异规则：整盘替换。空盘时一点即开，有东西时先问一句（D82：劳动不得被静默清掉）
     const go = () => { if (app.replayLayout(entry)) app.setRunning(true) }
     if (plan === 'replace') { go(); return plan }
+    // 换的是什么，就说什么：规则、盘、还是两样都换。
+    // 三句独立成条而不是拼字符串 —— 拼出来的句子在另一种语言里往往不成话。
+    const need = boardNeededBy(entry)
+    const which = !sameRule && !fits ? 'needBoth' : (!sameRule ? 'needRule' : 'needBoard')
     app.confirmAction({
-      title: t('fav.show.needRule.title'),
-      body: t('fav.show.needRule.body', { name: entry.name, rule: ruleOf(entry.rle) }),
-      yes: t('fav.show.needRule.yes')
+      title: t('fav.show.' + which + '.title'),
+      body: t('fav.show.' + which + '.body', { name: entry.name, rule: ruleOf(entry.rle), n: need || app.engine.w }),
+      yes: t('fav.show.' + which + '.yes')
     }, go)
     return plan
   }

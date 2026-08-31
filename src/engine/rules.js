@@ -158,10 +158,16 @@ export function toBSNotation(lookup, reachable) {
  * 例："B3/S23" → 3 条条款。
  */
 export function parseBS(notation) {
-  const m = /^\s*B([0-8]*)\s*\/\s*S([0-8]*)\s*$/i.exec(notation)
-  if (!m) throw new Error(`无法解析 B/S 记法：${notation}`)
-  const born = [...new Set(m[1].split('').map(Number))].sort((a, b) => a - b)
-  const survive = [...new Set(m[2].split('').map(Number))].sort((a, b) => a - b)
+  // 两种写法都收：B3/S23 与 S23/B3。后者是 LifeWiki 那批 RLE 里实际会出现的形式
+  // （max.rle 的头行就是 `rule = s23/b3`），拒了它等于把一批标准图案挡在门外。
+  // 只认这两种排列，不做通用容错 —— 记法是身份，越松越容易把两个规则读成一个。
+  const bs = /^\s*B([0-8]*)\s*\/\s*S([0-8]*)\s*$/i.exec(notation)
+  const sb = bs ? null : /^\s*S([0-8]*)\s*\/\s*B([0-8]*)\s*$/i.exec(notation)
+  if (!bs && !sb) throw new Error(`无法解析 B/S 记法：${notation}`)
+  const bornStr = bs ? bs[1] : sb[2]
+  const surviveStr = bs ? bs[2] : sb[1]
+  const born = [...new Set(bornStr.split('').map(Number))].sort((a, b) => a - b)
+  const survive = [...new Set(surviveStr.split('').map(Number))].sort((a, b) => a - b)
   return bsToClauses(born, survive)
 }
 

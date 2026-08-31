@@ -4,6 +4,7 @@ import { isTyping } from './input.js'
 import { t, setLang, getLang } from '../i18n/index.js'
 import { prefs } from './prefs.js'
 import { attachNumericEntry, NUMERIC_SLIDERS, CODEC_SLIDERS } from './numeric-entry.js'
+import { isBigBoard, costOf } from '../data/board-sizes.js'
 
 const $ = id => document.getElementById(id)
 
@@ -74,6 +75,32 @@ export function setupControls(app) {
     const n = Number(v)
     app.resizeBoard(n, n)
   })
+
+  /**
+   * 大盘下把三个视觉开关置灰，并说明为什么（D94）。
+   * **不动用户的设置** —— 只是让它们在这一档上不生效，换回小盘原样恢复。
+   * 置灰而不是隐藏：隐藏会让人以为这个功能没了。
+   */
+  const bigNote = document.getElementById('big-board-note')
+  app.syncBigBoard = function () {
+    const n = app.engine.w
+    const big = isBigBoard(n)
+    for (const box of [el.age, el.glow, el.trails]) {
+      box.disabled = big
+      const field = box.closest('.check')
+      if (field) field.classList.toggle('disabled', big)
+    }
+    bigNote.hidden = !big
+    if (big) {
+      // 报的是**这一档实际会跑出来的**成本：视觉层已经关了，就别把它算进去
+      const cost = costOf(n, false)
+      bigNote.textContent = t('board.bigNote', {
+        n, ms: cost ? cost.toFixed(0) : '?', gps: cost ? (1000 / cost).toFixed(0) : '?'
+      })
+    }
+    app.dirty = true
+  }
+  app.syncBigBoard()
 
   /* ---------- 视觉效果（全部只影响渲染层） ---------- */
 

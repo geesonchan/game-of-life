@@ -12,6 +12,8 @@ import { parseRLE, toRLE, boardToRLE } from '../src/engine/rle.js'
 import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_VERSION } from '../src/engine/save.js'
 import { DICT } from '../src/i18n/dict.js'
 import { createPrefs, PREF_KEYS, BOOKMARK_KEYS } from '../src/ui/prefs.js'
+import { BIG_LAYOUTS } from '../src/data/big-layouts.js'
+import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
 import { SnapshotLog } from '../src/data/snapshots.js'
@@ -3443,9 +3445,10 @@ cases.push(
 
       // 排序：内置在前，自存的新的在前（横条上刚存完的那一张就在开头）
       const rows = layoutRows({ layouts: [{ id: 'a', name: '甲' }, { id: 'b', name: '乙' }] }, tr)
-      t.equal(rows.length, BUILTIN_LAYOUTS.length + 2, '三条内置 + 两条自存')
-      t.ok(rows.slice(0, BUILTIN_LAYOUTS.length).every(r => r.builtin), '内置在前')
-      t.equal(rows[BUILTIN_LAYOUTS.length].name, '乙', '后存的排在前面')
+      const builtinCount = BUILTIN_LAYOUTS.length + BIG_LAYOUTS.length
+      t.equal(rows.length, builtinCount + 2, '内置（自家三条 + 中量级经典五条）+ 两条自存')
+      t.ok(rows.slice(0, builtinCount).every(r => r.builtin), '内置在前')
+      t.equal(rows[builtinCount].name, '乙', '后存的排在前面')
     }
   },
   {
@@ -5078,6 +5081,144 @@ cases.push(
       t.ok(/\.modal:not\(\[hidden\]\)/.test(raw), 'Esc 用"有没有模态开着"来判断')
       t.ok(!/getElementById\('rule-modal'\)/.test(raw) && !/getElementById\('intro-modal'\)/.test(raw),
         '不许再挨个点名模态 —— 每新开一个都要回来补一笔，漏了就是 Esc 把手上的图案弄丢')
+    }
+  },
+  {
+    name: '大盘：档位表与界面上的按钮是同一份（D94 ①）',
+    run(t) {
+      const html = readSrc('index.html')
+      const m = /<div class="btn-group grid2" id="in-size">([\s\S]*?)<\/div>/.exec(html)
+      t.ok(!!m, '找得到尺寸按钮组')
+      const vals = [...m[1].matchAll(/data-val="(\d+)"/g)].map(x => Number(x[1]))
+      t.equal(vals.join(','), BOARD_SIZES.join(','), '按钮与 BOARD_SIZES 逐个对上（两份名单必然会分叉，所以只许有一份）')
+      t.ok(vals.includes(1024) && vals.includes(2048), '两个大盘档都在')
+      // 仅完整模式：整个「棋盘」分组挂 data-mode="full"，简洁模式下根本不出现
+      const sec = /<section class="group" data-mode="full">[\s\S]*?id="in-size"/.test(html)
+      t.ok(sec, '尺寸控件在完整模式的分组里 —— 简洁模式看不到大盘档')
+      t.ok(isBigBoard(1024) && isBigBoard(2048) && !isBigBoard(500), '大盘从 1024 起算')
+      t.equal(BIG_FROM, 1024, '大盘门槛写在一处')
+      // 最小够用的档位，不许"差不多够"
+      t.equal(neededBoard(749, 338), 1024, '繁殖者 749×338 → 1024 档')
+      t.equal(neededBoard(499, 516), 1024, '深胞 499×516 → 1024 档')
+      t.equal(neededBoard(27, 27), 100, '小图案不必占大盘')
+      t.equal(neededBoard(4000, 10), null, '所有档都摆不下就如实回 null')
+    }
+  },
+  {
+    name: '大盘：视觉层在这一档不生效，理由有实测数字（D94 ①）',
+    run(t) {
+      const on = { ageColoring: true, glow: true, trails: true, motionRay: true }
+      const small = visualFor(on, 500)
+      t.ok(small.ageColoring && small.glow && small.trails, '小盘一切照旧')
+      const big = visualFor(on, 2048)
+      t.ok(!big.ageColoring && !big.glow && !big.trails, '大盘关掉年龄/余晖/拖尾')
+      t.ok(big.motionRay, '动向线不受影响 —— 它只画一条线，不扫整盘')
+      t.ok(on.ageColoring && on.glow && on.trails, '**不许改用户那份设置**，只是不生效')
+      // 关掉是有账可算的：视觉层那一遍占 2048² 全部开销的四成
+      const withVis = costOf(2048), without = costOf(2048, false)
+      t.ok(withVis > without, '算上视觉层更贵')
+      t.ok((withVis - without) / withVis > 0.25, `视觉层占 ${(100 * (withVis - without) / withVis).toFixed(0)}% —— 值得为它单开一条政策`)
+      // 主循环必须走 visualNow()，不许再直接读 visualOpts
+      const src = stripLiterals(readSrc('src/main.js'))
+      t.ok(/app\.renderer\.draw\(app\.engine, app\.viewport, app\.visual, app\.visualNow\(\)\)/.test(src),
+        '渲染读的是生效后的选项')
+      t.ok(!/app\.visual\.advance\(app\.engine, app\.visualOpts\./.test(src),
+        '推进年龄/余晖也读生效后的选项，否则大盘上关了却还在扫')
+    }
+  },
+  {
+    name: '中量级经典：RLE 身份自洽（D94 ②，D64 入册标准）',
+    run(t) {
+      t.equal(BIG_LAYOUTS.length, 5, '五条')
+      const lifeFp = compileNotation('B3/S23').fingerprint
+      for (const e of BIG_LAYOUTS) {
+        const p = parseRLE(e.rle)
+        let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1
+        for (const [x, y] of p.cells) {
+          if (x < x0) x0 = x; if (y < y0) y0 = y
+          if (x > x1) x1 = x; if (y > y1) y1 = y
+        }
+        // 头行写的尺寸与真正解出来的包围盒必须一致 —— 这是"这份 RLE 没被截断"的凭据
+        t.equal(`${p.w}×${p.h}`, `${x1 - x0 + 1}×${y1 - y0 + 1}`, `${e.id} 头行尺寸与解出来的包围盒一致`)
+        t.equal(compileNotation(p.rule).fingerprint, lifeFp, `${e.id} 是标准生命游戏规则`)
+        t.ok(e.board >= neededBoard(p.w, p.h), `${e.id} 声明的档位摆得下它自己`)
+        t.ok(e.board >= BIG_FROM, `${e.id} 是大盘展品`)
+        // 出处与署名照录，不许"顺手清理"掉
+        t.ok(/#N /.test(e.rle) && /#O /.test(e.rle), `${e.id} 保留了 #N 名称与 #O 作者行`)
+        t.ok(e.scale === 'big', `${e.id} 标了规模档`)
+      }
+      // 中英 + 简洁语域三样齐备
+      for (const lang of ['zh', 'en']) {
+        for (const e of BIG_LAYOUTS) {
+          for (const suffix of ['', '.desc', '.life']) {
+            t.ok((e.nameKey + suffix) in DICT[lang], `${lang} 缺 ${e.nameKey}${suffix}`)
+            t.ok((e.nameKey + suffix + '.simple') in DICT[lang], `${lang} 缺 ${e.nameKey}${suffix}.simple`)
+          }
+          // 生平那一行必须说清口径：多大的盘
+          t.ok(/1024|2048/.test(DICT[lang][e.nameKey + '.life']), `${lang} 的 ${e.nameKey}.life 要写明在多大的盘上量的`)
+        }
+      }
+    }
+  },
+  {
+    name: '中量级经典：生平是实跑出来的（D94 ②）',
+    run(t) {
+      // 完整口径跑一遍要一分多钟（繁殖者 4000 代 78 秒），进不了测试套件。
+      // 所以这里钉的是**同一条路上的一个便宜检查点**：同样的摆位、同样的档位、跑 60 代。
+      // 它挡得住"引擎变了而卡片上的数字没跟着变"这件事 —— 那正是这条测试要防的。
+      const CHECK = {
+        'builtin:max': { start: 187, at60: 1665 },
+        'builtin:breeder': { start: 4060, at60: 4271 },
+        'builtin:deepcell': { start: 5449, at60: 5453 },
+        'builtin:primer': { start: 2953, at60: 4152 },
+        'builtin:hacksaw': { start: 687, at60: 940 }
+      }
+      for (const e of BIG_LAYOUTS) {
+        const p = parseRLE(e.rle)
+        const n = e.board
+        const eng = new LifeEngine(n, n, { rule: lifeRule(), boundary: 'dead' })
+        const ox = (n - p.w) >> 1, oy = (n - p.h) >> 1
+        for (const [x, y] of p.cells) eng.set(ox + x, oy + y, 1)
+        eng.stats.alive = eng.countAlive()
+        t.equal(eng.stats.alive, CHECK[e.id].start, `${e.id} 起始格数`)
+        for (let g = 0; g < 60; g++) eng.step()
+        t.equal(eng.stats.alive, CHECK[e.id].at60, `${e.id} 第 60 代格数`)
+      }
+    }
+  },
+  {
+    name: '规则记法：B3/S23 与 S23/B3 是同一个世界（D94 ②）',
+    run(t) {
+      // LifeWiki 那批 RLE 里 max.rle 的头行就写作 `rule = s23/b3`。
+      // 认不出它，等于把一批标准图案挡在门外 —— 这条是被真实数据逼出来的。
+      const a = compileNotation('B3/S23'), b = compileNotation('s23/b3')
+      t.equal(a.fingerprint, b.fingerprint, '两种写法同一个指纹')
+      t.equal(b.notation, 'B3/S23', '规整回 B/S 的写法')
+      t.equal(compileNotation('S/B2').fingerprint, compileNotation('B2/S').fingerprint, 'Seeds 两种写法也一致')
+      let bad = false
+      try { compileNotation('B3S23') } catch (e) { bad = true }
+      t.ok(bad, '只认这两种排列，不做通用容错 —— 越松越容易把两个规则读成一个')
+    }
+  },
+  {
+    name: '精彩局：摆不下的不许默默截断（D94 ②）',
+    run(t) {
+      t.equal(showEntryPlan({ sameRule: true, fits: true, boardEmpty: false, running: false }), 'stamp',
+        '同规则 + 摆得下 = 拿在手上')
+      t.equal(showEntryPlan({ sameRule: true, fits: false, boardEmpty: false, running: false }), 'confirm',
+        '同规则但摆不下 —— 得换盘，而换盘就是清盘，所以要问')
+      t.equal(showEntryPlan({ sameRule: true, fits: false, boardEmpty: true, running: false }), 'replace',
+        '摆不下但盘是空的：没有劳动可毁，直接换')
+      const src = stripLiterals(readSrc('src/ui/favorites-view.js'))
+      t.ok(/resizeBoard\(need, need, \{ silent: true \}\)/.test(src), '复现时先把盘换到够大再铺')
+      // 三种理由三句话，不拼字符串
+      for (const which of ['needRule', 'needBoard', 'needBoth']) {
+        for (const lang of ['zh', 'en']) {
+          t.ok((`fav.show.${which}.body`) in DICT[lang], `${lang} 缺 fav.show.${which}.body`)
+          t.ok((`fav.show.${which}.body.simple`) in DICT[lang], `${lang} 缺简洁语域的 fav.show.${which}.body`)
+        }
+      }
+      t.ok(/\{n\}/.test(DICT.zh['fav.show.needBoard.body']), '换盘那句要写明换成多大')
     }
   },
   {

@@ -21,6 +21,8 @@ export const RECENT_SHOWN = 5
  * 每条都按 D64 的互动型标准带实测生平，并配回归测试。
  * `nameKey` 走词典（含简洁语域）；`life` 是实测数字，测试会钉住。
  */
+import { BIG_LAYOUTS } from './big-layouts.js'
+
 export const BUILTIN_LAYOUTS = Object.freeze([
   {
     id: 'builtin:wildfire',
@@ -69,8 +71,9 @@ export function ruleOf(rle) {
  * 只有换规则才需要整盘替换：规则一换，当前这盘就已经是另一个世界的东西了，
  * 盖上去没有意义。同规则则完全没有清盘的理由 —— 那是过去顺手写下的破坏，不是需求。
  */
-export function showEntryPlan({ sameRule, boardEmpty, running }) {
-  if (sameRule) return 'stamp'
+export function showEntryPlan({ sameRule, boardEmpty, running, fits = true }) {
+  // 摆得下、又是同一个世界，才谈得上"盖上去"。摆不下的只能换盘，而换盘就是清盘（D94 ②）
+  if (sameRule && fits) return 'stamp'
   return (boardEmpty && !running) ? 'replace' : 'confirm'
 }
 
@@ -204,14 +207,17 @@ export function lifeText(life, tr) {
  * 只有生平那一行两边同源：数字是系统按同一口径跑出来的，措辞才走词典。
  */
 export function layoutRow(entry, tr) {
+  // board / scale 只有中量级经典有（D94 ②）：卡片要据此标出规模档，
+  // 点它的时候也要据此判断"现在这个盘摆不摆得下"
+  const size = { board: entry.board || 0, scale: entry.scale || '' }
   if (entry.nameKey) {
     return {
-      id: entry.id, rle: entry.rle, builtin: true,
+      id: entry.id, rle: entry.rle, builtin: true, ...size,
       name: tr(entry.nameKey), note: tr(entry.nameKey + '.desc'), life: tr(entry.nameKey + '.life')
     }
   }
   return {
-    id: entry.id, rle: entry.rle, builtin: false,
+    id: entry.id, rle: entry.rle, builtin: false, ...size,
     name: entry.name, note: entry.note || '', life: lifeText(entry.life, tr)
   }
 }
@@ -221,7 +227,9 @@ export function layoutRow(entry, tr) {
  * 新的在前是为了取用区那条横条：刚存完的那一局就在开头，不必横滑到尽头去找（D83 §3）。
  */
 export function layoutRows(state, tr) {
-  const builtin = BUILTIN_LAYOUTS.map(b => layoutRow(b, tr))
+  // 顺序在表达来源：先三条自家摆的小局，再五条中量级经典，最后才是用户自存的。
+  // 经典排在自存之前而不是最后 —— 它们与内置局同属"随代码发布、删不掉"的那一类。
+  const builtin = BUILTIN_LAYOUTS.concat(BIG_LAYOUTS).map(b => layoutRow(b, tr))
   const mine = (state.layouts || []).slice().reverse().map(e => layoutRow(e, tr))
   return builtin.concat(mine)
 }

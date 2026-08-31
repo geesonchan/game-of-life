@@ -103,6 +103,7 @@ src/ui/       控件绑定与画布交互
   explorer-view.js  规则勘探器（批量结果表 / 候选名单 / 一键复现）
   favorites-view.js 收藏面板与简洁模式的「精彩局」卡片条
   zoom-bar.js       画布右缘的缩放滑条（浮层、播放时淡出、HUD 倍数可输入）
+  page-zoom.js      页面真被浏览器放大时的兜底提示（visualViewport）
 src/workers/
   tower-builder.js  时间之塔的构建 Worker（只搬运，逻辑在 data/tower.js）
   explorer.js       规则勘探的批量 Worker（同样只搬运）

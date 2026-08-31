@@ -2,6 +2,10 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
+  <!-- 不写 maximum-scale / user-scalable=no：自 iOS 10 起 Safari 有意忽略这两个值，
+       在出问题的那个平台上它根本不生效；而在生效的平台（Android Chrome）上，
+       它关掉的是一项真实的无障碍能力（WCAG 1.4.4）。病因是双击/捏合落在控件上，
+       用 touch-action 精确治，见 docs/decisions.md D85 ②。 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- 图标：相对路径，跟 vite 的 base:'./' 一致，放子目录也能找到 -->
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
@@ -130,6 +134,8 @@
           </div>
           <button class="zoom-step" id="btn-zoom-out" data-i18n-title="tip.zoomOut">－</button>
         </div>
+        <!-- 页面真被浏览器放大了的兜底提示（D85 ②c）：告诉用户怎么还原，别让他困在里面 -->
+        <p class="page-zoom-hint" id="page-zoom-hint" hidden data-i18n="hint.pageZoomed">界面被放大了 —— 用两根手指在画布外捏一下就能还原。</p>
         <div class="toast" id="toast" hidden></div>
       </main>
 

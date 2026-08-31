@@ -28,6 +28,7 @@ import { pinchDelta, strokeVerdict, PROMOTE_MS, nudgeCell } from '../src/ui/inpu
 import { clampToRange, NUMERIC_SLIDERS, CODEC_SLIDERS } from '../src/ui/numeric-entry.js'
 import { Viewport, fitScaleOf, zoomFromSlider, sliderFromZoom, ZOOM_STEPS } from '../src/render/viewport.js'
 import { zoomLabel, parseZoomInput, DIM_AFTER_MS, ZOOM_BUTTON_STEP } from '../src/ui/zoom-bar.js'
+import { isPageZoomed, PAGE_ZOOM_THRESHOLD } from '../src/ui/page-zoom.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -3696,7 +3697,8 @@ cases.push(
       // 竖向滑块：现代写法与老 WebKit 写法都要写
       const vert = /#in-zoom \{([^}]*)\}/.exec(css)
       t.ok(!!vert && /writing-mode:\s*vertical/.test(vert[1]), '竖排要有 writing-mode 写法')
-      t.ok(/-webkit-appearance:\s*slider-vertical/.test(vert[1]), '老 WebKit 的竖排写法也要留着')
+      t.ok(/@supports not \(writing-mode: vertical-lr\)[\s\S]{0,200}slider-vertical/.test(css),
+        '老引擎的竖排写法要留着，但只能放在 @supports 兜底里 —— 自绘细轨要 appearance:none，两者不能同写（D85 ①）')
     }
   },
   {
@@ -3780,6 +3782,125 @@ cases.push(
       // 最小档就是「适配视图」，提示里也要说
       t.ok(/适配视图/.test(DICT.zh['tip.zoom']), '中文提示要点出最下面一档是适配视图')
       t.ok(/fit view/i.test(DICT.en['tip.zoom']), '英文提示同理')
+    }
+  },
+  {
+    name: '触摸行为：窄屏每一类可交互元素都要声明 touch-action（D85 ②a）',
+    run(t) {
+      // 不声明的，浏览器替你做主：iOS Safari 把落在控件上的双击当"放大页面"、
+      // 两指当"缩放页面"，放大之后用户往往不知道怎么还原 —— 这正是这一轮的病。
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+
+      // 规则里的选择器清单
+      const rule = /([^{}]+)\{\s*touch-action:\s*manipulation;\s*\}/.exec(css)
+      t.ok(!!rule, 'CSS 里应有一条给可交互元素兜底的 touch-action 规则')
+      const selectors = rule[1]
+
+      // index.html 里真正出现的可交互元素类型，逐个要求被覆盖
+      const KINDS = ['button', 'input', 'select', 'textarea', 'label', 'a']
+      const present = KINDS.filter(tag => new RegExp('<' + tag + '[\\s>]').test(html))
+      t.ok(present.includes('button') && present.includes('input'), '至少应扫到按钮与输入框')
+      for (const tag of present)
+        t.ok(new RegExp('(^|[,\\s])' + tag + '([,\\s]|$)').test(selectors),
+          `index.html 里有 <${tag}>，touch-action 规则却没覆盖它`)
+      // 数值输入会给标签动态加 role="button"，那也是可交互元素
+      t.ok(/\[role="button"\]/.test(selectors), 'role="button" 的元素也要覆盖')
+      t.ok(/attributes?|setAttribute\('role', 'button'\)/.test(readSrc('src/ui/numeric-entry.js')),
+        '数值输入确实会加 role="button"（覆盖它才有意义）')
+
+      // 直接操作型控件各自的取值
+      t.ok(/#board \{[\s\S]*?touch-action:\s*none/.test(css), '画布自己吃掉全部手势')
+      t.ok(/#in-zoom, \.zoombar, \.zoombar \.zoom-step \{[^}]*touch-action:\s*none/.test(css),
+        '缩放滑条整块浮层都不让浏览器接管 —— 这一轮的病就发在它身上')
+      t.ok(/input\[type="range"\] \{[^}]*touch-action:\s*pan-y/.test(css),
+        '抽屉里的横向滑块取 pan-y：竖着划仍能滚抽屉，捏合被挡掉')
+      // auto 等于"什么都没说"，一个都不许留
+      t.ok(!/touch-action:\s*auto/.test(css), '不许有 touch-action: auto —— 那等于没声明')
+    }
+  },
+  {
+    name: '触摸行为：viewport 不去禁用页面缩放（D85 ②b 的裁决）',
+    run(t) {
+      const html = readSrc('index.html')
+      const meta = /<meta name="viewport"[^>]*>/.exec(html)
+      t.ok(!!meta, '应有 viewport meta')
+      // 裁决：不写 maximum-scale / user-scalable=no。
+      // 一是它在出问题的那个平台（iOS Safari）自 iOS 10 起被有意忽略，根本不生效；
+      // 二是在生效的平台上它关掉的是一项真实的无障碍能力（WCAG 1.4.4）。
+      // 把裁决钉在这里，是因为"顺手加上 maximum-scale=1"是最容易被重新犯的那一步。
+      t.ok(!/maximum-scale/.test(meta[0]), 'viewport 里不许写 maximum-scale（D85 ②b）')
+      t.ok(!/user-scalable/.test(meta[0]), 'viewport 里不许写 user-scalable（D85 ②b）')
+      t.ok(/width=device-width/.test(meta[0]) && /initial-scale=1/.test(meta[0]), '该有的两项照旧')
+      // 理由要写在旁边，不能只活在文档里
+      t.ok(/D85/.test(html.slice(Math.max(0, meta.index - 400), meta.index)),
+        'meta 旁边要留一句为什么不禁用缩放，并指向 D85')
+    }
+  },
+  {
+    name: '页面被放大之后的兜底提示（D85 ②c）',
+    run(t) {
+      t.equal(PAGE_ZOOM_THRESHOLD, 1.05, '阈值 1.05：静息值常有 1.0000001 这种毛刺')
+      t.equal(isPageZoomed(1), false, '没放大就不提示')
+      t.equal(isPageZoomed(1.0000001), false, '毛刺不算放大')
+      t.equal(isPageZoomed(1.04), false, '阈值以下不提示')
+      t.equal(isPageZoomed(1.06), true, '超过阈值才提示')
+      t.equal(isPageZoomed(2.4), true, '放大很多当然提示')
+      // 拿不到读数时宁可不提示，也不能对着没放大的人喊
+      for (const bad of [undefined, null, NaN, 'abc', {}])
+        t.equal(isPageZoomed(bad), false, `读不出倍数（${String(bad)}）时不提示`)
+
+      const html = readSrc('index.html')
+      t.ok(/id="page-zoom-hint"/.test(html), '提示元素要写在 HTML 里（接线守卫扫得到）')
+      t.ok(/data-i18n="hint\.pageZoomed"/.test(html), '文案走词典')
+      const src = stripLiterals(readSrc('src/ui/page-zoom.js'))
+      t.ok(/addEventListener/.test(src) && /resize/.test(readSrc('src/ui/page-zoom.js')),
+        '要挂在 visualViewport 的 resize 上')
+      // 兜底本身不能成为新的故障点：没有 visualViewport 的浏览器要能照常开机
+      t.ok(/if \(view && view\.addEventListener\)/.test(src),
+        '老浏览器没有 visualViewport，那就什么也不做')
+      for (const lang of ['zh', 'en']) {
+        t.ok(typeof DICT[lang]['hint.pageZoomed'] === 'string', `${lang} 缺 hint.pageZoomed`)
+        t.ok(typeof DICT[lang]['hint.pageZoomed.simple'] === 'string', `${lang} 缺简洁语域`)
+      }
+      // 提示要告诉用户**怎么还原**，不是只说"你被放大了"
+      t.ok(/捏/.test(DICT.zh['hint.pageZoomed']), '中文要说清"捏一下就能还原"')
+      t.ok(/pinch/i.test(DICT.en['hint.pageZoomed']), '英文同理')
+    }
+  },
+  {
+    name: '缩放滑条：视觉尺寸与触控尺寸分离（D85 ①）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      // 触控区：一格不缩
+      const step = /\.zoombar \.zoom-step \{([^}]*)\}/.exec(css)
+      t.ok(!!step && /width:\s*44px/.test(step[1]) && /height:\s*44px/.test(step[1]),
+        '＋/－ 的触控区仍是 44×44')
+      const range = /#in-zoom \{([^}]*)\}/.exec(css)
+      t.ok(!!range && /width:\s*44px/.test(range[1]), '滑条的触控区宽度仍是 44px')
+
+      // 视觉：轨道细、滑块小 —— 它是辅助控件，不该和棋盘争眼
+      const track = /#in-zoom::-webkit-slider-runnable-track \{([^}]*)\}/.exec(css)
+      const thumb = /#in-zoom::-webkit-slider-thumb \{([^}]*)\}/.exec(css)
+      t.ok(!!track && !!thumb, '轨道与滑块都要自绘（原生的太粗）')
+      const trackW = Number((/width:\s*(\d+)px/.exec(track[1]) || [])[1])
+      const thumbW = Number((/width:\s*(\d+)px/.exec(thumb[1]) || [])[1])
+      t.ok(trackW > 0 && trackW <= 6, `轨道要细（实为 ${trackW}px，限 ≤6px）`)
+      t.ok(thumbW > 0 && thumbW <= 16, `滑块要小（实为 ${thumbW}px，限 ≤16px）`)
+      t.ok(trackW < 44 && thumbW < 44, '视觉尺寸必须小于触控尺寸 —— 这两件事分开正是这一条的要点')
+      // 火狐那套伪元素也要跟着做小，否则同一个控件两副面孔
+      t.ok(/#in-zoom::-moz-range-track \{[^}]*width:\s*3px/.test(css), 'Firefox 的轨道同样要细')
+
+      // 浮层整体存在感降一档：底板透明度更低
+      const bar = /\.zoombar \{([^}]*)\}/.exec(css)
+      const alpha = Number((/background:\s*rgba\([^)]*?,\s*([\d.]+)\)/.exec(bar[1]) || [])[1])
+      t.ok(alpha > 0 && alpha <= 0.5, `浮层底板要更透（实为 ${alpha}，限 ≤0.5）`)
+      t.ok(/border:\s*1px solid rgba\(/.test(bar[1]), '边框也要淡下来（用 rgba 而不是实色变量）')
+
+      // 自绘要 appearance:none，于是老写法只能进 @supports 兜底 —— 两者不能同时写
+      t.ok(/#in-zoom \{[^}]*appearance:\s*none/.test(css), '自绘轨道要 appearance: none')
+      t.ok(/@supports not \(writing-mode: vertical-lr\)[\s\S]{0,200}slider-vertical/.test(css),
+        '没有竖排 writing-mode 的老引擎要有兜底')
     }
   },
   {

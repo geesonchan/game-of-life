@@ -11,6 +11,7 @@ import { RingSeries } from './data/series.js'
 import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
 import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
+import { watchPageZoom } from './ui/page-zoom.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
@@ -451,6 +452,7 @@ app.ruleEditor = createRuleEditor(app)
 document.getElementById('btn-rule').addEventListener('click', () => app.ruleEditor.open())
 app.records = setupRecords(app)
 app.zoomBar = setupZoomBar(app)
+app.pageZoom = watchPageZoom(app)     // 页面真被浏览器放大了就提示怎么还原（D85 ②c）
 app.io = setupIO(app)
 app.favorites = createFavorites(app)
 app.library = setupLibrary(app)

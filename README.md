@@ -91,6 +91,7 @@ src/data/     数据记录，纯逻辑零 DOM
   explorer.js       规则勘探：单局观测、结局七类分类、多局总判与排序、B/S 采样
   critical.js       临界实验室的密度轴：一档一个事实单位、跨越点二分、涌现窗口
   twin.js           双宇宙：只差一格的两盘并排跑，分道扬镳与合并的判据
+  lockin.js         锁定时刻：倒扫找最后一个还能被一格翻掉结局的代数（只出一个数字）
   favorites.js      收藏（整局 + 规则）：校验、预算、导入导出、卡片数据
   life-probe.js     生平探针：按内置局同一口径（默认盘 + 自家检测器）实跑一条收藏
 src/i18n/     中英词典与运行时（界面上的每个字都在这里）
@@ -112,6 +113,7 @@ src/workers/
   tower-builder.js  时间之塔的构建 Worker（只搬运，逻辑在 data/tower.js）
   explorer.js       规则勘探的批量 Worker（同样只搬运）
   critical.js       密度扫描 Worker（一档一报，细化轮次也在这里跑）
+  lockin.js         锁定时刻的一次性勘探任务 Worker
 src/main.js   装配与主循环
 tests/        验收用例（Vitest 与 jsc 运行器共用）
 ```

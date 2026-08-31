@@ -29,10 +29,13 @@ export function createCriticalView(app) {
     start: $('crit-start'), stop: $('crit-stop'),
     twinPick: $('crit-twin-pick'), twinA: $('crit-twin-a'), twinB: $('crit-twin-b'),
     twinChart: $('crit-twin-chart'), twinNote: $('crit-twin-note'),
-    twinRun: $('crit-twin-run'), twinReset: $('crit-twin-reset')
+    twinRun: $('crit-twin-run'), twinReset: $('crit-twin-reset'),
+    lockRun: $('crit-lock-run'), lockNumber: $('crit-lock-number'), lockNote: $('crit-lock-note')
   }
 
   let worker = null
+  let lockWorker = null
+  let lock = null           // 锁定时刻的结果（只出一个数字）
   let samples = []          // CriticalSample[]，按密度升序
   let metric = 'final'
   let open = false
@@ -317,6 +320,54 @@ export function createCriticalView(app) {
       `<button data-twin="${ex.key}" class="${ex.key === twinKey ? 'on' : ''}">${t(ex.nameKey)}</button>`).join('')
   }
 
+  /* ---------------- 锁定时刻（D86 ③） ---------------- */
+
+  /**
+   * 一次性勘探任务：往回找最后一个还能被一格翻掉结局的代数。
+   * 判据、口径与倒扫的理由都在 data/lockin.js 里 —— 这里只负责按钮、进度和那一个数字。
+   */
+  function runLockIn() {
+    el.lockRun.disabled = true
+    el.lockNumber.textContent = '…'
+    el.lockNote.textContent = t('crit.lockRunning')
+    if (lockWorker) lockWorker.terminate()
+    lockWorker = new Worker(new URL('../workers/lockin.js', import.meta.url), { type: 'module' })
+    lockWorker.onmessage = ev => {
+      const m = ev.data
+      if (m.type === 'progress') {
+        el.lockNote.textContent = t('crit.lockProgress', { done: m.done, total: m.total })
+      } else if (m.type === 'done') {
+        lock = m.result
+        finishLock()
+        renderLock()
+      } else if (m.type === 'error') {
+        finishLock()
+        el.lockNumber.textContent = '—'
+        app.toast(m.message)
+      }
+    }
+    lockWorker.postMessage({ type: 'lockin' })
+  }
+
+  function finishLock() {
+    el.lockRun.disabled = false
+    if (lockWorker) { lockWorker.terminate(); lockWorker = null }
+  }
+
+  function renderLock() {
+    if (!lock) { el.lockNumber.textContent = '—'; el.lockNote.textContent = t('crit.lockIdle'); return }
+    const s = lock.spec
+    el.lockNumber.textContent = lock.gen < 0 ? t('crit.lockNone') : t('crit.lockGen', { gen: lock.gen })
+    el.lockNote.textContent = lock.gen < 0
+      ? t('crit.lockNoneNote', { scanned: lock.scanned, probes: lock.probes })
+      : t('crit.lockNote', {
+        gen: lock.gen, settle: lock.settleGen, ahead: lock.settleGen - lock.gen,
+        baseline: t('out.' + lock.baseline), to: t('out.' + (lock.flip.to || lock.baseline)),
+        probes: lock.probes, scanned: lock.scanned,
+        board: s.board, density: s.density, seed: s.seed
+      })
+  }
+
   /* ---------------- 渲染总入口 ---------------- */
 
   function render() {
@@ -325,6 +376,7 @@ export function createCriticalView(app) {
     renderCurve()
     renderPreview()
     renderTwinPick()
+    renderLock()
     el.stat.textContent = samples.length
       ? t('crit.stat', { n: samples.length, windows: emergenceWindows(samples).map(x => `${x.from.toFixed(2)}–${x.to.toFixed(2)}`).join(' ') || '—' })
       : ''
@@ -360,10 +412,13 @@ export function createCriticalView(app) {
   })
   el.twinRun.addEventListener('click', runTwin)
   el.twinReset.addEventListener('click', resetTwin)
+  el.lockRun.addEventListener('click', runLockIn)
 
   return {
     show() { open = true; el.view.hidden = false; if (!twin) resetTwin(); render() },
     hide() { open = false; el.view.hidden = true; stopTwin() },
+    /** 供测试与调试：锁定时刻的结果 */
+    lock: () => lock,
     relocalize() { if (open) render() },
     /** 供测试与调试：当前扫描结果 */
     samples: () => samples.slice()

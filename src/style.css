@@ -1409,6 +1409,12 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 .crit-main { flex: 1; min-width: 0; overflow-y: auto; padding: 12px 14px; }
 .crit-block { margin-bottom: 18px; }
 .crit-run-row { margin-bottom: 10px; }
+/* 锁定时刻只出一个数字，那就让它像个数字 */
+.crit-lock-number {
+  margin: 8px 0 4px;
+  font-size: 30px; line-height: 1.2; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
 .crit-canvas { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #12151c; }
 
 /* 小多图带：一档一张末态缩略图，横滑。与取用区的卡片带同一种姿势（D75 ①） */

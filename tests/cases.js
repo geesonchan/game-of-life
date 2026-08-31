@@ -33,6 +33,7 @@ import { CRITICAL_SPEC, CRITICAL_CLASSIFY, EMERGENCE_MIN_GENS, REFINE_WIDTH, den
   observeDensity, isEmergent, isLongTransient, findCrossings, planRefinements,
   emergenceWindows, round3, CURVE_METRICS } from '../src/data/critical.js'
 import { createTwin, measure, diffCells, TWIN, TWIN_EXAMPLES } from '../src/data/twin.js'
+import { LOCKIN_SPEC, findLockIn, baselineStates, canFlipAt, candidateCells, runToEnd } from '../src/data/lockin.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -4166,6 +4167,90 @@ cases.push(
       // 图注要答得上"这个数是被什么裁出来的"
       t.ok(/\{board\}/.test(DICT.zh['crit.specNote']) && /\{seed\}/.test(DICT.zh['crit.specNote']) &&
         /\{cap\}/.test(DICT.zh['crit.specNote']), '口径注里要写全盘面、种子、代数上限')
+    }
+  },
+  {
+    name: '临界实验室：锁定时刻只出一个数字（D86 ③）',
+    run(t) {
+      // 口径：死边界是实测逼出来的 —— 环形盘上一格能生出滑翔机绕盘乱撞，
+      // 两个结局不同的基准局在各自最后一代都仍翻得动，"锁定"根本不存在（D86 §11）。
+      t.equal(LOCKIN_SPEC.boundary, 'dead', '锁定时刻的口径必须是死边界')
+      t.equal(LOCKIN_SPEC.board, 48, '小盘：这是一次性勘探任务，要在几十秒内出一个数字')
+
+      const r = findLockIn()
+      t.equal(r.baseline, 'shortCycle', '基准局以短周期循环收场')
+      t.equal(r.settleGen, 586, '基准局第 586 代定型')
+      t.equal(r.gen, 581, '命运在第 581 代锁定 —— 比定型早 5 代')
+      t.equal(r.flip.to, 'still', '那一格翻过去，结局从短周期变成静止')
+      t.equal(r.scanned, 6, '往回扫了 6 代就找到了')
+      t.equal(r.probes, 1228, '一共试了 1228 格')
+
+      // 抽样上限在尾部根本没起作用：候选集本身不足 400 格，把上限放到 5000 答案一模一样。
+      // 也就是说这个数在尾部是**穷举**出来的，不是抽出来的 —— 这条值得钉住。
+      const full = findLockIn({ sampleCells: 5000 })
+      t.equal(full.gen, r.gen, '把抽样上限放到 5000，答案不变')
+      t.equal(full.probes, r.probes, '试的格数也一样 —— 尾部的候选集本来就不足 400')
+
+      // 候选格只取活格与它们的 8 邻域（真空里翻一格必然自灭，试它是白花钱）
+      const n = 8
+      const cells = new Uint8Array(n * n)
+      cells[9] = 1                                   // (1,1) 一个活格
+      const cand = candidateCells(cells, n, 100, 1)
+      t.equal(cand.length, 9, '一个活格 → 它自己 + 8 个邻居')
+      t.ok(cand.includes(9) && cand.includes(0) && cand.includes(18), '邻域取对了')
+      // 抽样必须可复现：同一颗种子必得同一批格子，否则这个数字每跑一次都不一样
+      const big = new Uint8Array(n * n).fill(1)
+      t.equal(candidateCells(big, n, 10, 42).join(','), candidateCells(big, n, 10, 42).join(','),
+        '同种子同结果')
+      t.ok(candidateCells(big, n, 10, 42).join(',') !== candidateCells(big, n, 10, 43).join(','),
+        '换种子换一批')
+    }
+  },
+  {
+    name: '临界实验室：不用二分是因为这条性质不单调（D86 §11 的证据）',
+    run(t) {
+      // 方案里原本写的是"代数上二分"。二分要求"越晚越难翻盘"，而实测它不成立：
+      // 同一局里第 971 代翻不动，第 1000 代又翻得动。这两条就是改成倒扫的理由。
+      const spec = { ...LOCKIN_SPEC, boundary: 'torus', density: 0.30, seed: 4271 }
+      const states = baselineStates(spec)
+      const base = runToEnd(states[0], spec)
+      t.equal(base.outcome, 'shortCycle', '环形口径下的基准局')
+      t.equal(base.gens, 1029, '第 1029 代定型')
+      // 实测这一段是交替的：1001 不动、1002 动、1005 不动、1006 动…… 翻得动与翻不动沿代数交替出现。
+      t.equal(canFlipAt(states, 1001, base.outcome, spec).flippable, false, '第 1001 代翻不动')
+      t.equal(canFlipAt(states, 1002, base.outcome, spec).flippable, true, '第 1002 代又翻得动')
+      // 源码上钉住：不许再出现二分
+      const src = stripLiterals(readSrc('src/data/lockin.js'))
+      t.ok(/for \(let gen = last; gen >= stop; gen--\)/.test(src), '要从最后一代往回扫')
+      t.ok(!/lo = mid \+ 1|hi = mid - 1/.test(src), '不许再用二分 —— 它在这条性质上给出的是运气，不是事实')
+    }
+  },
+  {
+    name: '接线守卫：锁定时刻是一次性任务，只出一个数字（D86 ③）',
+    run(t) {
+      const html = readSrc('index.html')
+      for (const id of ['crit-lock-run', 'crit-lock-number', 'crit-lock-note'])
+        t.ok(html.includes(`id="${id}"`), `index.html 缺 #${id}`)
+      // 它属于桌面那一档（手机首版只留小多图带）
+      const block = /<section class="crit-block crit-desk">\s*<h3[^>]*data-i18n="crit\.lockTitle"/.test(html)
+      t.ok(block, '锁定时刻那一节要挂 crit-desk —— 手机上不出现')
+      // Worker 只搬运
+      const wk = stripLiterals(readSrc('src/workers/lockin.js'))
+      t.ok(/findLockIn/.test(wk), 'Worker 调的是 data 层的纯函数')
+      t.ok(!/new LifeEngine|classifyRun/.test(wk), 'Worker 里不许自己跑引擎或写判据')
+      t.ok(/postMessage\(\{ type: 'progress'/.test(readSrc('src/workers/lockin.js')),
+        '倒扫要报进度 —— 这件事可能几十秒，用户得看得见它在动')
+      // 词条：中英 + 简洁语域
+      for (const lang of ['zh', 'en']) {
+        for (const k of ['crit.lockTitle', 'crit.lockLead', 'crit.lockRun', 'crit.lockGen', 'crit.lockNote', 'crit.lockNone'])
+          t.ok(typeof DICT[lang][k] === 'string', `${lang} 缺 ${k}`)
+        t.ok(typeof DICT[lang]['crit.lockTitle.simple'] === 'string', `${lang} 缺简洁语域`)
+      }
+      // 图注要把口径与两处判断讲清楚：为什么死边界、为什么不二分
+      t.ok(/死边界/.test(DICT.zh['crit.lockNote']) && /不用二分/.test(DICT.zh['crit.lockNote']),
+        '中文图注要说清死边界与不二分的理由')
+      t.ok(/dead edge/i.test(DICT.en['crit.lockNote']) && /bisection/i.test(DICT.en['crit.lockNote']),
+        '英文图注同理')
     }
   },
   {

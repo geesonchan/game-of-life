@@ -13,9 +13,18 @@ import { lifeRule } from '../engine/rules.js'
 import { TerminationDetector } from './detector.js'
 import { classifyRun, relativeVariation } from './explorer.js'
 
-/** 口径三件套 + 种子。改这里就等于改这个专题里的每一个数。 */
+/**
+ * 口径三件套 + 种子。改这里就等于改这个专题里的每一个数。
+ *
+ * **代数上限 8000 是量出来的，不是拍的**（D86 §9）：
+ * 第一版取 5000，于是 0.45 / 0.55 / 0.65 / 0.82 四档被记成「跑满未定型」。
+ * 把上限提到 5 万重跑，这四档分别在第 5663 / 5782 / 6744 / 5120 代定型 ——
+ * 0.82 只差 120 代。也就是说那四个「长暂态」是上限太低造出来的，不是临界慢化。
+ * 8000 = 实测最长的 6744 再留两成余量；整条轴的耗时几乎没变（14.4s → 14.9s），
+ * 换来的是这条轴上**一档假的长暂态都不剩**。
+ */
 export const CRITICAL_SPEC = Object.freeze({
-  board: 200, boundary: 'torus', genCap: 5000, seed: 4271
+  board: 200, boundary: 'torus', genCap: 8000, seed: 4271
 })
 
 /**
@@ -135,8 +144,11 @@ export function isEmergent(sample) {
 
 /**
  * 长暂态：跑满代数上限仍未定型。
- * 0.82 那一档就是（32736 格起步，5000 代还没定下来，此时仍有 1081 格）——
- * 疑似临界慢化，作为待研究记在 D86 补记里，图上单独标出来。
+ *
+ * 这个标记留着，但它现在的含义比第一版诚实：**它只说「这一档在上限内没定下来」**。
+ * 第一版把它当成「疑似临界慢化」的证据，实测（上限提到 5 万）证伪了 ——
+ * 那四档只是差几百代（D86 §9）。默认口径提到 8000 之后，这条轴上一档都不剩；
+ * 换个种子或换条规则仍可能出现，那时它依旧只是「没定下来」，要下结论还得再重跑一次。
  */
 export function isLongTransient(sample) { return !!(sample && sample.capped) }
 

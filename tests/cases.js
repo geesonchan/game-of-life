@@ -3916,7 +3916,11 @@ cases.push(
       // 口径三件套 —— 与内置精选局、自存收藏的生平同一把尺子（D82 §8）
       t.equal(CRITICAL_SPEC.board, 200, '默认盘 200')
       t.equal(CRITICAL_SPEC.boundary, 'torus', '默认环形')
-      t.equal(CRITICAL_SPEC.genCap, 5000, '代数上限 5000')
+      // 上限 8000 是量出来的：把上限提到 5 万重跑过，这条轴上最长的一档在第 6744 代定型，
+      // 8000 是它再留两成余量。取 5000 的那一版会把四档记成"跑满未定型"（D86 §9）。
+      t.equal(CRITICAL_SPEC.genCap, 8000, '代数上限 8000')
+      t.ok(CRITICAL_SPEC.genCap >= 6744 * 1.15,
+        '上限必须盖得住实测最长的那一档（6744 代）并留余量 —— 不然又会造出假的长暂态')
 
       const axis = densityAxis()
       t.equal(axis[0], 0.01, '轴从 0.01 起 —— 低端的跨越点（0.03–0.04）不能落在轴外')
@@ -4031,6 +4035,15 @@ cases.push(
       t.equal(dead.finalCells.length, 0, '缩略图上一个亮格都没有')
       t.equal(dead.outcome, 'quickDeath', '重标定之后是"死得快"，不是"爆炸"')
       t.equal(isEmergent(dead), false, '不算涌现')
+
+      // 0.82 是用户点名的那一档：上限 5000 时它是"跑满未定型"，看着像临界慢化；
+      // 实测它在第 5120 代就定型了 —— 只差 120 代。这条钉住那个结论（D86 §9）。
+      const slow = observeDensity(0.82)
+      t.equal(slow.capped, false, '0.82 在 8000 代的上限内定得下来 —— 它不是长暂态')
+      t.equal(slow.gens, 5120, '第 5120 代定型（只比旧上限 5000 多 120 代）')
+      t.equal(slow.end && slow.end.period, 2, '归于周期 2')
+      t.equal(slow.final, 971, '末态 971')
+      t.equal(isLongTransient(slow), false, '不该再被标成长暂态')
 
       const edge = observeDensity(0.03)
       t.equal(edge.gens, 7, '0.03 第 7 代就定住')

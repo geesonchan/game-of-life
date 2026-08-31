@@ -34,6 +34,7 @@ import { CRITICAL_SPEC, CRITICAL_CLASSIFY, EMERGENCE_MIN_GENS, REFINE_WIDTH, den
   emergenceWindows, round3, CURVE_METRICS } from '../src/data/critical.js'
 import { createTwin, measure, diffCells, TWIN, TWIN_EXAMPLES } from '../src/data/twin.js'
 import { LOCKIN_SPEC, findLockIn, baselineStates, canFlipAt, candidateCells, runToEnd } from '../src/data/lockin.js'
+import { ghostFlashAlpha, ghostFlashDone, orientToastKey, orientLabel, GHOST_FLASH } from '../src/ui/stamp-hint.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -4251,6 +4252,113 @@ cases.push(
         '中文图注要说清死边界与不二分的理由')
       t.ok(/dead edge/i.test(DICT.en['crit.lockNote']) && /bisection/i.test(DICT.en['crit.lockNote']),
         '英文图注同理')
+    }
+  },
+  {
+    name: '选中图案：那一行操作提示会自我宣告（D87 ①）',
+    run(t) {
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+      t.ok(/id="stamp-hint"/.test(html), '提示条要写在 HTML 里')
+      t.ok(/data-i18n="stamp\.hint\.desk"/.test(html) && /data-i18n="stamp\.hint\.touch"/.test(html),
+        '桌面与触屏两句都要在，文案走词典')
+      // 显示与否只看 body.stamp-active —— 状态本来就在那儿，再写一份 JS 就会有对不上的那天
+      t.ok(/\.stamp-hint \{[^}]*display: none/.test(css), '没选中图案时不占地方')
+      t.ok(/body\.stamp-active \.stamp-hint \{ display: block; \}/.test(css), '选中即出现')
+      const main = stripLiterals(readSrc('src/main.js'))
+      t.ok(/classList\.toggle\('stamp-active', !!pattern\)/.test(readSrc('src/main.js')),
+        'stamp-active 这个 class 必须跟着选中状态走 —— 提示条的显示全靠它')
+      // 这一条查的是"有没有出现"，而元素 id 是字符串 —— 必须扫原文。
+      // 剥过的版本里字符串是空的，`getElementById('stamp-hint')` 会变成 `getElementById('')`，
+      // 于是这条禁令永远不会红（自查时抓到过一次，同 D83 §5 那一类）。
+      t.ok(!/getElementById\('stamp-hint'\)/.test(readSrc('src/main.js')),
+        '提示条不该有第二处 JS 开关：状态在 body 的 class 上，CSS 挑一次就够（D87 ①）')
+      // 桌面/触屏各显示各的
+      t.ok(/\.stamp-hint-touch \{ display: none; \}/.test(css), '桌面只显示键盘那一句')
+      t.ok(/@media \(max-width: 767px\)[\s\S]*?\.stamp-hint-desk \{ display: none; \}/.test(css),
+        '窄屏只显示触屏那一句')
+      // 五件事一件不少（桌面），三件事一件不少（触屏）
+      for (const lang of ['zh', 'en']) {
+        const desk = DICT[lang]['stamp.hint.desk']
+        const touch = DICT[lang]['stamp.hint.touch']
+        t.ok(typeof desk === 'string' && typeof touch === 'string', `${lang} 缺提示词条`)
+        t.equal(desk.split('·').length, 5, `${lang} 桌面那句要列五件事：旋转/镜像/微调/放下/取消`)
+        t.equal(touch.split('·').length, 3, `${lang} 触屏那句要列三件事：旋转/翻转/放下`)
+        t.ok(typeof DICT[lang]['stamp.hint.desk.simple'] === 'string', `${lang} 缺简洁语域`)
+        t.ok(typeof DICT[lang]['stamp.hint.touch.simple'] === 'string', `${lang} 缺简洁语域`)
+      }
+      t.ok(/⟳/.test(DICT.zh['stamp.hint.touch']) && /⇋/.test(DICT.zh['stamp.hint.touch']),
+        '触屏那句要用画布上那两颗按钮的同一个符号 —— 说的和看到的必须是一个东西')
+    }
+  },
+  {
+    name: '选中图案：卡片缩略图就是当前朝向，且与放下去的同源（D87 ②④）',
+    run(t) {
+      // D70 类的承诺对账：卡上显示的必须就是放下去的。
+      // 做法不是"两处都记得转"，而是**两处调同一个函数**。
+      const lib = stripLiterals(readSrc('src/ui/library.js'))
+      t.ok(/app\.stampPattern\(\)/.test(lib), '选中的那张卡要按 app.stampPattern() 画')
+      t.ok(!/transformPattern/.test(lib),
+        'library 里不许自己再调一次 transformPattern —— 那就是第二份实现，迟早与落子对不上')
+      const main = stripLiterals(readSrc('src/main.js'))
+      const place = /app\.placeStampAt = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!place && /app\.stampPattern\(\)/.test(place[0]), '落子也走同一个函数')
+
+      // 变换本身仍是 D81 那个纯函数：转四次回原样、翻两次回原样
+      const p = getPattern('matt')
+      const four = transformPattern(transformPattern(transformPattern(transformPattern(p, { rot: 1, flip: false }),
+        { rot: 1, flip: false }), { rot: 1, flip: false }), { rot: 1, flip: false })
+      t.equal(JSON.stringify(four.cells.slice().sort()), JSON.stringify(p.cells.slice().sort()), '转四次回原样')
+      // 非方图案转一次要换边：卡片上的尺寸标签也跟着换
+      const once = transformPattern(p, { rot: 1, flip: false })
+      t.equal(`${once.w}×${once.h}`, `${p.h}×${p.w}`, '3×4 转一次应当变成 4×3')
+      t.ok(/shown\.w/.test(lib) && /shown\.h/.test(lib), '卡上的尺寸标签也要用变换后的图案，不能还写原图的')
+
+      // 每次变换轻弹一句，且带上朝向名
+      t.equal(orientToastKey('rotate'), 'stamp.rotated', '旋转有自己的一句')
+      t.equal(orientToastKey('flip'), 'stamp.flipped', '镜像有自己的一句')
+      t.equal(orientLabel({ rot: 0, flip: false }), 'SE', '默认朝向 SE（与 docs/patterns.md 同一套说法）')
+      t.equal(orientLabel({ rot: 2, flip: false }), 'NW', '转两次朝 NW')
+      t.equal(orientLabel({ rot: 1, flip: true }), 'SW′', '镜像过的带一撇')
+      for (const lang of ['zh', 'en']) {
+        for (const k of ['stamp.rotated', 'stamp.flipped']) {
+          t.ok(typeof DICT[lang][k] === 'string', `${lang} 缺 ${k}`)
+          t.ok(DICT[lang][k].includes('{orient}'), `${lang} 的 ${k} 要把当前朝向说出来`)
+        }
+      }
+    }
+  },
+  {
+    name: '选中图案：手机上闪一下幽灵再淡出（D87 ③）',
+    run(t) {
+      // 触屏没有悬停，幽灵平时不可见 —— 按完 ⟳/⇋ 得让他看见现在是什么形状。
+      t.equal(GHOST_FLASH.hold, 1000, '亮 1 秒')
+      t.ok(GHOST_FLASH.fade > 0, '之后要淡出，不是硬切')
+      t.equal(ghostFlashAlpha(0), 1, '刚按下时全亮')
+      t.equal(ghostFlashAlpha(999), 1, '1 秒内不淡')
+      t.equal(ghostFlashAlpha(GHOST_FLASH.hold), 1, '整 1 秒仍是全亮')
+      t.equal(ghostFlashAlpha(GHOST_FLASH.hold + GHOST_FLASH.fade / 2), 0.5, '淡到一半是 0.5')
+      t.equal(ghostFlashAlpha(GHOST_FLASH.hold + GHOST_FLASH.fade), 0, '淡完是 0')
+      t.equal(ghostFlashAlpha(99999), 0, '过了就是 0，不许变成负的')
+      t.equal(ghostFlashAlpha(-5), 1, '时间倒流也别把画面弄没（防御）')
+      t.equal(ghostFlashDone(GHOST_FLASH.hold + GHOST_FLASH.fade - 1), false, '还没淡完')
+      t.equal(ghostFlashDone(GHOST_FLASH.hold + GHOST_FLASH.fade), true, '淡完了')
+
+      // 幽灵的不透明度是**倍数**，不是绝对值：淡的是整体，两档不透明度的相对关系不变
+      const r = readSrc('src/render/renderer.js')
+      t.ok(/drawGhost\(vp, pattern, ox, oy, boardW, boardH, alpha = 1\)/.test(r), '幽灵要接受一个不透明度倍数')
+      t.ok(/globalAlpha = 0\.6 \* k/.test(r) && /globalAlpha = 0\.9 \* k/.test(r), '两档都乘同一个倍数')
+
+      // 闪现只借位置不夺位置：方向键钉住的锚点不能被它清掉
+      const main = stripLiterals(readSrc('src/main.js'))
+      t.ok(/if \(!app\.stampAt\)/.test(main), '已经钉住位置的就不动它')
+      t.ok(/app\.ghostFlashOwned/.test(main), '要记住这个锚点是不是闪现自己借来的')
+      t.ok(/if \(app\.ghostFlashOwned\) \{ app\.stampAt = null/.test(main), '收工时只还自己借的那个')
+      // 桌面 R/F 与手机 ⟳/⇋ 走同一条路：两处都调 rotateStamp/flipStamp
+      const ctl = stripLiterals(readSrc('src/ui/controls.js'))
+      t.ok(/app\.rotateStamp\(1\)/.test(ctl) && /app\.flipStamp\(\)/.test(ctl), '手机两颗按钮调的是同一对函数')
+      const inp = stripLiterals(readSrc('src/ui/input.js'))
+      t.ok(/app\.rotateStamp\(1\)/.test(inp) && /app\.flipStamp\(\)/.test(inp), '桌面 R/F 调的也是同一对')
     }
   },
   {

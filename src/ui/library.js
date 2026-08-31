@@ -19,15 +19,23 @@ export function setupLibrary(app) {
   const worldFingerprints = new Map(PRESETS.map(p => [p.key, presetRule(p.key).fingerprint]))
 
   function renderPatterns() {
-    patternList.innerHTML = PATTERNS.map(p => `
-      <button class="card ${app.stamp && app.stamp.key === p.key ? 'on' : ''}" data-pattern="${p.key}" title="${t('pattern.' + p.key + '.desc')}">
-        ${miniArt(p)}
+    patternList.innerHTML = PATTERNS.map(p => {
+      const on = !!(app.stamp && app.stamp.key === p.key)
+      // 缩略图即状态（D87 ②）：选中的那张按**当前朝向**画。
+      // 用的是 app.stampPattern() —— 与落子用的是同一个函数，
+      // 所以"卡上显示的"与"放下去的"不可能不一致（D87 ④，D70 类的承诺对账）。
+      // 这里绝不许自己再调一次 transformPattern：那就是第二份实现，迟早对不上。
+      const shown = on ? (app.stampPattern() || p) : p
+      return `
+      <button class="card ${on ? 'on' : ''}" data-pattern="${p.key}" title="${t('pattern.' + p.key + '.desc')}">
+        ${miniArt(shown)}
         <span class="card-text">
           <b>${t('pattern.' + p.key)}</b>
           <em>${t('pattern.' + p.key + '.desc')}</em>
         </span>
-        <i class="card-size">${p.w}×${p.h}</i>
-      </button>`).join('')
+        <i class="card-size">${shown.w}×${shown.h}</i>
+      </button>`
+    }).join('')
   }
 
   function renderWorlds() {

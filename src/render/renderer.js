@@ -258,11 +258,16 @@ export class Renderer {
    * 画图案放置预览（半透明），跟着鼠标走。
    * 画在最上层，不进拖尾图层 —— 它是界面提示，不是棋盘内容。
    */
-  drawGhost(vp, pattern, ox, oy, boardW, boardH) {
+  /**
+   * 幽灵。`alpha` 是**倍数**不是绝对值（默认 1 = 原来的样子）——
+   * 手机上按完 ⟳/⇋ 会闪一下再淡掉，淡的是整体，两档不透明度的相对关系不变（D87 ③）。
+   */
+  drawGhost(vp, pattern, ox, oy, boardW, boardH, alpha = 1) {
     const ctx = this.ctx
     const size = Math.max(1, vp.scale)
+    const k = Math.max(0, Math.min(1, alpha))
     ctx.save()
-    ctx.globalAlpha = 0.6
+    ctx.globalAlpha = 0.6 * k
     ctx.fillStyle = rgb(this.flat)
     for (const [dx, dy] of pattern.cells) {
       const x = ox + dx, y = oy + dy
@@ -271,7 +276,7 @@ export class Renderer {
       const py = (y - vp.originY) * vp.scale
       ctx.fillRect(px, py, size, size)
     }
-    ctx.globalAlpha = 0.9
+    ctx.globalAlpha = 0.9 * k
     ctx.strokeStyle = rgb(this.flat)
     ctx.setLineDash([4, 3])
     ctx.lineWidth = 1

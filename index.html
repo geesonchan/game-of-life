@@ -112,6 +112,12 @@
                .hud 整体 pointer-events:none，所以这一项要单独把事件收回来。 -->
           <span class="hud-item muted hud-zoom" id="hud-zoom-item" data-i18n-title="tip.zoomEntry"><span data-i18n="hud.zoom">缩放</span> <b id="hud-scale">4.0×</b></span>
         </div>
+        <!-- 选中图案期间常驻的一行可用操作（D87 ①，依据 D75 ② "可交互区域必须自我宣告"）。
+             显示与否只看 body.stamp-active，桌面/手机两句由媒体查询挑，零 JS 分支。 -->
+        <p class="stamp-hint" id="stamp-hint">
+          <span class="stamp-hint-desk" data-i18n="stamp.hint.desk">R 旋转 · F 镜像 · 方向键微调 · 回车放下 · Esc 取消</span>
+          <span class="stamp-hint-touch" data-i18n="stamp.hint.touch">⟳ 旋转 · ⇋ 翻转 · 点棋盘放下</span>
+        </p>
         <div class="sel-menu" id="sel-menu" hidden>
           <span class="sel-size" id="sel-size"></span>
           <button id="sel-export" data-i18n="sel.export">导出 RLE</button>

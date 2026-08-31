@@ -1383,6 +1383,33 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 /* HUD 上的缩放那一格要能点（.hud 整体是 pointer-events:none） */
 .hud .hud-zoom { pointer-events: auto; }
 
+/* ---------- 选中图案时的操作提示（D87 ①） ---------- */
+/* 它是"自我宣告"：选中期间常驻，取消选中即消失（D75 ②）。
+   贴附层（5），与 HUD 同一档 —— 它讲的是画布上正在发生的事。 */
+.stamp-hint {
+  position: absolute;
+  left: 12px; top: 56px;
+  z-index: 5;
+  margin: 0;
+  padding: 5px 10px;
+  max-width: calc(100% - 24px);
+  background: rgba(14, 16, 21, 0.82);
+  border: 1px solid var(--line); border-radius: 8px;
+  font-size: 12px; color: var(--muted);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  display: none;                       /* 没选中图案时不占地方 */
+}
+body.stamp-active .stamp-hint { display: block; }
+.stamp-hint-touch { display: none; }   /* 桌面只显示键盘那一句 */
+@media (max-width: 767px) {
+  .stamp-hint-desk { display: none; }  /* 手机只显示触屏那一句 */
+  .stamp-hint-touch { display: inline; }
+  .stamp-hint { top: 48px; font-size: 11px; }
+}
+/* 页面被放大提示与操作提示都贴在 HUD 下方；两者同时出现时让缩放提示往下让一行 */
+body.stamp-active .page-zoom-hint { top: 92px; }
+
 /* 页面被浏览器放大之后的提示（D85 ②c）。贴在 HUD 下方，不抢画布中央。 */
 .page-zoom-hint {
   position: absolute;

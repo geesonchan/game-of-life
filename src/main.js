@@ -12,6 +12,7 @@ import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
 import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
 import { watchPageZoom } from './ui/page-zoom.js'
+import { ghostFlashAlpha, ghostFlashDone, orientToastKey, orientLabel, GHOST_FLASH } from './ui/stamp-hint.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
@@ -223,18 +224,43 @@ app.stampPattern = function () {
   return (o.rot || o.flip) ? transformPattern(app.stamp, o) : app.stamp
 }
 
-/** 旋转 / 镜像当前图案（D81）。改的是朝向状态，不改原始图案数据。 */
+/**
+ * 旋转 / 镜像当前图案（D81）。改的是朝向状态，不改原始图案数据。
+ * 每次变换都做三件事（D87 ②③）：卡片缩略图跟着转、轻弹一句、触屏上闪一下幽灵 ——
+ * 桌面 R/F 与手机 ⟳/⇋ 走的是同一条路，所以三样反馈两边一模一样。
+ */
 app.rotateStamp = function (steps) {
   if (!app.stamp) return
   app.stampOrient = { rot: (app.stampOrient.rot + steps + 4) % 4, flip: app.stampOrient.flip }
-  app.dirty = true
-  app.updateHoverReadout()
+  afterOrientChange('rotate')
 }
 app.flipStamp = function () {
   if (!app.stamp) return
   app.stampOrient = { rot: app.stampOrient.rot, flip: !app.stampOrient.flip }
+  afterOrientChange('flip')
+}
+
+function afterOrientChange(kind) {
+  app.library.renderPatterns()      // 缩略图即状态：卡片直接画成当前朝向
+  app.toast(t(orientToastKey(kind), { orient: orientLabel(app.stampOrient) }))
+  app.flashGhost()                  // 触屏没有悬停，幽灵平时不可见 —— 闪一下让他看见形状
   app.dirty = true
   app.updateHoverReadout()
+}
+
+/**
+ * 在画布中央闪一下幽灵，1 秒后淡出（D87 ③）。
+ * 已经被方向键钉住位置的（app.stampAt 非空）不动它 —— 那是用户自己摆的，
+ * 闪现只借位置，不夺位置：借来的收工时还回去，本来就有的一格不改。
+ */
+app.flashGhost = function () {
+  if (!app.stamp) return
+  if (!app.stampAt) {
+    app.stampAt = { x: app.engine.w >> 1, y: app.engine.h >> 1 }
+    app.ghostFlashOwned = true
+  }
+  app.ghostFlashAt = performance.now()
+  app.dirty = true
 }
 
 app.setStamp = function (pattern) {
@@ -586,6 +612,20 @@ function frame(now) {
     app.framesInWindow = 0
   }
 
+  // 闪现的幽灵：亮 1 秒再淡掉（D87 ③）。淡出期间每帧都要重画，所以在这里持续置脏。
+  let ghostAlpha = 1
+  if (app.ghostFlashAt) {
+    const elapsed = now - app.ghostFlashAt
+    if (ghostFlashDone(elapsed, GHOST_FLASH)) {
+      app.ghostFlashAt = 0
+      if (app.ghostFlashOwned) { app.stampAt = null; app.ghostFlashOwned = false }
+      app.dirty = true
+    } else {
+      ghostAlpha = ghostFlashAlpha(elapsed, GHOST_FLASH)
+      app.dirty = true
+    }
+  }
+
   if (app.dirty) {
     app.renderer.draw(app.engine, app.viewport, app.visual, app.visualOpts)
     // 方向键微调后幽灵脱离鼠标跟随（app.stampAt 非空即钉住）
@@ -593,7 +633,7 @@ function frame(now) {
     const gp = app.stampPattern()
     if (gp && gc) {
       const o = centerOrigin(gp, gc.x, gc.y)
-      app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h)
+      app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h, ghostAlpha)
     }
     if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)
     app.dirty = false

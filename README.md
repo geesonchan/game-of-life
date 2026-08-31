@@ -108,6 +108,7 @@ src/ui/       控件绑定与画布交互
   critical-view.js  临界实验室（小多图带 / 曲线 / 临界滑块 / 分岔时刻）
   favorites-view.js 收藏面板与简洁模式的「精彩局」卡片条
   zoom-bar.js       画布右缘的缩放滑条（浮层、播放时淡出、HUD 倍数可输入）
+  stamp-hint.js     选中图案时的自我宣告：操作提示、朝向 toast、幽灵闪现的淡出
   page-zoom.js      页面真被浏览器放大时的兜底提示（visualViewport）
 src/workers/
   tower-builder.js  时间之塔的构建 Worker（只搬运，逻辑在 data/tower.js）

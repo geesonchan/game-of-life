@@ -4630,6 +4630,84 @@ cases.push(
     }
   },
   {
+    name: '待放态的「放这」：短词、语义色、跟着幽灵走（D90）',
+    run(t) {
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+
+      // ① 短词。上一版叫「放下」，被 .stamp-tools 那条 44px 宽度规则挤成方块、文字溢出屏幕右缘。
+      // 现在它不在那个容器里了，宽度由文字定。
+      t.ok(!/<div class="stamp-tools"[\s\S]*?id="btn-drop"[\s\S]*?<\/div>/.test(html),
+        '确认按钮不许再长在 .stamp-tools 里 —— 那里的按钮一律 44×44，文字会被挤出去')
+      t.equal(DICT.zh['stamp.drop'], '放这', '中文短词')
+      t.equal(DICT.en['stamp.drop'], 'Drop', '英文短词')
+      for (const lang of ['zh', 'en']) {
+        t.ok(DICT[lang]['stamp.drop'].length <= 6, `${lang} 的确认按钮要短`)
+        t.ok(typeof DICT[lang]['stamp.drop.simple'] === 'string', `${lang} 简洁语域照旧`)
+      }
+      // 宽度由文字定、高度守住触控下限
+      const rule = /\.stamp-confirm \{([^}]*)\}/.exec(css)
+      t.ok(!!rule, '确认按钮要有自己的样式')
+      t.ok(!/width:/.test(rule[1]), '不许写死宽度 —— 宽度由文字定，四种语域四种长度')
+      t.ok(/min-height/.test(rule[1]), '高度要有下限')
+      t.ok(/@media \(max-width: 767px\)[\s\S]*?\.stamp-confirm \{[^}]*min-height: 44px/.test(css),
+        '窄屏下触控下限 44px')
+      t.ok(/white-space: nowrap/.test(rule[1]), '它是一个词，不许被劈开（D73）')
+
+      // ② 语义色：新开的"确认"档，不与已有五档撞义
+      t.ok(/class="stamp-confirm confirm"/.test(html), '按钮挂的是「确认」档')
+      const confirm = /button\.confirm \{([^}]*)\}/.exec(css)
+      t.ok(!!confirm, 'D72 的第六档要有自己的类')
+      const bg = (/background:\s*(#[0-9a-f]{6})/i.exec(confirm[1]) || [])[1]
+      t.ok(!!bg, '确认档要有底色')
+      // 与已有五档逐个比对：不许撞色
+      const others = { primary: '#2f6b3a', running: '#6d4d16', danger: '#5a2323', rescue: '#1e3a5f' }
+      for (const [name, hex] of Object.entries(others))
+        t.ok(bg.toLowerCase() !== hex, `确认档不许和 ${name} 用同一个底色`)
+      t.ok(css.includes('#2f6b3a'), '推进绿仍在（确认档是新增，不是改掉它）')
+
+      // ③ 位置：跟着幽灵走，用的是 D47 那套定位逻辑，不是另写一份
+      const main = stripLiterals(readSrc('src/main.js'))
+      t.ok(/placeSelectionMenu\(/.test(main), '定位要复用 placeSelectionMenu —— 操作跟着对象走这件事只该有一套实现')
+      t.ok(/app\.placeStampConfirm = function/.test(main), '要有把按钮摆到幽灵旁边的动作')
+      const place = /app\.placeStampConfirm = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!place && /if \(btn\.style\.left !== x\)/.test(place[0]),
+        '位置没变就别写 style —— 每帧写一次会把布局搅得没完')
+      t.ok(/if \(app\.pending\) app\.placeStampConfirm\(\)/.test(main), '幽灵被拖被缩放时按钮要跟上')
+      const orient = /function afterOrientChange[\s\S]*?\n\}/.exec(main)
+      t.ok(!!orient && /placeStampConfirm/.test(orient[0]), '转过之后外接框换了边，按钮也要跟着挪')
+      // ⟳/⇋ 仍旧钉在右上角
+      t.ok(/\.stamp-tools \{[\s\S]*?position: absolute; right: 10px; top: 10px/.test(css),
+        '⟳/⇋ 保持右上角不动')
+
+      // 定位函数本身的边界（这条早有，这里再钉一次它被复用的那几条性质）
+      const stage = { w: 300, h: 200 }
+      const menu = { w: 80, h: 40 }
+      const mid = placeSelectionMenu({ left: 100, top: 80, right: 140, bottom: 120 }, menu, stage)
+      t.equal(`${mid.x},${mid.y}`, '148,128', '放得下就贴在右下角')
+      const rightEdge = placeSelectionMenu({ left: 250, top: 80, right: 290, bottom: 120 }, menu, stage)
+      t.ok(rightEdge.x + menu.w <= stage.w, '贴右边界时往左翻，不出界')
+      const bottomEdge = placeSelectionMenu({ left: 100, top: 170, right: 140, bottom: 195 }, menu, stage)
+      t.ok(bottomEdge.y + menu.h <= stage.h, '贴下边界时往上翻，不出界')
+    }
+  },
+  {
+    name: '窄屏排查必须遍历"状态"，不只是遍历屏宽（D90 ①的教训）',
+    run(t) {
+      // 上一版的溢出检查没抓到那颗按钮，原因不在检查写得松，而在**它没进过那个状态**：
+      // 待放态、选区菜单、页面放大提示、首次气泡都是"某个状态才存在"的元素，
+      // 默认状态下扫一百遍也扫不到。清单写进 decisions，并在这里钉住清单本身。
+      const doc = readSrc('docs/decisions.md')
+      t.ok(/窄屏排查的状态清单/.test(doc), 'decisions 里要有那份状态清单')
+      for (const id of ['btn-drop', 'stamp-tip', 'sel-menu', 'page-zoom-hint', 'stamp-hint'])
+        t.ok(new RegExp('`#' + id + '`').test(doc), `状态清单里要点名 #${id}`)
+      // 这些元素都必须是"默认不显示"的 —— 它们正因如此才会被默认状态的排查漏掉
+      const html = readSrc('index.html')
+      for (const id of ['btn-drop', 'stamp-tip', 'sel-menu', 'page-zoom-hint'])
+        t.ok(new RegExp('id="' + id + '"[^>]*hidden').test(html), `#${id} 默认是藏着的`)
+    }
+  },
+  {
     name: '勘探器：默认参数就是规格里写的那几个',
     run(t) {
       t.equal(DEFAULTS.runsPerRule, 3, '每规则默认 3 局不同种子')

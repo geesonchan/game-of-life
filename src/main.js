@@ -14,6 +14,7 @@ import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
 import { watchPageZoom } from './ui/page-zoom.js'
 import { orientToastKey, orientLabel, shouldShowStampTip } from './ui/stamp-hint.js'
 import { motionCached, rayEnds } from './engine/motion.js'
+import { placeSelectionMenu } from './ui/io.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
@@ -243,6 +244,7 @@ app.flipStamp = function () {
 
 function afterOrientChange(kind) {
   app.library.renderPatterns()      // 缩略图即状态：卡片直接画成当前朝向
+  app.placeStampConfirm()           // 转过之后外接框换了边，按钮跟着挪
   app.toast(t(orientToastKey(kind), { orient: orientLabel(app.stampOrient) }))
   app.markStampTipUsed()            // 用过一次，那个气泡从此不再冒（D88 ①）
   app.dirty = true
@@ -284,6 +286,7 @@ app.armStampAt = function (cell) {
   app.stampAt = { x: cell.x, y: cell.y }
   app.pending = true
   document.getElementById('btn-drop').hidden = false
+  app.placeStampConfirm()           // 按钮跟着幽灵走（D90 ③）
   app.dirty = true
   app.updateHoverReadout()
 }
@@ -309,6 +312,37 @@ app.cancelPending = function () {
 app.clearPending = function () {
   app.pending = false
   document.getElementById('btn-drop').hidden = true
+}
+
+/**
+ * 把「放这」摆到幽灵旁边（D90 ③）。**操作要跟着对象走** ——
+ * 这与 D47 的框选菜单是同一条道理，所以用的也是同一个定位函数：
+ * 贴着幽灵的外接框放，放不下就往内翻，永远不越出画布。
+ *
+ * 每帧调一次（只在待放态），但只有算出来的位置真的变了才写 style ——
+ * 每帧写一次 style 会把布局搅得没完。
+ */
+app.placeStampConfirm = function () {
+  const btn = document.getElementById('btn-drop')
+  if (!app.pending) return
+  const gp = app.stampPattern()
+  const gc = app.stampAt
+  if (!gp || !gc) return
+  const o = centerOrigin(gp, gc.x, gc.y)
+  const vp = app.viewport, dpr = app.renderer.dpr || 1
+  // 幽灵在画布上的位置（CSS 像素）
+  const left = (o.x - vp.originX) * vp.scale / dpr
+  const top = (o.y - vp.originY) * vp.scale / dpr
+  const w = gp.w * vp.scale / dpr, h = gp.h * vp.scale / dpr
+  const stage = app.canvas.getBoundingClientRect()
+  const pos = placeSelectionMenu(
+    { left, top, right: left + w, bottom: top + h },
+    { w: btn.offsetWidth || 72, h: btn.offsetHeight || 40 },
+    { w: stage.width, h: stage.height }
+  )
+  const x = pos.x + 'px', y = pos.y + 'px'
+  if (btn.style.left !== x) btn.style.left = x
+  if (btn.style.top !== y) btn.style.top = y
 }
 
 app.setStamp = function (pattern) {
@@ -682,6 +716,7 @@ function frame(now) {
         }
       }
       app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h)
+      if (app.pending) app.placeStampConfirm()   // 幽灵动了、转了、缩放了，按钮都要跟上
     }
     if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)
     app.dirty = false

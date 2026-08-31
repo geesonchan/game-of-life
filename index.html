@@ -118,6 +118,10 @@
           <span class="stamp-hint-desk" data-i18n="stamp.hint.desk">R 旋转 · F 镜像 · 方向键微调 · 回车放下 · Esc 取消</span>
           <span class="stamp-hint-touch" data-i18n="stamp.hint.touch">⟳ 旋转 · ⇋ 翻转 · 点棋盘放下</span>
         </p>
+        <!-- 两步放置的第二步（D89 ①）：待放态才出现，点它 = 落子。
+             位置跟着幽灵走（D90 ③，与 D47 的框选菜单同一套定位逻辑）——
+             操作要跟着对象走，不该固定在屏幕某个角上。 -->
+        <button class="stamp-confirm confirm" id="btn-drop" hidden data-i18n="stamp.drop">放这</button>
         <div class="sel-menu" id="sel-menu" hidden>
           <span class="sel-size" id="sel-size"></span>
           <button id="sel-export" data-i18n="sel.export">导出 RLE</button>
@@ -129,9 +133,6 @@
         <div class="stamp-tools" id="stamp-tools" hidden>
           <button id="btn-rotate" data-i18n-title="stamp.rotate" title="旋转">⟳</button>
           <button id="btn-flip" data-i18n-title="stamp.flip" title="镜像">⇋</button>
-          <!-- 两步放置的第二步（D89 ①）：待放态才出现，点它 = 落子。
-               也可以直接点幽灵本身确认，点空白取消。 -->
-          <button id="btn-drop" class="primary" hidden data-i18n="stamp.drop">放下</button>
           <!-- 首次选中图案时冒出来的指向性气泡（D88 ①）：提示要长在动作发生的位置上，
                而不是画布另一角。用过一次就不再出现（偏好键 stampTipSeen）。 -->
           <p class="stamp-tip" id="stamp-tip" hidden data-i18n="stamp.tip">⟳ 转一转 · ⇋ 翻个面</p>

@@ -908,6 +908,36 @@ button.rescue:hover { background: #26497a; border-color: #3a72ad; color: #f0f7ff
 .strip .card-list { scroll-snap-type: x proximity; }
 .strip .card { scroll-snap-align: start; }
 
+/* 确认档（D72 新增第六档）：坐实一个"暂存的东西"。
+   青绿 —— 与推进绿同一族（都是"可以，往下走"），但明显更冷、更暗，
+   因为它与主键（播放）在手机上会同屏出现，两颗一样的绿会互相争"主动作"的名分。 */
+button.confirm {
+  background: #1f5f57;
+  border-color: #2e7d72;
+  color: #eafffb;
+  font-weight: 600;
+}
+button.confirm:hover { background: #267066; }
+
+/* 待放态的确认按钮：浮在幽灵旁边，跟着它走（D90 ③）。
+   位置由 placeSelectionMenu 算 —— 与框选菜单同一套逻辑，越界向内翻转。 */
+.stamp-confirm {
+  position: absolute;
+  z-index: 5;                       /* 贴附层（D79）：它贴着画布上的那个幽灵 */
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 13px;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .45);
+  white-space: nowrap;              /* 它是一个词，不许被劈开（D73） */
+}
+.stamp-confirm[hidden] { display: none; }
+@media (max-width: 767px) {
+  /* 触控下限。**宽度由文字定**，不跟 ⟳/⇋ 那两颗图标按钮共用 44×44 ——
+     上一版它长在 .stamp-tools 里，被那条 44px 的宽度规则挤成方块，文字溢出到屏幕外（D90 ①）。 */
+  .stamp-confirm { min-height: 44px; padding: 0 18px; font-size: 14px; }
+}
+
 /* 播放按钮随状态换色：待播放 = 绿（.primary），运行中 = 橙（.running）。
    写在 .primary 之后，同等优先级下后写的赢；两种模式共用同一个按钮，自动同步。 */
 button.running {

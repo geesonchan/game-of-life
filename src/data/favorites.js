@@ -213,12 +213,16 @@ export function layoutRow(entry, tr) {
   if (entry.nameKey) {
     return {
       id: entry.id, rle: entry.rle, builtin: true, ...size,
-      name: tr(entry.nameKey), note: tr(entry.nameKey + '.desc'), life: tr(entry.nameKey + '.life')
+      name: tr(entry.nameKey), note: tr(entry.nameKey + '.desc'), life: tr(entry.nameKey + '.life'),
+      // 完整说明（作者/年份/机制）只有声明了 full 的条目才有 —— 没有的不查词典，
+      // 因为 t() 在缺词时会把 key 原样吐出来，那就会在卡片上显示一串 'fav.builtin.x.full'
+      full: entry.full ? tr(entry.nameKey + '.full') : ''
     }
   }
   return {
     id: entry.id, rle: entry.rle, builtin: false, ...size,
-    name: entry.name, note: entry.note || '', life: lifeText(entry.life, tr)
+    // 自存的没有"短语/全文"之分：用户写的就那一句，原样用在两处（D83：不改写用户内容）
+    name: entry.name, note: entry.note || '', full: entry.note || '', life: lifeText(entry.life, tr)
   }
 }
 

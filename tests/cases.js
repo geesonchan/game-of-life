@@ -5222,6 +5222,89 @@ cases.push(
     }
   },
   {
+    name: '取用区：桌面是网格、手机是横滑，同一份 DOM（D95 ①）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      const wide = /@media \(min-width: 768px\) \{[\s\S]*?\n\}/g
+      const blocks = [...css.matchAll(wide)].map(m => m[0])
+      const grid = blocks.find(b => /\.strip \.card-list, \.toolrail \.card-list/.test(b))
+      t.ok(!!grid, '宽屏下有一条同时管三条带的网格声明（同类同形，按设备内约束）')
+      t.ok(/display:\s*grid/.test(grid), '桌面取用区是网格')
+      t.ok(/repeat\(auto-fill/.test(grid), '列数由容器宽度决定，不写死方向')
+      t.ok(/overflow-x:\s*visible/.test(grid), '不横滑，于是也没有那条横贯的滚动条')
+      // 手机那一套一字不动（D75）：窄屏块里的横滑机制原样还在
+      const narrow = /@media \(max-width: 767px\) \{[\s\S]*?\n\}/g
+      const nb = [...css.matchAll(narrow)].map(m => m[0]).join('\n')
+      t.ok(/\.toolrail \.rail-list, \.strip \.strip-list \{\s*display: flex/.test(nb), '窄屏仍是横向 flex')
+      t.ok(/\.toolrail, \.strip \{ scroll-snap-type: x proximity/.test(nb), '窄屏仍由容器横滚 + 吸附')
+      t.ok(/flex: 0 0 calc\(\(100% - 24px\) \/ 3\.4\)/.test(nb), '窄屏卡片宽度仍是容器的 1/3.4（D75 ②）')
+    }
+  },
+  {
+    name: '取用区：瘦卡片只放名称 + 一行短语 + 小标（D95 ①②）',
+    run(t) {
+      const raw = readSrc('src/ui/favorites-view.js')
+      const css = readSrc('src/style.css')
+      // 卡片上是短语，悬停 title 里才是完整说明
+      t.ok(/title="\$\{esc\(r\.full \|\| r\.note \|\| r\.name\)\}"/.test(raw), '完整说明走 title')
+      t.ok(/<em>\$\{esc\(r\.note \|\| ''\)\}<\/em>/.test(raw), '卡片上那一行是短语')
+      t.ok(/white-space: nowrap; overflow: hidden; text-overflow: ellipsis/.test(css), '短语与名称都单行截断')
+      // 选中态：提示行换成那一局的完整说明，且**只有一个写入者**
+      const view = stripLiterals(raw)
+      t.ok(/function syncShowHint/.test(view), '提示行由收藏那边统一维护')
+      const ctrl = stripLiterals(readSrc('src/ui/controls.js'))
+      t.ok(/if \(app\.syncShowHint\) app\.syncShowHint\(\)/.test(ctrl),
+        '语言切换时也走同一个出口 —— 一个元素只许有一个写入者')
+      // ② 「建议电脑」只在窄屏；规模档只在桌面
+      t.ok(/\.show-card \.tag-adv \{ display: none; \}/.test(css), '桌面不显示"建议电脑"—— 在电脑上说这句是废话')
+      t.ok(/\.show-card \.tag-scale \{ display: none; \}/.test(css), '窄屏不显示规模档 —— 他手里就是手机')
+      t.ok(/tag-adv/.test(raw) && /tag-scale/.test(raw) && /tag-swap/.test(raw), '三枚小标各带自己的类，由 CSS 决定谁出现在哪个屏上')
+      // 文案里不许再夹带"建议在电脑上看"——那句话现在是小标，不是说明的一部分
+      for (const lang of ['zh', 'en']) {
+        for (const k of Object.keys(DICT[lang])) {
+          if (!/^fav\.builtin\..*\.desc/.test(k)) continue
+          t.ok(!/建议在电脑|用电脑看|best on a computer|use a computer/i.test(DICT[lang][k]),
+            `${lang} 的 ${k} 里不该再夹带"建议电脑"——它是小标，由屏宽决定显不显示`)
+        }
+      }
+    }
+  },
+  {
+    name: '取用区：折叠的阈值只有一处说了算（D95 ③）',
+    run(t) {
+      const view = readSrc('src/ui/favorites-view.js')
+      const css = readSrc('src/style.css')
+      const m = /const SHOW_FOLD = (\d+)/.exec(view)
+      t.ok(!!m, '折叠阈值写在一个具名常量上')
+      const fold = Number(m[1])
+      t.ok(fold >= 15 && fold <= 20, `阈值 ${fold} 落在 15–20 张这个量级里（卡片还会涨）`)
+      // CSS 藏的是"第 fold+1 张起"，两个数必须对得上 —— 这是典型的双份真相
+      t.ok(new RegExp(`\\.strip-list\\.folded > \\.card:nth-child\\(n\\+${fold + 1}\\)`).test(css),
+        `CSS 藏的必须正好是第 ${fold + 1} 张起，与 SHOW_FOLD 对齐`)
+      // 用 CSS 藏而不是不渲染：DOM 两边同一份，手机那条横滑带才可能"一字不动"
+      t.ok(/classList\.toggle\('folded'/.test(view), '折叠是加个 class，不是少渲染几张')
+      t.ok(/#show-more \{ display: none; \}/.test(css), '窄屏没有展开按钮 —— 那边划到底就是全部')
+      // 沿用侧栏的词条，不另起一套说法
+      for (const lang of ['zh', 'en']) {
+        t.ok('fav.showAll' in DICT[lang] && 'fav.foldUp' in DICT[lang], `${lang} 复用侧栏那两条词条`)
+      }
+    }
+  },
+  {
+    name: '取用区：完整说明缺席时不许把 key 显示出来（D95 ①）',
+    run(t) {
+      const tr = k => '词典:' + k
+      // t() 缺词时会把 key 原样吐出来，所以没声明 full 的条目根本不该去查
+      const withFull = layoutRow({ id: 'a', nameKey: 'fav.builtin.max', rle: 'r', full: true }, tr)
+      t.equal(withFull.full, '词典:fav.builtin.max.full', '声明了 full 的才查词典')
+      const without = layoutRow({ id: 'b', nameKey: 'fav.builtin.wildfire', rle: 'r' }, tr)
+      t.equal(without.full, '', '没声明的留空，而不是把 key 印在卡片上')
+      const mine = layoutRow({ id: 'c', name: '我的', rle: 'r', note: '我写的一句' }, tr)
+      t.equal(mine.full, '我写的一句', '自存的没有短语/全文之分，用户写的那一句两处都用')
+      t.equal(mine.note, '我写的一句', '而且一个字都不改写（D83）')
+    }
+  },
+  {
     name: '勘探器：默认参数就是规格里写的那几个',
     run(t) {
       t.equal(DEFAULTS.runsPerRule, 3, '每规则默认 3 局不同种子')

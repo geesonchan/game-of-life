@@ -270,7 +270,10 @@ export function setupControls(app) {
   app.refreshTabHint = function () {
     railHint.textContent = t('pattern.hint')
     stripHint.textContent = t('world.hint')
-    showHint.textContent = t('fav.showHint')
+    // 精彩局那行提示有两种内容（通用提示 / 选中那一局的完整说明，D95 ①），
+    // 所以**写入者只能有一个** —— 交给收藏那边，这里只在它还没建好时兜个底
+    if (app.syncShowHint) app.syncShowHint()
+    else showHint.textContent = t('fav.showHint')
   }
   app.refreshTabHint()
   tabs.forEach(b => b.addEventListener('click', () => app.toggleTab(b.dataset.tab)))

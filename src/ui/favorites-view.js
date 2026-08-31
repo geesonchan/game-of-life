@@ -17,10 +17,17 @@ export function createFavorites(app) {
   const el = {
     tabs: $('fav-tabs'), list: $('fav-list'), budget: $('fav-budget'),
     add: $('btn-fav-add'), exp: $('btn-fav-export'), imp: $('btn-fav-import'), file: $('fav-file'),
-    showStrip: $('show-strip'), showList: $('show-list')
+    showStrip: $('show-strip'), showList: $('show-list'), showMore: $('show-more')
   }
+  /**
+   * 桌面网格一次露几张（D95 ③）。卡片还会涨（元像素零件六局在路上），
+   * 按 15–20 张的量设计：宽屏上这是两到三行，还看得过来；超出就折起来。
+   * 与侧栏那条折叠是同一个做法，只是那边按"最近 N 条"，这边按"前 N 张"。
+   */
+  const SHOW_FOLD = 18
   let tab = 'layout'
   let expanded = false      // 侧栏是否展开了全部自存条目（本次会话内有效，不落盘）
+  let showAll = false       // 取用区网格是否展开了全部卡片（同样只活在本次会话里）
   let probing = null        // 正在跑生平的那一条：{id, probe}
   let state = load()
 
@@ -124,20 +131,49 @@ export function createFavorites(app) {
   /**
    * 「精彩局」卡片带。**点一张卡不再等于清盘**（D93）：同规则的拿在手上放，
    * 异规则的才换整盘，换之前还要问一句。卡片上标出它是哪一种，别让人点了才知道。
+   *
+   * 桌面是网格、手机是横滑（D95 ①），但**只有一份 DOM** —— 形态差异全在 CSS 里。
+   * 卡片上只放名称 + 一行短语 + 小标；完整说明（作者/年份/机制）走两处：
+   * 悬停 title，以及选中之后下面那行提示（见 syncShowHint）。
    */
   function renderShowStrip() {
-    el.showList.innerHTML = rowsNow().map(r => {
+    const rows = rowsNow()
+    el.showList.innerHTML = rows.map(r => {
       const on = !!(app.stamp && app.stamp.key === stampKey(r.id))
-      // 两枚小标合成一条：窄屏的卡片只有 96px 宽，两枚分开摆必然打架
+      // 三枚小标各带自己的类，**由 CSS 决定哪一枚在哪个屏上出现**：
+      // 「换世界」两边都要；「1024² 起」桌面才有意义；「建议电脑」只在窄屏 ——
+      // 在电脑上说"建议在电脑上看"是废话（D95 ②）。
       const tags = []
-      if (!sameRuleAsBoard(r)) tags.push(t('fav.show.swapTag'))
-      if (r.board >= BIG_FROM) tags.push(t('fav.scale.note', { n: r.board }))
+      if (!sameRuleAsBoard(r)) tags.push(`<b class="tag-swap">${esc(t('fav.show.swapTag'))}</b>`)
+      if (r.board >= BIG_FROM) {
+        tags.push(`<b class="tag-scale">${esc(t('fav.scale.note', { n: r.board }))}</b>`)
+        tags.push(`<b class="tag-adv">${esc(t('fav.scale.big'))}</b>`)
+      }
       return `
-      <button class="card show-card ${on ? 'on' : ''}" data-show="${esc(r.id)}" title="${esc(r.note || r.name)}">
-        ${tags.length ? `<i class="show-swap">${esc(tags.join(' · '))}</i>` : ''}
+      <button class="card show-card ${on ? 'on' : ''}" data-show="${esc(r.id)}" title="${esc(r.full || r.note || r.name)}">
         <span class="card-text"><b>${esc(r.name)}</b><em>${esc(r.note || '')}</em></span>
+        ${tags.length ? `<i class="show-swap">${tags.join('')}</i>` : ''}
       </button>`
     }).join('')
+    // 折叠（D95 ③）：DOM 一张不少，桌面靠 CSS 藏 —— 这样手机那条横滑带一字不动
+    const over = rows.length - SHOW_FOLD
+    el.showList.classList.toggle('folded', over > 0 && !showAll)
+    el.showMore.hidden = over <= 0
+    if (over > 0) el.showMore.textContent = showAll ? t('fav.foldUp') : t('fav.showAll', { n: over })
+    syncShowHint()
+  }
+
+  /**
+   * 卡片带下面那行字。平时是通用提示；**选中一张之后换成那一局的完整说明** ——
+   * 瘦卡片放不下作者与机制，但选中的那一刻恰恰是他想知道这些的时候（D95 ①）。
+   */
+  function syncShowHint() {
+    const hint = document.getElementById('show-hint')
+    if (!hint) return
+    const held = app.stamp && String(app.stamp.key || '').startsWith('show:')
+    const row = held ? rowsNow().find(r => stampKey(r.id) === app.stamp.key) : null
+    hint.textContent = row ? (row.full || row.note || '') : t('fav.showHint')
+    hint.classList.toggle('on', !!row)
   }
 
   function find(id) { return rowsNow().find(r => r.id === id) }
@@ -289,6 +325,10 @@ export function createFavorites(app) {
     }
   })
 
+  app.syncShowHint = syncShowHint      // 语言切换时由 refreshTabHint 调它，别再各写一份
+
+  el.showMore.addEventListener('click', () => { showAll = !showAll; renderShowStrip() })
+
   el.showList.addEventListener('click', e => {
     const b = e.target.closest('[data-show]')
     if (!b) return
@@ -346,6 +386,7 @@ export function createFavorites(app) {
   return {
     render,
     renderShow: renderShowStrip,      // 拿起/放下图案时只重画卡片带，不动整个收藏面板
+    syncShowHint,
     relocalize: render,
     addLayout: entry => { state.layouts = addLayout(state.layouts, entry).list; save(); render(); pump() }
   }

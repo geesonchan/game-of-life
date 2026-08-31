@@ -1632,3 +1632,54 @@ input[type="range"] { touch-action: pan-y; }
   .show-swap { top: auto; bottom: 5px; left: 6px; right: auto; }
   .show-card .card-text b { padding-right: 0; }
 }
+
+/* ============ 桌面取用区：网格，不横滑（D95 ①） ============
+   起因是一张截图：宽屏下精彩局是一条横滑带，胖卡片、说明全文外露、
+   滚动条横贯整条 —— 屏幕明明宽得很，却要用户去划。
+   横滑是为窄屏定的形态（D75），在宽屏上它只是把空间浪费掉。
+
+   **手机那一套一字不动**：这一整块挂在 min-width: 768px 里，
+   窄屏走的还是原来的 .strip 横滑规则，逐像素不变。 */
+@media (min-width: 768px) {
+  /* 三条带同一条声明：auto-fill 网格，多行铺开，宽度富余时自动多排一列。
+     图案在左缘竖条里（112px 宽），同一条声明下自然只排得下一列 —— 形态没变，
+     变的是"由谁决定列数"：从写死的方向，变成由容器宽度决定（同类同形按设备内约束）。 */
+  .strip .card-list, .toolrail .card-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 8px;
+    overflow-x: visible;          /* 不再横滑，滚动条随之消失 */
+    padding-bottom: 0;
+    scroll-snap-type: none;       /* 横滑没了，吸附也就没有意义 */
+  }
+  .toolrail .card-list { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+  .strip .card, .strip .card.world, .strip .card.show-card {
+    width: auto;                  /* 宽度交给网格，不再写死 218/200 */
+    align-items: center;
+  }
+
+  /* 精彩局卡片瘦身：名称 + 一行短语 + 小标。完整说明去了悬停 title 与选中态那一行。
+     名称也要单行 —— 长名字折成两行会把整行卡片一起撑高（网格里同一行等高，
+     一张胖的就让七张跟着胖：实测「Max 填充器」折行把整条带从 46px 顶到 66px）。 */
+  .show-card .card-text b, .show-card .card-text em {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* 小标回到文档流里，靠右站；瘦卡片上再用绝对定位就会压住名字 */
+  .show-card .show-swap { position: static; margin-left: 8px; flex: none; }
+  /* 「建议电脑」这句在电脑上是废话（D95 ②） */
+  .show-card .tag-adv { display: none; }
+
+  /* 折叠：超出 SHOW_FOLD 张先藏起来（D95 ③）。
+     用 CSS 藏而不是不渲染 —— DOM 两边同一份，手机那条横滑带才可能"一字不动"。 */
+  .strip-list.folded > .card:nth-child(n+19) { display: none; }
+}
+
+/* 窄屏：规模档那枚小标用不上（他手里就是手机），只留"建议电脑"与"换世界" */
+@media (max-width: 767px) {
+  .show-card .tag-scale { display: none; }
+  #show-more { display: none; }
+}
+
+/* 选中一张精彩局之后，提示行换成那一局的完整说明（D95 ①）：
+   它此刻说的是一件具体的事，不再是通用提示，所以颜色也跟着提一档 */
+.strip-hint.on { color: var(--fg); }

@@ -106,6 +106,9 @@ export function setupCanvasInput(app) {
     if (stroke.cells.length) {
       app.records.noteEdit()   // 轨迹变了，之前攒的哈希作废
       app.markDirtyRun()       // 手绘过的局不能再靠种子重放
+      // 画笔也是"落子"：它把参照线替换掉 —— 画笔没有方向，于是等于清掉（D91）。
+      // 留着上一次的线会骗人：棋盘已经不是那条线画下时的棋盘了。
+      app.setRefRay(null)
     }
     stroke = null
   }

@@ -262,7 +262,7 @@ export class Renderer {
    * 动向线（D88 ②）：一条长虚线射线 + 一个箭头。
    * 方向从哪儿来不归它管 —— 它只管画；方向一律是引擎实测出来的（engine/motion.js）。
    */
-  drawMotionRay(vp, from, to, arrowAt = 'to', solidEnd = 'from') {
+  drawMotionRay(vp, from, to, arrowAt = 'to', solidEnd = 'from', opts = {}) {
     const ctx = this.ctx
     const p = (bx, by) => ({ x: (bx - vp.originX) * vp.scale, y: (by - vp.originY) * vp.scale })
     const a = p(from.x + 0.5, from.y + 0.5)
@@ -272,14 +272,17 @@ export class Renderer {
     // 渐变的浓端永远落在**图案那一头**（solidEnd），不管箭头在哪一端。
     const near = solidEnd === 'to' ? b : a
     const far = solidEnd === 'to' ? a : b
+    // 参照线退一档（D91）：更淡、更细、箭头也淡下去 ——
+    // 它是"刚才那条"，不该和手上正在瞄的那条抢眼睛。
+    const k = opts.ref ? 0.45 : 1
     const grad = ctx.createLinearGradient(near.x, near.y, far.x, far.y)
     const c = this.flat
-    grad.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},0.8)`)
-    grad.addColorStop(0.5, `rgba(${c[0]},${c[1]},${c[2]},0.35)`)
+    grad.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${0.8 * k})`)
+    grad.addColorStop(0.5, `rgba(${c[0]},${c[1]},${c[2]},${0.35 * k})`)
     grad.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`)
     ctx.save()
     ctx.strokeStyle = grad
-    ctx.lineWidth = Math.max(1, Math.min(3, vp.scale / 4))
+    ctx.lineWidth = Math.max(1, Math.min(3, vp.scale / 4)) * (opts.ref ? 0.6 : 1)
     ctx.setLineDash([Math.max(4, vp.scale), Math.max(3, vp.scale * 0.6)])
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
     ctx.setLineDash([])
@@ -288,7 +291,7 @@ export class Renderer {
     const tail = arrowAt === 'from' ? b : a
     const ang = Math.atan2(tip.y - tail.y, tip.x - tail.x)
     const size = Math.max(7, Math.min(18, vp.scale * 1.6))
-    ctx.globalAlpha = 0.85
+    ctx.globalAlpha = 0.85 * k
     ctx.fillStyle = rgb(this.flat)
     ctx.beginPath()
     ctx.moveTo(tip.x, tip.y)

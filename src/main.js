@@ -13,7 +13,7 @@ import { setupCanvasInput } from './ui/input.js'
 import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
 import { watchPageZoom } from './ui/page-zoom.js'
 import { orientToastKey, orientLabel, shouldShowStampTip } from './ui/stamp-hint.js'
-import { motionCached, rayEnds } from './engine/motion.js'
+import { motionCached, rayEnds, refFromPlacement } from './engine/motion.js'
 import { placeSelectionMenu } from './ui/io.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
@@ -64,6 +64,8 @@ const app = {
   mode: 'full',       // 'simple' | 'full'
   stamp: null,        // 当前选中的图案（跟随鼠标待放置）
   stampOrient: { rot: 0, flip: false },   // 当前图案的朝向（D81）
+  refRay: null,                          // 最近一次落子留下的参照线（D91）
+  refSeq: 0,                             // 参照线的序号：挡住在途的旧量测回调
   runDirty: false,    // 本局是否被手动改过 ⇒ 存档不能再靠种子重放
   baseline: null,     // 手改之后的重放基线 {rle, gen}
   selectArmed: false, // 侧栏按钮预备的一次性框选（Shift+拖则随时可用）
@@ -82,6 +84,8 @@ app.tick = function () {
 }
 
 app.setRunning = function (on) {
+  // 一开跑，"我刚才把它对着哪儿放的"就成了旧闻：棋盘已经不是那一刻的棋盘了（D91）
+  if (on) app.setRefRay(null)
   app.running = on
   app.autoPaused = false
   app.el.play.textContent = t(on ? 'ctrl.pause' : 'ctrl.play')
@@ -106,6 +110,7 @@ app.stepOnce = function () {
 
 app.clear = function (opts = {}) {
   app.setRunning(false)
+  app.setRefRay(null)               // 盘都清了，参照线自然也不留（D91）
   app.engine.clear()
   app.visual.sync(app.engine)
   app.runDirty = false
@@ -276,6 +281,17 @@ app.markStampTipUsed = function () {
   app.syncStampTip()
 }
 
+/**
+ * 参照线：**最近一次落子留下的那一条**（D91）。
+ * 它是静态贴纸 —— 记的是落子那一刻的位置与朝向，引擎此后怎么跑都不动它。
+ * 传 null 就是清掉（画笔落子、播放、清空都会走到这里）。
+ */
+app.setRefRay = function (ref) {
+  app.refRay = ref || null
+  app.refSeq = (app.refSeq | 0) + 1     // 一改就作废所有在途的量测回调
+  app.dirty = true
+}
+
 /* ---------------- 手机两步放置（D89 ①） ---------------- */
 /**
  * 摆一个"待放"的幽灵：**只改锚点，引擎与记账一个字都不碰**（D67 那条原则）。
@@ -370,6 +386,21 @@ app.placeStampAt = function (cell) {
     return
   }
   const o = centerOrigin(p, cell.x, cell.y)
+  // 放下之后把这一条动向线留成**参照线**（D91）：拿起下一个图案时两条线同屏，才对得上。
+  // 只留最近一条 —— 留一堆线等于没有线。
+  //
+  // 量测是异步的（吞食者最慢两百毫秒），所以落子那一刻可能还没量完 ——
+  // 那就等量完再贴。两处细节都不能省：
+  //   · 图案与朝向在**落子那一刻**就抓下来，不能等回调时再读 app.stamp（那时用户可能已经换了图案）；
+  //   · 用序号挡住"旧的盖掉新的"（连着放两个，先落的那个后量完，就会把后落的参照线冲掉）。
+  const base = app.stamp
+  const orient = { ...app.stampOrient }
+  const seq = ++app.refSeq
+  const applyRef = () => {
+    const m = motionCached(base, orient, applyRef)
+    if (m && seq === app.refSeq) app.setRefRay(refFromPlacement(p, o, m))
+  }
+  applyRef()
   placePattern(app.engine, p, o.x, o.y)
   app.engine.stats.alive = app.engine.countAlive()
   app.visual.reconcile(app.engine)
@@ -698,6 +729,13 @@ function frame(now) {
 
   if (app.dirty) {
     app.renderer.draw(app.engine, app.viewport, app.visual, app.visualOpts)
+    // 参照线：最近一次落子留下的那条，画在最底下（D91）。
+    // 它与待放的那条用的是同一套几何（rayEnds），只是样式退一档。
+    if (app.visualOpts.motionRay && app.refRay) {
+      const r = app.refRay
+      const ends = rayEnds(r.kind, r.center, r, { w: app.engine.w, h: app.engine.h })
+      app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd, { ref: true })
+    }
     // 方向键微调后幽灵脱离鼠标跟随（app.stampAt 非空即钉住）
     const gc = app.stampAt || app.hoverCell
     const gp = app.stampPattern()

@@ -259,6 +259,27 @@ export function distanceToEdge(center, ux, uy, bounds) {
 /** 拿不到棋盘尺寸时的兜底长度（格） */
 export const RAY_FALLBACK = 26
 
+/**
+ * 一次落子留下的**参照线**（D91）：把"放下时的位置与朝向"冻在这里。
+ *
+ * 它是一张**静态贴纸** —— 记的是落子那一刻的中心与方向，此后引擎怎么跑都不改它。
+ * 之所以不跟着引擎走：放下去的东西下一秒就变形、移动、甚至被吃掉，
+ * 而这条线要回答的是"我刚才把它对着哪儿放的"，那是历史，不是现状。
+ *
+ * @param {object} pattern 落子用的图案（当前朝向）
+ * @param {{x:number,y:number}} origin 左上角落点
+ * @param {{dx:number,dy:number,kind:string}|null} motion 实测出来的动向
+ * @returns {{kind:string, center:{x,y}, dx:number, dy:number}|null} 没方向就没有参照线
+ */
+export function refFromPlacement(pattern, origin, motion) {
+  if (!pattern || !origin || !motion) return null
+  return {
+    kind: motion.kind,
+    center: { x: origin.x + (pattern.w - 1) / 2, y: origin.y + (pattern.h - 1) / 2 },
+    dx: motion.dx, dy: motion.dy
+  }
+}
+
 /** 把一个方向向量按朝向变换（与 transformPattern 用的是同一套群运算） */
 export function rotateVector(v, o = {}) {
   const rot = ((o.rot | 0) % 4 + 4) % 4

@@ -36,7 +36,7 @@ import { createTwin, measure, diffCells, TWIN, TWIN_EXAMPLES } from '../src/data
 import { LOCKIN_SPEC, findLockIn, baselineStates, canFlipAt, candidateCells, runToEnd } from '../src/data/lockin.js'
 import { orientToastKey, orientLabel, shouldShowStampTip } from '../src/ui/stamp-hint.js'
 import { MOTION_KINDS, motionOf, motionNow, motionCached, motionKey, rotateVector,
-  rayEnds, RAY_FALLBACK, distanceToEdge, centroid } from '../src/engine/motion.js'
+  rayEnds, RAY_FALLBACK, distanceToEdge, centroid, refFromPlacement } from '../src/engine/motion.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -4705,6 +4705,69 @@ cases.push(
       const html = readSrc('index.html')
       for (const id of ['btn-drop', 'stamp-tip', 'sel-menu', 'page-zoom-hint'])
         t.ok(new RegExp('id="' + id + '"[^>]*hidden').test(html), `#${id} 默认是藏着的`)
+    }
+  },
+  {
+    name: '参照线：放下之后留一条，只留最近一条（D91）',
+    run(t) {
+      // 参照线是**落子那一刻的位置与朝向**，冻住不动 —— 它回答的是"我刚才对着哪儿放的"，
+      // 那是历史，不是现状；放下去的东西下一秒就变形、移动、甚至被吃掉。
+      const p = getPattern('glider')
+      const m = motionNow(p, { rot: 0, flip: false })
+      const ref = refFromPlacement(p, { x: 20, y: 30 }, m)
+      t.equal(ref.kind, 'ship', '类型跟着动向走')
+      t.equal(`${ref.center.x},${ref.center.y}`, '21,31', '中心 = 落点 + 半个图案')
+      t.equal(`${ref.dx},${ref.dy}`, `${m.dx},${m.dy}`, '方向就是那一刻实测的方向')
+      // 没方向的图案不留参照线（脉冲星没有"对着哪儿"这回事）
+      t.equal(refFromPlacement(getPattern('pulsar'), { x: 0, y: 0 }, null), null, '没方向就没有参照线')
+      t.equal(refFromPlacement(null, { x: 0, y: 0 }, m), null, '缺图案时不编一条出来')
+
+      // 与待放线共用同一套几何：参照线也要能一路画到棋盘边
+      const ends = rayEnds(ref.kind, ref.center, ref, { w: 200, h: 200 })
+      // 从 (21,31) 朝 SE 走，先撞到的是下边界（y=200），此时 x=190 —— 撞哪条边由哪条先到说了算
+      t.ok(ends.to.x === 200 || ends.to.y === 200, `参照线同样画到棋盘边：${ends.to.x},${ends.to.y}`)
+      t.equal(`${ends.to.x},${ends.to.y}`, '190,200', '先撞下边界，x 停在 190')
+      t.equal(ends.solidEnd, 'from', '浓端仍在图案那一头')
+
+      // 生命周期：落子时留、播放/清空时清、画笔落子时换掉，只留最近一条
+      const main = stripLiterals(readSrc('src/main.js'))
+      t.ok(/app\.setRefRay = function/.test(main), '要有设置参照线的动作')
+      const place = /app\.placeStampAt = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!place && /setRefRay\(refFromPlacement\(/.test(place[0]), '落子时留下参照线')
+      const run = /app\.setRunning = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!run && /if \(on\) app\.setRefRay\(null\)/.test(run[0]), '一开跑就清掉 —— 棋盘已不是那一刻的棋盘')
+      const clear = /app\.clear = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!clear && /app\.setRefRay\(null\)/.test(clear[0]), '清空时一并清掉')
+      const inp = stripLiterals(readSrc('src/ui/input.js'))
+      const commit = /function commitStroke\(\)[\s\S]*?\n  \}/.exec(inp)
+      t.ok(!!commit && /app\.setRefRay\(null\)/.test(commit[0]),
+        '画笔也是落子：它把参照线换掉（画笔没有方向，于是等于清掉）')
+      // 只留一条：setRefRay 是覆盖，不是往数组里塞
+      const setter = /app\.setRefRay = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!/push\(|concat\(/.test(setter[0]), '只留最近一条 —— 留一堆线等于没有线')
+
+      // 量测是异步的 → 落子那一刻可能还没量完，得等量完再贴；
+      // 而且要挡住"旧的盖掉新的"：连着放两个，先落的那个后量完就会冲掉后落的（自查时想到的）
+      t.ok(/const seq = \+\+app\.refSeq/.test(main), '每次落子领一个序号')
+      t.ok(/if \(m && seq === app\.refSeq\)/.test(main), '序号对不上的回调直接丢掉')
+      t.ok(/const base = app\.stamp/.test(main) && /const orient = \{ \.\.\.app\.stampOrient \}/.test(main),
+        '图案与朝向要在落子那一刻抓下来 —— 回调触发时用户可能已经换了图案')
+      t.ok(/refSeq: 0/.test(main), '序号要有初值，否则 ++undefined 得到 NaN')
+
+      // 静态贴纸：引擎跑了之后，参照线的数据一个字都不该变
+      t.ok(!/refRay[^\n]*engine/.test(main.replace(/app\.engine\.w, h: app\.engine\.h/g, '')),
+        '参照线不许跟着引擎更新')
+
+      // 样式退一档：更淡、更细、箭头也淡
+      const r = readSrc('src/render/renderer.js')
+      t.ok(/const k = opts\.ref \? 0\.45 : 1/.test(r), '参照线整体更淡')
+      t.ok(/\* \(opts\.ref \? 0\.6 : 1\)/.test(r), '线也更细')
+      t.ok(/globalAlpha = 0\.85 \* k/.test(r), '箭头跟着一起淡')
+      t.ok(/drawMotionRay\(vp, from, to, arrowAt = 'to', solidEnd = 'from', opts = \{\}\)/.test(r),
+        '样式是参数，不是第二个画线函数')
+      // 画在最底下：参照线先画，幽灵与它的线压在上面
+      t.ok(/app\.refRay\)[\s\S]{0,400}drawMotionRay[\s\S]{0,900}drawGhost/.test(main),
+        '参照线画在幽灵与待放线之下 —— 手上那条要压过刚才那条')
     }
   },
   {

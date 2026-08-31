@@ -885,9 +885,28 @@ button.rescue:hover { background: #26497a; border-color: #3a72ad; color: #f0f7ff
 #fav-list .fav-row .row button { width: auto; flex: 1; padding: 5px 4px; }
 #fav-budget { margin-top: 8px; }
 
+/* 「展开全部 / 收起」：折叠开关。次级动作，不给它主键的绿，也不占一整行按钮的分量。
+   条目多了才出现 —— 少的时候一颗永远点不动的开关只是噪音。 */
+.fav-more {
+  width: 100%;
+  margin-top: 2px;
+  padding: 6px;
+  font-size: 11px;
+  background: none;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+}
+.fav-more:hover { color: var(--fg); border-style: solid; }
+
 /* 精彩局卡片：与世界卡片同处取用区、同一形态（D75 ①） */
 .strip .card.show-card { width: 200px; }
 .show-card .card-text em { color: var(--muted); }
+
+/* 横滑对齐：条目多起来之后，随手一划应当停在卡片边界上，而不是半张卡卡在边上。
+   proximity 而不是 mandatory —— 后者会在长列表里把慢速滑动"吸"回去，变成和用户较劲。
+   只改滚动落点，不改任何盒模型，桌面基准逐像素不动（D83 §3）。 */
+.strip .card-list { scroll-snap-type: x proximity; }
+.strip .card { scroll-snap-align: start; }
 
 /* 播放按钮随状态换色：待播放 = 绿（.primary），运行中 = 橙（.running）。
    写在 .primary 之后，同等优先级下后写的赢；两种模式共用同一个按钮，自动同步。 */
@@ -1051,7 +1070,11 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   /* 桌面上世界横条的滚动发生在**内层列表**（.strip .card-list 自带 overflow-x:auto），
      而玩具盒滚的是容器本身。同样的外观、两套机制 —— 这是「同类同形」更隐蔽的一种违反，
      还顺带把 padding-bottom:4px 算进了高度，撑出 4px 竖滚。统一交给容器滚。 */
-  .strip .card-list { overflow-x: visible; padding-bottom: 0; }
+  .strip .card-list { overflow-x: visible; padding-bottom: 0; scroll-snap-type: none; }
+  /* 窄屏的滚动发生在容器身上，snap 就得跟着挪到容器上；
+     scroll-padding 与容器的左内边距对齐，否则停下来时卡片会被裁掉 12px */
+  .toolrail, .strip { scroll-snap-type: x proximity; scroll-padding-left: 12px; }
+  .toolrail .card, .strip .card { scroll-snap-align: start; }
   /* ② 自我宣告：卡片宽 = 容器的 1/3.4，于是任何屏宽下都是
      3 整张 + 第 4 张露 40% —— "还有更多"的通用视觉语言，且与屏宽无关。
      靠调 padding 去撞这个比例是撞不准的，必须让宽度本身按容器取分数。 */

@@ -12,7 +12,8 @@ import { parseRLE, toRLE, boardToRLE } from '../src/engine/rle.js'
 import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_VERSION } from '../src/engine/save.js'
 import { DICT } from '../src/i18n/dict.js'
 import { createPrefs, PREF_KEYS, BOOKMARK_KEYS } from '../src/ui/prefs.js'
-import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, MAX_BYTES } from '../src/data/favorites.js'
+import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
+import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
 import { SnapshotLog } from '../src/data/snapshots.js'
 import { TerminationDetector } from '../src/data/detector.js'
 import { Chronicle } from '../src/data/chronicle.js'
@@ -22,7 +23,7 @@ import { VisualState } from '../src/render/visual-state.js'
 import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
-import { introPages, introNext, placeStarterGift } from '../src/ui/intro.js'
+import { introPages, introNext, appendixPages, placeStarterGift } from '../src/ui/intro.js'
 import { pinchDelta, strokeVerdict, PROMOTE_MS, nudgeCell } from '../src/ui/input.js'
 import { clampToRange, NUMERIC_SLIDERS } from '../src/ui/numeric-entry.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
@@ -2165,9 +2166,9 @@ cases.push(
       const expect = [
         // [有没有第零幕, 模式, 期望页序, 每一页点「下一幕」的去向]
         [true, 'simple', ['act0', 'act1', 'act2', 'act3'], [1, 2, 3, 'finish']],
-        [true, 'full', ['act0', 'act1', 'act2', 'act3', 'helpAge', 'helpBS'], [1, 2, 3, 'finish', 5, 'close']],
+        [true, 'full', ['act0', 'act1', 'act2', 'act3', 'helpAge', 'helpBS', 'helpSave'], [1, 2, 3, 'finish', 5, 6, 'close']],
         [false, 'simple', ['act1', 'act2', 'act3'], [1, 2, 'finish']],
-        [false, 'full', ['act1', 'act2', 'act3', 'helpAge', 'helpBS'], [1, 2, 'finish', 4, 'close']]
+        [false, 'full', ['act1', 'act2', 'act3', 'helpAge', 'helpBS', 'helpSave'], [1, 2, 'finish', 4, 5, 'close']]
       ]
       for (const [chooser, mode, pages, nexts] of expect) {
         const list = introPages({ chooser, mode })
@@ -2380,7 +2381,7 @@ cases.push(
     }
   },
   {
-    name: '介绍卡：三幕主线 + 两页附录的信息架构（D76）',
+    name: '介绍卡：三幕主线 + 附录页的信息架构（D76）',
     run(t) {
       // 标记类的东西写在模板字符串里，stripLiterals 会把它们剥掉 —— 这类断言要查原文。
       // 只有"是不是真代码"的判断（如条件、常量）才用剥过的版本。
@@ -2408,7 +2409,12 @@ cases.push(
       const simple = introPages({ chooser: false, mode: 'simple' })
       t.equal(simple.join(','), 'act1,act2,act3', '简洁版只有三幕，不受本次改动影响')
       const full = introPages({ chooser: false, mode: 'full' })
-      t.equal(full.join(','), 'act1,act2,act3,helpAge,helpBS', '完整版三幕 + 两页附录')
+      t.equal(full.join(','), 'act1,act2,act3,helpAge,helpBS,helpSave', '完整版三幕 + 三页附录')
+      t.equal(appendixPages(full).length, 3, '附录三页')
+      t.equal(appendixPages(simple).length, 0, '简洁版没有附录')
+      // 附录页数不许再由写死的 key 名单数出来 —— 加第三页时那份名单会悄悄落下（D83 §4）
+      t.ok(!/k === 'helpAge' \|\| k === 'helpBS'/.test(readSrc('src/ui/intro.js')),
+        '数附录页要走 appendixPages()，不能逐个列 key')
 
       // ---- 进度：主线与附录分开数 ----
       t.ok(/const ACTS = 3/.test(src), '主线固定三幕')
@@ -3300,7 +3306,7 @@ cases.push(
     name: '接线守卫：收藏面板的按钮与内置精选局的词条齐备',
     run(t) {
       const html = readSrc('index.html')
-      for (const id of ['fav-tabs', 'fav-list', 'fav-budget', 'btn-fav-add', 'btn-fav-export', 'btn-fav-import', 'fav-file'])
+      for (const id of ['fav-tabs', 'fav-list', 'fav-budget', 'fav-storage', 'btn-fav-add', 'btn-fav-export', 'btn-fav-import', 'fav-file'])
         t.ok(html.includes(`id="${id}"`), `index.html 缺 #${id}`)
       // 内置精选局的名称、说明、生平三样都要有词条（含简洁语域的名称）
       for (const b of BUILTIN_LAYOUTS) {
@@ -3311,6 +3317,261 @@ cases.push(
         t.ok((b.nameKey + '.simple') in DICT.zh, `简洁语域缺 ${b.nameKey}.simple`)
         t.ok((b.nameKey + '.simple') in DICT.en, `简洁语域缺英文 ${b.nameKey}.simple`)
       }
+    }
+  },
+  {
+    name: '收藏：生平探针与内置局是同一把尺子（D83 ②）',
+    run(t) {
+      // 自存卡片上的生平必须与内置卡片可以并排读 —— 那就得是同一口径量出来的。
+      // 这条把两者钉在一起：拿探针去跑内置的野火，出来的数必须与写在
+      // BUILTIN_LAYOUTS 里、由上一轮实测钉死的那组分毫不差。
+      // 口径一旦被改（换盘面、换边界、换检测器），这条会立刻红。
+      const w = BUILTIN_LAYOUTS.find(b => b.id === 'builtin:wildfire')
+      const life = probeLife(w.rle)
+      t.equal(life.end, 'cycle', '野火以循环收场')
+      t.equal(life.period, 2, '周期 2')
+      t.equal(life.start, w.life.start, '起步格数一致')
+      t.equal(life.gen, w.life.settle, `定型代数应为 ${w.life.settle}`)
+      t.equal(life.peak, w.life.peak, `峰值应为 ${w.life.peak}`)
+      t.equal(life.peakGen, w.life.peakGen, `峰值代数应为 ${w.life.peakGen}`)
+      t.equal(life.final, w.life.final, `末态应为 ${w.life.final}`)
+      t.equal(life.board, w.life.board, '盘面大小一致')
+      t.equal(life.boundary, w.life.boundary, '边界一致')
+
+      // 口径与词条里写的那句话也必须对得上：卡片上写着"默认 200×200 环形盘"，
+      // 探针就不能偷偷换成别的盘 —— 那会让所有自存卡片一起说谎。
+      t.equal(PROBE_SPEC.board, 200, '默认盘 200')
+      t.equal(PROBE_SPEC.boundary, 'torus', '默认环形')
+      for (const lang of ['zh', 'en']) {
+        t.ok(DICT[lang]['fav.life.cycle'].includes('{board}'), `${lang} 的生平句子要把盘面写出来`)
+      }
+      t.ok(PROBE_SPEC.genCap > w.life.settle,
+        `代数上限（${PROBE_SPEC.genCap}）要够野火这一档跑完（${w.life.settle}），否则自存同一局只能得到"跑满未定型"`)
+    }
+  },
+  {
+    name: '收藏：生平的四种结局各出一次，分块跑与一口气跑同结果（D83 ②）',
+    run(t) {
+      const H = 'rule = B3/S23\n'
+      const small = { board: 40 }
+      const blinker = probeLife('x = 3, y = 1, ' + H + '3o!', small)
+      t.equal(blinker.end, 'cycle', '闪灯是循环')
+      t.equal(blinker.period, 2, '周期 2')
+      // 第 3 代才认出来，不是第 2 代：检测器只看**走过的每一代**，第 0 代那张盘从不入表
+      // （主循环也是这么记的）。周期数是对的，代数是"认出来的那一代"。
+      t.equal(blinker.gen, 3, '第 3 代认出来 —— 第 0 代不入表，这与主循环的记法一致')
+
+      const block = probeLife('x = 2, y = 2, ' + H + '2o$2o!', small)
+      t.equal(block.end, 'still', '方块是静物')
+      t.equal(block.gen, 2, '连着两代一样才判静止')
+      t.equal(block.final, 4, '末态 4 格')
+
+      const lone = probeLife('x = 1, y = 1, ' + H + 'o!', small)
+      t.equal(lone.end, 'extinction', '一个孤格必死')
+      t.equal(lone.final, 0, '末态 0 格')
+
+      const glider = probeLife('x = 3, y = 3, ' + H + 'bo$2bo$3o!', { board: 40, genCap: 10 })
+      t.equal(glider.end, 'capped', '滑翔机在 10 代内不会复原 —— 该报"跑满未定型"，不能瞎猜一个结局')
+      t.equal(glider.gen, 10, '停在上限那一代')
+
+      const bad = createLifeProbe('这不是 RLE')
+      t.ok(bad.done && bad.result.end === 'error',
+        '读不懂的条目要一次定案为 error —— 否则每次渲染都会重试一遍，白烧 CPU')
+
+      // 界面是分块跑的（一口气跑会冻住那一帧）。分块与不分块必须得到同一组数，
+      // 否则卡片上的数字取决于用户当时切没切标签页。
+      const chunked = createLifeProbe('x = 3, y = 1, ' + H + '3o!', small)
+      while (!chunked.run(1));
+      t.equal(JSON.stringify(chunked.result), JSON.stringify(blinker), '一代一代地跑，结果必须与整段跑相同')
+      const chunkedGlider = createLifeProbe('x = 3, y = 3, ' + H + 'bo$2bo$3o!', { board: 40, genCap: 10 })
+      while (!chunkedGlider.run(3));
+      t.equal(JSON.stringify(chunkedGlider.result), JSON.stringify(glider), '跑到上限那一条也一样')
+    }
+  },
+  {
+    name: '收藏：内置卡与自存卡同形，用户写的字一个都不过词典（D83 ①）',
+    run(t) {
+      const tr = key => '词典:' + key
+      const b = layoutRow(BUILTIN_LAYOUTS[0], tr)
+      const mine = layoutRow({
+        id: 'fav:1', name: '我的第 1 局', rle: 'x = 1, y = 1, rule = B3/S23\no!',
+        note: '放在左上角那一坨', life: { end: 'still', board: 200, gen: 12, peak: 30, peakGen: 4, final: 8 }
+      }, tr)
+      t.equal(Object.keys(b).sort().join(','), Object.keys(mine).sort().join(','),
+        '两种来源喂给卡片模板的字段必须一模一样 —— 卡片长得一样，是因为数据本来就是同一种形状')
+      t.equal(mine.name, '我的第 1 局', '用户写的名字原样出去')
+      t.equal(mine.note, '放在左上角那一坨', '用户写的说明原样出去，不翻译也不改写')
+      t.ok(b.name.startsWith('词典:'), '内置的三样全走词典')
+      t.ok(b.life.startsWith('词典:'), '内置的生平走词典')
+      t.ok(mine.life.startsWith('词典:fav.life.'), '自存的生平：数字是跑出来的，措辞走词典')
+      t.ok(!mine.life.includes('我的第 1 局'), '生平那一行不该混进用户写的字')
+
+      // 没跑过生平的条目，生平那一行留白 —— 不编，也不拿说明去顶
+      t.equal(layoutRow({ id: 'x', name: 'n', rle: 'r', note: '', life: '' }, tr).life, '', '没跑过就留白')
+      // 别人导出的文件里那一行是字符串：原样显示，不改写
+      t.equal(lifeText('别人写的一句话', tr), '别人写的一句话', '外来的生平原样显示')
+      t.equal(lifeText({ end: 'error' }, tr), '', '跑不出来的条目留白，不编故事')
+
+      // 排序：内置在前，自存的新的在前（横条上刚存完的那一张就在开头）
+      const rows = layoutRows({ layouts: [{ id: 'a', name: '甲' }, { id: 'b', name: '乙' }] }, tr)
+      t.equal(rows.length, BUILTIN_LAYOUTS.length + 2, '三条内置 + 两条自存')
+      t.ok(rows.slice(0, BUILTIN_LAYOUTS.length).every(r => r.builtin), '内置在前')
+      t.equal(rows[BUILTIN_LAYOUTS.length].name, '乙', '后存的排在前面')
+    }
+  },
+  {
+    name: '收藏：长列表折起来，内置恒显示（D83 ③）',
+    run(t) {
+      const mk = n => {
+        const rows = [{ id: 'b1', builtin: true }, { id: 'b2', builtin: true }]
+        for (let i = 0; i < n; i++) rows.push({ id: 'm' + i, builtin: false })
+        return rows
+      }
+      const few = foldRows(mk(RECENT_SHOWN), false)
+      t.equal(few.hidden, 0, `不超过 ${RECENT_SHOWN} 条就不折 —— 一颗永远点不动的开关只是噪音`)
+      t.equal(few.rows.length, RECENT_SHOWN + 2, '一条都没少')
+
+      const many = foldRows(mk(RECENT_SHOWN + 3), false)
+      t.equal(many.hidden, 3, '多出来的三条折起来')
+      t.equal(many.rows.filter(r => r.builtin).length, 2, '内置的一条都不折 —— 它们是入口，不是历史')
+      t.equal(many.rows.filter(r => !r.builtin).length, RECENT_SHOWN, `只露最近 ${RECENT_SHOWN} 条`)
+      t.equal(many.rows[2].id, 'm0', '露出来的是列表最前面那几条（layoutRows 已把新的排在前）')
+
+      const open = foldRows(mk(RECENT_SHOWN + 3), true)
+      t.equal(open.hidden, 0, '展开后没有隐藏项')
+      t.equal(open.rows.length, RECENT_SHOWN + 5, '展开后全在')
+    }
+  },
+  {
+    name: '收藏：说明字段的边界，与外来生平的收敛（D83 ①）',
+    run(t) {
+      const base = { name: '甲', rle: 'x = 1, y = 1, rule = B3/S23\no!' }
+      t.ok(validateLayout({ ...base, note: '短说明' }).ok, '带说明的条目合法')
+      t.ok(validateLayout(base).ok, '说明是可选的，不填也能存')
+      t.equal(validateLayout({ ...base, note: 'x'.repeat(MAX_NOTE + 1) }).key, 'fav.err.longNote',
+        '说明超长要明确拒绝 —— 悄悄截掉半句用户自己写的字，比不让存更难受')
+
+      // 外来文件是不可信输入：认不出的结论收敛成 error，数字字段一律收敛成数
+      const dirty = normalizeLife({ end: '<script>', gen: '不是数', peak: 3.7, board: '200', period: 9 })
+      t.equal(dirty.end, 'error', '认不出的结局记为 error')
+      t.equal(dirty.gen, 0, '非数字收敛成 0')
+      t.equal(dirty.peak, 3, '小数截成整数')
+      t.equal(dirty.period, undefined, '只有循环才有周期')
+      t.equal(normalizeLife('别人的一句话'), '别人的一句话', '字符串形态原样留着')
+      t.equal(normalizeLife(undefined), '', '没有就是没有')
+
+      // 结构化的生平要能原样往返导出导入（数字是数据，措辞在词典里）
+      const life = { end: 'cycle', board: 200, boundary: 'torus', start: 5, gen: 12, peak: 30, peakGen: 4, final: 8, period: 2 }
+      const back = importFavorites(exportFavorites({ layouts: [{ ...base, id: 'a', note: '', life }], rules: [] }))
+      t.ok(back.ok, '往返成功')
+      t.equal(JSON.stringify(back.layouts[0].life), JSON.stringify(life), '生平逐字段往返')
+    }
+  },
+  {
+    name: '收藏：生平四种结局的中英两语域都填得满（D83 ②）',
+    run(t) {
+      const tr = (lang, reg) => (key, params) => {
+        let str = reg === 'simple' ? DICT[lang][key + '.simple'] : undefined
+        if (str === undefined) str = DICT[lang][key]
+        if (str === undefined) return 'MISSING:' + key
+        if (params) for (const k in params) str = str.split('{' + k + '}').join(String(params[k]))
+        return str
+      }
+      const lives = {
+        cycle: { end: 'cycle', board: 200, gen: 3640, peak: 1438, peakGen: 1470, final: 735, period: 2 },
+        still: { end: 'still', board: 200, gen: 12, peak: 30, peakGen: 4, final: 8 },
+        extinction: { end: 'extinction', board: 200, gen: 44, peak: 12, peakGen: 3, final: 0 },
+        capped: { end: 'capped', board: 200, gen: 5000, peak: 900, peakGen: 120, final: 640 }
+      }
+      for (const [name, life] of Object.entries(lives)) {
+        for (const lang of ['zh', 'en']) {
+          for (const reg of ['full', 'simple']) {
+            const text = lifeText(life, tr(lang, reg))
+            t.ok(text.length > 0, `${lang}/${reg} 的「${name}」应有文案`)
+            t.ok(!text.startsWith('MISSING:'), `${lang}/${reg} 缺「${name}」的词条`)
+            t.ok(!text.includes('{'), `${lang}/${reg} 的「${name}」有没填上的占位符：${text}`)
+            t.ok(text.includes(String(life.gen)), `${lang}/${reg} 的「${name}」要把代数说出来`)
+          }
+        }
+      }
+      // 峰值只在真的发生过时才说：一架滑翔机的"峰值"是第 0 代的 5 格，那是起点不是峰值
+      const flat = { end: 'cycle', board: 200, gen: 801, peak: 5, peakGen: 0, final: 5, period: 800 }
+      for (const lang of ['zh', 'en']) {
+        const text = lifeText(flat, tr(lang, 'full'))
+        t.ok(!text.includes('5 格在第 0 代') && !/on step 0/.test(text),
+          `${lang}：没长过的局不该报一个"第 0 代的峰值"`)
+        t.ok(lifeText({ ...flat, peak: 40, peakGen: 12 }, tr(lang, 'full')).includes('12'),
+          `${lang}：真的长过就要把峰值说出来`)
+      }
+
+      // 进行中的那一行也要有词条（用户存完先看到的就是它）
+      t.ok(!lifeText({ pending: true }, tr('en', 'full')).startsWith('MISSING'), '英文缺 fav.life.running')
+    }
+  },
+  {
+    name: '接线守卫：保存路径上说明与生平都接上了（D83 ①）',
+    run(t) {
+      const src = readSrc('src/ui/favorites-view.js')
+      // 查"有没有真的调用"必须用剥过注释的版本。第一版扫的是原文，
+      // 而处理函数里恰好有一句注释写着"（见 pump()）"—— 把 pump() 从代码里删掉，
+      // 守卫照样绿。是红/绿自查把这一条揪出来的（D83 §5）。
+      const code = stripLiterals(src)
+      t.ok(/fav\.notePrompt/.test(src), '保存时要问一句可选的说明')
+      t.ok(/createLifeProbe/.test(code), '生平要由系统跑，不能留空等用户填')
+      t.ok(!/BUILTIN_LAYOUTS/.test(code),
+        '卡片数据一律走 layoutRows()：界面层再自己拼一份内置行，两种卡片就会慢慢长歪（D83 ①）')
+      const add = /el\.add\.addEventListener\([\s\S]*?\n  \}\)/.exec(code)
+      t.ok(!!add, '找得到「收藏当前布局」的处理')
+      t.ok(/note,/.test(add[0]) || /note:\s*note/.test(add[0]), '存的时候要把说明带上')
+      t.ok(/pump\(\)/.test(add[0]), '存完要立刻开跑生平')
+      const prompts = code.match(/window\.prompt\(/g) || []
+      t.equal(prompts.length, 2, '只问名字与说明两件事 —— 生平是系统跑出来的，不问用户')
+      // 分块跑：一口气跑满上限要两秒多，那正是用户刚点完「收藏」的时刻
+      t.ok(/PROBE_CHUNK/.test(code) && /setTimeout\(tick/.test(code), '生平要分块跑，不能在一帧里跑完')
+    }
+  },
+  {
+    name: '接线守卫：横滑对齐与折叠开关（D83 ③）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      t.ok(/\.strip \.card-list \{[^}]*scroll-snap-type:\s*x proximity/.test(css),
+        '桌面横条要按卡片对齐落点')
+      t.ok(/\.strip \.card \{[^}]*scroll-snap-align/.test(css), '卡片要声明对齐点')
+      t.ok(!/scroll-snap-type:\s*x mandatory/.test(css),
+        'mandatory 会在长列表里把慢速滑动吸回去 —— 那是在和用户较劲')
+      t.ok(/scroll-padding-left/.test(css), '窄屏容器滚动时要留出左内边距，否则停下来卡片被裁掉')
+      t.ok(/\.fav-more \{/.test(css), '折叠开关要有自己的样式')
+      t.ok(!/\.fav-more \{[^}]*background:\s*var\(--accent/.test(css),
+        '折叠是次级动作，不许用主键的绿')
+      const view = readSrc('src/ui/favorites-view.js')
+      t.ok(/foldRows/.test(view), '侧栏长列表要折叠')
+      t.ok(!/max-height/.test(css.slice(css.indexOf('#fav-list'), css.indexOf('#fav-budget'))),
+        '侧栏本身就是一根滚动的柱子，里面不许再开定高滚动区（D83 §3）')
+    }
+  },
+  {
+    name: '接线守卫：收藏的存储边界在「?」与面板里都说了（D83 ④）',
+    run(t) {
+      const intro = readSrc('src/ui/intro.js')
+      t.ok(/helpSave/.test(intro), '「?」里要有「收藏存在哪儿」这一页')
+      t.ok(/RENDERERS = \{[^}]*helpSave/.test(intro), '新附录页要登记进 RENDERERS，否则翻到那页是空白')
+      for (const lang of ['zh', 'en']) {
+        for (const k of ['title', 'body', 'builtin', 'mine', 'move', 'budget', 'submit'])
+          t.ok(typeof DICT[lang]['help.save.' + k] === 'string', `${lang} 缺 help.save.${k}`)
+      }
+      // 三件事都得说到：内置人人有 / 自存只在本机 / 换设备走导出导入
+      t.ok(/导出/.test(DICT.zh['help.save.move']) && /导入/.test(DICT.zh['help.save.move']), '中文要说清导出导入')
+      t.ok(/Export/i.test(DICT.en['help.save.move']) && /Import/i.test(DICT.en['help.save.move']), '英文要说清导出导入')
+      const html = readSrc('index.html')
+      t.ok(/data-i18n="fav.storageNote"/.test(html), '收藏面板里也要有一句 —— 会因此吃亏的人正在看这一块')
+      for (const lang of ['zh', 'en'])
+        t.ok(typeof DICT[lang]['fav.storageNote.simple'] === 'string' || typeof DICT[lang]['fav.storageNote'] === 'string',
+          `${lang} 缺存储边界的短句`)
+      // 简洁语域也得说到：孩子那一版看不到侧栏面板，只看得到取用区的提示条
+      t.ok(/这台电脑/.test(DICT.zh['fav.showHint.simple']), '简洁语域的提示条要说清"只在这台电脑上"')
+      t.ok(/this computer/i.test(DICT.en['fav.showHint.simple']), '英文简洁语域同理')
+      const readme = readSrc('README.md')
+      t.ok(/收藏存在哪儿/.test(readme), 'README 里要有「收藏存在哪儿」一节')
     }
   },
   {

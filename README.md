@@ -33,6 +33,26 @@ run yourself has not even that.
 
 玩具盒里的图案与「怎么亲手喂吞食者一次」见 [docs/patterns.md](./docs/patterns.md)。
 
+### 收藏存在哪儿 · Where favourites live
+
+收藏分两种来源，能带走的方式不一样 —— 界面里的「?」附录也讲了同一件事：
+
+- **内置的精彩局**随程序一起发布：谁打开这个页面都有，删不掉，也不占你的额度。
+- **你自己存的局**只留在**这台设备的这个浏览器**里（localStorage 的书签通道，见
+  [decisions.md](./docs/decisions.md) D82）。它没有上传到任何地方；换设备、换浏览器、
+  清掉网站数据，它就不在了。
+- **换设备就用文件**：点「导出收藏」存成 JSON，在另一台设备上「导入收藏」。
+  导入是**合并**，不会洗掉那边已有的收藏。
+- **额度**共 256 KB、单条最多 32 KB。满了会明确告诉你，不会悄悄丢掉最旧的那条。
+- **想让自己的局进内置册子**：按 [decisions.md](./docs/decisions.md) D64 的入库标准提交 ——
+  附 RLE、实测生平（终局代数、结局类型、人口峰值）和一条回归测试。
+  自存条目卡片上的生平是程序自己跑出来的（默认 200×200 环形盘 + 应用自己的终止检测器），
+  与内置局用的是同一把尺子，可以直接引用。
+
+Built-in shows ship with the app; anything you save stays in this browser on this device
+and is never uploaded. Use **Export / Import favourites** to move them between devices —
+importing merges, it never overwrites. Budget: 256 KB total, 32 KB per entry.
+
 规格见 [game-of-life-spec.md](./game-of-life-spec.md)，
 验收进度见 [docs/acceptance.md](./docs/acceptance.md)，设计决策见 [docs/decisions.md](./docs/decisions.md)，
 用户反馈记录见 [docs/feedback.md](./docs/feedback.md)，
@@ -68,6 +88,8 @@ src/data/     数据记录，纯逻辑零 DOM
   csv.js            CSV 生成
   tower.js          时间之塔的数据模型（滑动窗口 / 切片 / 几何度量）
   explorer.js       规则勘探：单局观测、结局七类分类、多局总判与排序、B/S 采样
+  favorites.js      收藏（整局 + 规则）：校验、预算、导入导出、卡片数据
+  life-probe.js     生平探针：按内置局同一口径（默认盘 + 自家检测器）实跑一条收藏
 src/i18n/     中英词典与运行时（界面上的每个字都在这里）
   dict.js           中英对照表
   index.js          t() 取词、data-i18n 整树重刷、语言切换广播
@@ -79,6 +101,7 @@ src/ui/       控件绑定与画布交互
   io.js             存档下载读取（分片重放 + 进度条）、RLE 导入与框选导出
   tower-view.js     观塔模式（three.js InstancedMesh + 切片联动）
   explorer-view.js  规则勘探器（批量结果表 / 候选名单 / 一键复现）
+  favorites-view.js 收藏面板与简洁模式的「精彩局」卡片条
 src/workers/
   tower-builder.js  时间之塔的构建 Worker（只搬运，逻辑在 data/tower.js）
   explorer.js       规则勘探的批量 Worker（同样只搬运）

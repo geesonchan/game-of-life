@@ -90,8 +90,13 @@ const DEMO_STAGE = [                                              // 第一幕�
 export function introPages(o) {
   const list = o.chooser ? ['act0'] : []
   list.push('act1', 'act2', 'act3')
-  if (o.mode === 'full') list.push('helpAge', 'helpBS')
+  if (o.mode === 'full') list.push('helpAge', 'helpBS', 'helpSave')
   return list
+}
+
+/** 附录页 = 主线三幕之外的那些。数附录的地方一律问这个函数，别再逐个列 key（D83 §4） */
+export function appendixPages(list) {
+  return list.filter(k => k.startsWith('help'))
 }
 
 /**
@@ -154,7 +159,7 @@ export function createIntro(app) {
   let miniBoards = []
 
   /** 页 key → 画这一页的函数。页序本身由纯函数 introPages 决定（见文件顶部）。 */
-  const RENDERERS = { act0: actZero, act1, act2, act3, helpAge, helpBS }
+  const RENDERERS = { act0: actZero, act1, act2, act3, helpAge, helpBS, helpSave }
   function pageList() { return introPages({ chooser, mode: app.mode }) }
 
   /**
@@ -207,7 +212,7 @@ export function createIntro(app) {
       // 五个一样的点等于说"你还有两幕没看完"，那正是这次要纠正的误解。
       const ACTS = 3
       const shown = chooser ? page : page + 1        // 有第零幕时，第一幕才算第 1 幕
-      const appendixCount = list.filter(k => k === 'helpAge' || k === 'helpBS').length
+      const appendixCount = appendixPages(list).length
       const inAppendix = shown > ACTS
       stepEl.textContent = inAppendix
         ? t('intro.appendix.step', { n: shown - ACTS, total: appendixCount })
@@ -355,6 +360,25 @@ export function createIntro(app) {
       detail = `<p class="lead">${t('help.bs.none')}</p>`
     }
     bodyEl.innerHTML = `<h3>${t('help.bs.title')}</h3><p class="lead">${t('help.bs.body')}</p>${detail}`
+  }
+
+  /**
+   * 附录第三页：收藏存在哪儿。
+   * 这一页讲的是**边界**，不是功能 —— 内置局人人都有，自存的只在这台设备的这个浏览器里。
+   * 用户不该从"换了台电脑收藏没了"这件事上第一次知道它（D83 §4）。
+   */
+  function helpSave() {
+    const line = key => `<li>${t(key)}</li>`
+    bodyEl.innerHTML = `
+      <h3>${t('help.save.title')}</h3>
+      <p class="lead">${t('help.save.body')}</p>
+      <ul class="bs-read">
+        ${line('help.save.builtin')}
+        ${line('help.save.mine')}
+        ${line('help.save.move')}
+        ${line('help.save.budget')}
+        ${line('help.save.submit')}
+      </ul>`
   }
 
   // 第二幕的「走一步 / 摆回去」用事件委托，只绑一次（bodyEl 一直在，每页只换内容）

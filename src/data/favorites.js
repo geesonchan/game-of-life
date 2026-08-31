@@ -7,6 +7,15 @@ export const MAX_BYTES = 256 * 1024
 /** 单条布局的体积上限：一条就撑爆整个列表的话，用户连删都不好删 */
 export const MAX_ENTRY_BYTES = 32 * 1024
 
+/** 说明字段的字数上限 */
+export const MAX_NOTE = 200
+
+/**
+ * 侧栏里默认露出几条自存的。再多就折起来，给一颗「展开全部」——
+ * 侧栏是一整根滚动的柱子，在里面再开一个定高滚动区，滚轮和手指都会被吃掉一层（D83 §3）。
+ */
+export const RECENT_SHOWN = 5
+
 /**
  * 内置精选局：随代码发布，不进 localStorage，用户删不掉也不占配额。
  * 每条都按 D64 的互动型标准带实测生平，并配回归测试。
@@ -60,6 +69,9 @@ export function validateLayout(entry) {
   if (!rle.trim()) return { ok: false, key: 'fav.err.noRle' }
   if (!ruleOf(rle)) return { ok: false, key: 'fav.err.noRule' }
   if (byteLength(rle) > MAX_ENTRY_BYTES) return { ok: false, key: 'fav.err.tooBig' }
+  // 说明是可选的，但不能长到把卡片撑变形 —— 明确拒绝，不静默截断：
+  // 截断的是用户自己写的字，悄悄砍掉半句比不让存更难受（D83 §1）
+  if (String(entry.note ?? '').length > MAX_NOTE) return { ok: false, key: 'fav.err.longNote' }
   return { ok: true }
 }
 
@@ -120,9 +132,95 @@ export function normalizeLayout(e) {
     id: String(e.id || ('fav:' + byteLength(String(e.rle)) + ':' + String(e.name).slice(0, 8))),
     name: String(e.name).trim().slice(0, 60),
     rle: String(e.rle),
-    note: String(e.note ?? '').slice(0, 200),
-    life: typeof e.life === 'string' ? e.life.slice(0, 200) : ''
+    note: String(e.note ?? '').slice(0, MAX_NOTE),
+    life: normalizeLife(e.life)
   }
+}
+
+/** 生平的四种结局 + 一个"跑不出来" */
+export const LIFE_ENDS = Object.freeze(['cycle', 'still', 'extinction', 'capped', 'error'])
+
+/**
+ * 规整生平。两种形态都认：
+ * - **结构**（本机跑出来的）：数字是数据，措辞交给词典 —— 于是同一条收藏在中英两种界面里
+ *   读到的是同一组数字、各自的句子。
+ * - **字符串**（旧条目、或别人导出的文件）：原样留着，不改写也不翻译。
+ * 外来文件是不可信输入，逐字段收敛，认不出的结论一律记为 error（卡片上留白，不编故事）。
+ */
+export function normalizeLife(life) {
+  if (typeof life === 'string') return life.slice(0, MAX_NOTE)
+  if (!life || typeof life !== 'object') return ''
+  const n = v => (Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : 0)
+  const end = LIFE_ENDS.includes(life.end) ? life.end : 'error'
+  const out = {
+    end,
+    board: n(life.board),
+    boundary: life.boundary === 'dead' ? 'dead' : 'torus',
+    start: n(life.start), gen: n(life.gen),
+    peak: n(life.peak), peakGen: n(life.peakGen), final: n(life.final)
+  }
+  if (end === 'cycle') out.period = n(life.period)
+  return out
+}
+
+/**
+ * 生平那一行的文字。数字来自实跑，措辞来自词典。
+ * @param {object|string} life
+ * @param {(key:string, params?:object)=>string} tr 取词函数（注入进来，数据层不认识 i18n 模块）
+ */
+export function lifeText(life, tr) {
+  if (!life) return ''
+  if (typeof life === 'string') return life          // 外来的：原样显示
+  if (life.pending) return tr('fav.life.running')
+  const key = {
+    cycle: 'fav.life.cycle', still: 'fav.life.still',
+    extinction: 'fav.life.extinct', capped: 'fav.life.capped'
+  }[life.end]
+  if (!key) return ''                                // error：本机复现不出来，留白
+  // 峰值只在它真的发生过时才说。一架滑翔机的峰值是"第 0 代 5 格"——
+  // 那不是峰值，那是起点，写出来只会让人以为它长过。
+  return tr(key, life) + (life.peakGen > 0 ? tr('fav.life.peak', life) : '')
+}
+
+/**
+ * 一条布局 → 一张卡片的数据。内置与自存**走同一个出口**，卡片才可能长得一样（D83 §1）。
+ *
+ * 内置的名称/说明/生平三样全走词典；自存的名称与说明**一个字都不过词典** ——
+ * 那是用户自己写的内容，没有译文可给，改写它只会把他写的东西弄丢。
+ * 只有生平那一行两边同源：数字是系统按同一口径跑出来的，措辞才走词典。
+ */
+export function layoutRow(entry, tr) {
+  if (entry.nameKey) {
+    return {
+      id: entry.id, rle: entry.rle, builtin: true,
+      name: tr(entry.nameKey), note: tr(entry.nameKey + '.desc'), life: tr(entry.nameKey + '.life')
+    }
+  }
+  return {
+    id: entry.id, rle: entry.rle, builtin: false,
+    name: entry.name, note: entry.note || '', life: lifeText(entry.life, tr)
+  }
+}
+
+/**
+ * 整张卡片列表：内置在前（随代码发布、删不掉、不占配额），自存的**新的在前**。
+ * 新的在前是为了取用区那条横条：刚存完的那一局就在开头，不必横滑到尽头去找（D83 §3）。
+ */
+export function layoutRows(state, tr) {
+  const builtin = BUILTIN_LAYOUTS.map(b => layoutRow(b, tr))
+  const mine = (state.layouts || []).slice().reverse().map(e => layoutRow(e, tr))
+  return builtin.concat(mine)
+}
+
+/**
+ * 侧栏的折叠：内置恒显示，自存的只露最近 `recent` 条，其余折起来。
+ * @returns {{rows:Array, hidden:number}} hidden 是被折起来的条数（0 表示没折）
+ */
+export function foldRows(rows, expanded, recent = RECENT_SHOWN) {
+  const mine = rows.reduce((n, r) => n + (r.builtin ? 0 : 1), 0)
+  if (expanded || mine <= recent) return { rows, hidden: 0 }
+  let seen = 0
+  return { rows: rows.filter(r => r.builtin || ++seen <= recent), hidden: mine - recent }
 }
 
 /**

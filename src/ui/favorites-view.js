@@ -3,8 +3,10 @@
 import { t } from '../i18n/index.js'
 import {
   validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, normalizeRule,
-  mergeFavorites, byteLength, layoutRows, foldRows, MAX_BYTES, MAX_NOTE
+  mergeFavorites, byteLength, layoutRows, foldRows, showEntryPlan, MAX_BYTES, MAX_NOTE
 } from '../data/favorites.js'
+import { parseRLE } from '../engine/rle.js'
+import { compileNotation } from '../engine/rules.js'
 import { createLifeProbe, PROBE_CHUNK } from '../data/life-probe.js'
 import { prefs } from './prefs.js'
 
@@ -114,15 +116,70 @@ export function createFavorites(app) {
       </div>`).join('')
   }
 
-  /** 简洁模式的「精彩局」卡片：孩子一点就开演 */
+  /**
+   * 「精彩局」卡片带。**点一张卡不再等于清盘**（D93）：同规则的拿在手上放，
+   * 异规则的才换整盘，换之前还要问一句。卡片上标出它是哪一种，别让人点了才知道。
+   */
   function renderShowStrip() {
-    el.showList.innerHTML = rowsNow().map(r => `
-      <button class="card show-card" data-show="${esc(r.id)}" title="${esc(r.note || r.name)}">
+    el.showList.innerHTML = rowsNow().map(r => {
+      const on = !!(app.stamp && app.stamp.key === stampKey(r.id))
+      const swap = !sameRuleAsBoard(r)
+      return `
+      <button class="card show-card ${on ? 'on' : ''}" data-show="${esc(r.id)}" title="${esc(r.note || r.name)}">
+        ${swap ? `<i class="show-swap">${esc(t('fav.show.swapTag'))}</i>` : ''}
         <span class="card-text"><b>${esc(r.name)}</b><em>${esc(r.note || '')}</em></span>
-      </button>`).join('')
+      </button>`
+    }).join('')
   }
 
   function find(id) { return rowsNow().find(r => r.id === id) }
+
+  /* ---------------- 精彩局的进入方式（D93） ---------------- */
+
+  /** 拿在手上的那个图案用什么 key —— 与卡片高亮共用一处，免得两边算法不一样 */
+  function stampKey(id) { return 'show:' + id }
+
+  /**
+   * 这一局的规则与当前棋盘是不是同一个世界。**比指纹，不比字符串** ——
+   * b3/s23 和 B3/S23 写法不同、世界相同，照字符串比会把同规则误判成异规则，
+   * 于是白白清一次盘（库里已有 worldFingerprints 这个先例，口径统一）。
+   */
+  function sameRuleAsBoard(entry) {
+    const notation = ruleOf(entry.rle)
+    if (!notation) return true          // 没头行 = 不知道；拿不准时走不破坏的那条路
+    try { return compileNotation(notation).fingerprint === app.engine.rule.fingerprint }
+    catch (e) { return false }          // 规则都编不出来，那更不能悄悄替换
+  }
+
+  /** 把一局 RLE 变成"拿在手上的图案"，后面全套走两步放置（幽灵/拖/⟳⇋/「放这」） */
+  function stampOf(entry) {
+    const p = parseRLE(entry.rle)
+    return { key: stampKey(entry.id), label: entry.name, w: p.w, h: p.h, cells: p.cells }
+  }
+
+  /** 点一张精彩局卡片。返回走了哪条路（测试与守卫要看它） */
+  app.openShowEntry = function (entry) {
+    const plan = showEntryPlan({
+      sameRule: sameRuleAsBoard(entry),
+      boardEmpty: app.engine.stats.alive === 0,
+      running: !!app.running
+    })
+    if (plan === 'stamp') {
+      let p
+      try { p = stampOf(entry) } catch (e) { app.toast(t('io.rleFail', { reason: String(e.message) })); return 'error' }
+      app.setStamp(p)               // 到此为止：引擎一格没动，棋盘一格没清
+      return plan
+    }
+    // 异规则：整盘替换。空盘时一点即开，有东西时先问一句（D82：劳动不得被静默清掉）
+    const go = () => { if (app.replayLayout(entry)) app.setRunning(true) }
+    if (plan === 'replace') { go(); return plan }
+    app.confirmAction({
+      title: t('fav.show.needRule.title'),
+      body: t('fav.show.needRule.body', { name: entry.name, rule: ruleOf(entry.rle) }),
+      yes: t('fav.show.needRule.yes')
+    }, go)
+    return plan
+  }
 
   /* ---------------- 生平：按内置局同一口径实跑 ---------------- */
 
@@ -195,7 +252,7 @@ export function createFavorites(app) {
     const b = e.target.closest('[data-show]')
     if (!b) return
     const r = find(b.dataset.show)
-    if (r) { app.replayLayout(r); app.setRunning(true) }   // 孩子一点就开演
+    if (r) app.openShowEntry(r)
   })
 
   el.add.addEventListener('click', () => {
@@ -247,6 +304,7 @@ export function createFavorites(app) {
   pump()      // 上次没跑完的、导入进来的，开机顺手补上
   return {
     render,
+    renderShow: renderShowStrip,      // 拿起/放下图案时只重画卡片带，不动整个收藏面板
     relocalize: render,
     addLayout: entry => { state.layouts = addLayout(state.layouts, entry).list; save(); render(); pump() }
   }

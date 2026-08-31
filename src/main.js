@@ -3,6 +3,7 @@
 import { LifeEngine } from './engine/board.js'
 import { lifeRule, compileNotation } from './engine/rules.js'
 import { createFavorites } from './ui/favorites-view.js'
+import { createConfirm } from './ui/confirm.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
 import { VisualState } from './render/visual-state.js'
@@ -189,6 +190,9 @@ app.applyRule = function (rule, message) {
   app.records.startRun()        // 换了规则就是另一局，之前攒的哈希不再适用
   app.updateRuleInfo()
   if (app.library) app.library.renderWorlds()
+  // 换了世界，精彩局卡片上的「换世界」小标也跟着变 —— 那个标说的是
+  // "这一张与当前世界的关系"，关系变了标就得重算，否则它说的是上一刻的事
+  if (app.favorites) app.favorites.renderShow()
   app.dirty = true
   app.updateHud()
   app.toast(message || t('toast.ruleApplied', {
@@ -395,6 +399,8 @@ app.setStamp = function (pattern) {
   document.getElementById('stamp-tools').hidden = !pattern
   app.syncStampTip()
   app.library.renderPatterns()
+  // 精彩局卡片带也要跟着变（拿在手上的那张要高亮）—— 与图案卡同一时刻、同一处触发
+  if (app.favorites) app.favorites.renderShow()
   app.canvas.classList.toggle('stamping', !!pattern)
   app.dirty = true
   if (pattern) app.toast(t('pattern.selected', { name: pattern.label || t('pattern.' + pattern.key) }))
@@ -624,6 +630,7 @@ app.records = setupRecords(app)
 app.zoomBar = setupZoomBar(app)
 app.pageZoom = watchPageZoom(app)     // 页面真被浏览器放大了就提示怎么还原（D85 ②c）
 app.io = setupIO(app)
+app.confirm = createConfirm(app)   // 先于收藏建好：精彩局换世界要用它问那一句（D93）
 app.favorites = createFavorites(app)
 app.library = setupLibrary(app)
 app.library.render()

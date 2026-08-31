@@ -12,7 +12,7 @@ import { parseRLE, toRLE, boardToRLE } from '../src/engine/rle.js'
 import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_VERSION } from '../src/engine/save.js'
 import { DICT } from '../src/i18n/dict.js'
 import { createPrefs, PREF_KEYS, BOOKMARK_KEYS } from '../src/ui/prefs.js'
-import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
+import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
 import { SnapshotLog } from '../src/data/snapshots.js'
 import { TerminationDetector } from '../src/data/detector.js'
@@ -2395,8 +2395,18 @@ cases.push(
 
       // ③ 页脚窄屏重排 + 浮层按钮 44px（排查发现「更多」4 个、总结卡片 3 个不达标）
       t.ok(/#summary-modal \.intro-foot \{[^}]*flex-wrap:\s*wrap/.test(css), '总结卡片页脚窄屏可换行')
-      t.ok(/\.tb-more-group button, #summary-modal button, #rule-modal button \{ min-height: 44px; \}/.test(css),
+      t.ok(/\.tb-more-group button, #summary-modal button, #rule-modal button,\s*\n?\s*#confirm-modal button \{ min-height: 44px; \}/.test(css),
         '浮层里的按钮统一 44px 触控区')
+
+      // 这条规则是**点名**的 —— 新开一个模态就得回来补一笔，漏了就是触控区不达标。
+      // 所以让测试替人记这份名单：index.html 里每一个模态都要在名单上。
+      // 例外只有介绍卡，理由写在下面那条里（实测数据，不是拍脑袋）。
+      const modalIds = [...readSrc('index.html').matchAll(/class="modal"\s+id="([\w-]+)"/g)].map(m => m[1])
+      t.ok(modalIds.length >= 4, `扫到 ${modalIds.length} 个模态`)
+      for (const id of modalIds) {
+        if (id === 'intro-modal') continue
+        t.ok(css.indexOf('#' + id + ' button') > -1, `窄屏 44px 名单漏了 #${id}`)
+      }
     }
   },
   {
@@ -4958,6 +4968,116 @@ cases.push(
       // 部署流程里要写明"推完怎么核对"
       const deploy = readSrc('docs/deploy.md')
       t.ok(/app-version/.test(deploy), 'deploy.md 里要写明推完之后怎么核对线上版本')
+    }
+  },
+  {
+    name: '精彩局：三条进入路线由一处判定（D93）',
+    run(t) {
+      // 同规则永远拿在手上 —— 盘上有没有东西、在不在播，都不清盘
+      for (const boardEmpty of [true, false]) {
+        for (const running of [true, false]) {
+          t.equal(showEntryPlan({ sameRule: true, boardEmpty, running }), 'stamp',
+            `同规则（空盘=${boardEmpty} 播放中=${running}）一律走待放置`)
+        }
+      }
+      // 异规则：空盘且没在播才一点即开，其余先问一句
+      t.equal(showEntryPlan({ sameRule: false, boardEmpty: true, running: false }), 'replace',
+        '异规则 + 空盘 + 没在播 = 一点即开，不打扰')
+      t.equal(showEntryPlan({ sameRule: false, boardEmpty: false, running: false }), 'confirm',
+        '异规则 + 盘上有东西 = 先问一句')
+      t.equal(showEntryPlan({ sameRule: false, boardEmpty: true, running: true }), 'confirm',
+        '异规则 + 正在播 = 先问一句（盘空也问：他正看着它跑）')
+    }
+  },
+  {
+    name: '精彩局：页签切换零棋盘副作用',
+    run(t) {
+      // ① 的核实结论要有守卫钉住：切到「精彩局」页签只换显示，不碰棋盘。
+      // 一旦有人在 setShows 里顺手加了"顺便演示第一局"，这条就红。
+      const src = stripLiterals(readSrc('src/ui/controls.js'))
+      const m = /app\.setShows\s*=\s*function[\s\S]*?\n  \}/.exec(src)
+      t.ok(!!m, '找得到 app.setShows')
+      const body = m ? m[0] : ''
+      for (const bad of ['clear', 'replayLayout', 'setRunning', 'importRleText', 'openShowEntry']) {
+        t.ok(body.indexOf(bad) === -1, `setShows 里不许出现 ${bad} —— 页签切换只换卡片带内容`)
+      }
+    }
+  },
+  {
+    name: '精彩局：同规则那条路一格都不碰引擎（D93）',
+    run(t) {
+      const raw = readSrc('src/ui/favorites-view.js')
+      const src = stripLiterals(raw)
+      const m = /app\.openShowEntry\s*=\s*function[\s\S]*?\n  \}/.exec(src)
+      t.ok(!!m, '找得到 app.openShowEntry')
+      const body = m ? m[0] : ''
+      // stamp 分支必须在替换动作**之前**结束
+      const stampAt = body.indexOf('app.setStamp')
+      const replayAt = body.indexOf('app.replayLayout')
+      t.ok(stampAt > -1 && replayAt > -1, '两条路都在这个函数里')
+      t.ok(stampAt < replayAt, '同规则那条先返回，替换的写在后面')
+      const stampBranch = body.slice(0, replayAt)
+      for (const bad of ['app.clear', 'replayLayout', 'setRunning']) {
+        t.ok(stampBranch.indexOf(bad) === -1, `同规则分支里不许出现 ${bad}`)
+      }
+      // 卡片带的点击只许走这一个出口（不许再有第二条直接复现的路）
+      const handler = /el\.showList\.addEventListener[\s\S]*?\n  \}\)/.exec(src)
+      t.ok(!!handler, '找得到卡片带的点击处理器')
+      t.ok(/openShowEntry/.test(handler[0]), '卡片带点击只走 openShowEntry')
+      t.ok(!/replayLayout/.test(handler[0]), '卡片带点击里不许直接调 replayLayout')
+      // 规则相同与否比的是指纹，不是字符串
+      t.ok(/compileNotation\(notation\)\.fingerprint === app\.engine\.rule\.fingerprint/.test(src),
+        '同规则判定比指纹（写法不同、世界相同的两条记法不该被判成异规则）')
+      // ⑤ 侧栏「复现」的语义不动。查的是**原文**：'data-fav-play' 是字符串字面量，
+      // stripLiterals 会把它剥成空串，拿剥过的源码查它永远查不到（D88 §3）。
+      const sideBar = /const play = [\s\S]{0,800}?app\.replayLayout\(r\)/.exec(raw)
+      t.ok(!!sideBar && /favPlay/.test(sideBar[0]),
+        '侧栏「复现」仍然是整盘复现 —— 那里的用词已明示替换')
+    }
+  },
+  {
+    name: '精彩局：「换世界」小标随规则一起重算（D93）',
+    run(t) {
+      // 那个标说的是"这一张与当前世界的关系"。关系变了标不重算，
+      // 它说的就是上一刻的事 —— 本机点出来的：换到烟花世界后三张卡一个标都没有。
+      const src = stripLiterals(readSrc('src/main.js'))
+      const m = /app\.applyRule = function[\s\S]*?\n\}/.exec(src)
+      t.ok(!!m, '找得到 app.applyRule')
+      t.ok(/app\.favorites\.renderShow\(\)/.test(m ? m[0] : ''), '换规则时重画精彩局卡片带')
+      // 拿起/放下图案时也要重画（那张卡要高亮）
+      const st = /app\.setStamp = function[\s\S]*?\n\}/.exec(src)
+      t.ok(/app\.favorites\.renderShow\(\)/.test(st ? st[0] : ''), '换图案时重画精彩局卡片带')
+    }
+  },
+  {
+    name: '精彩局：换世界要问一句，词条中英 + 简洁语域齐备（D93）',
+    run(t) {
+      for (const lang of ['zh', 'en']) {
+        for (const k of ['fav.show.swapTag', 'fav.show.needRule.title', 'fav.show.needRule.body',
+          'fav.show.needRule.yes', 'confirm.cancel']) {
+          t.ok(k in DICT[lang], `${lang} 缺词条 ${k}`)
+          t.ok((k + '.simple') in DICT[lang], `${lang} 缺简洁语域的 ${k}.simple`)
+        }
+        // 那句话必须把两件事说全：换的是哪个规则、当前棋盘会没
+        t.ok(/\{rule\}/.test(DICT[lang]['fav.show.needRule.body']), `${lang} 的确认句里要写明是哪个规则`)
+        t.ok(/\{name\}/.test(DICT[lang]['fav.show.needRule.body']), `${lang} 的确认句里要写明是哪一局`)
+      }
+      // 「继续」穿破坏红（D72）：它确实会盖掉用户已有的东西
+      const html = readSrc('index.html')
+      t.ok(/id="confirm-yes"[^>]*class="danger"|class="danger"[^>]*id="confirm-yes"/.test(html),
+        '确认框的「继续」是破坏红')
+      // 焦点默认落在取消上
+      const conf = stripLiterals(readSrc('src/ui/confirm.js'))
+      t.ok(/el\.no\.focus\(\)/.test(conf), '打开时焦点落在「取消」上，回车不该顺手把盘换了')
+    }
+  },
+  {
+    name: '接线：Esc 判断模态不许再点名（D93）',
+    run(t) {
+      const raw = readSrc('src/ui/input.js')
+      t.ok(/\.modal:not\(\[hidden\]\)/.test(raw), 'Esc 用"有没有模态开着"来判断')
+      t.ok(!/getElementById\('rule-modal'\)/.test(raw) && !/getElementById\('intro-modal'\)/.test(raw),
+        '不许再挨个点名模态 —— 每新开一个都要回来补一笔，漏了就是 Esc 把手上的图案弄丢')
     }
   },
   {

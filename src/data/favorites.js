@@ -60,6 +60,20 @@ export function ruleOf(rle) {
 /**
  * 校验一条布局收藏。返回 {ok:true} 或 {ok:false, key}（只回 key，人话交给词典）。
  */
+/**
+ * 点一张精彩局卡片该走哪条路（D93）。三条，按"会不会盖掉用户的劳动"分：
+ *  · `stamp`   同规则 —— 进待放态，盖在当前棋盘上，一格都不清；
+ *  · `replace` 异规则、盘是空的、也没在播 —— 一点即开，不打扰；
+ *  · `confirm` 异规则、盘上有东西或正在播 —— 先问一句再换。
+ *
+ * 只有换规则才需要整盘替换：规则一换，当前这盘就已经是另一个世界的东西了，
+ * 盖上去没有意义。同规则则完全没有清盘的理由 —— 那是过去顺手写下的破坏，不是需求。
+ */
+export function showEntryPlan({ sameRule, boardEmpty, running }) {
+  if (sameRule) return 'stamp'
+  return (boardEmpty && !running) ? 'replace' : 'confirm'
+}
+
 export function validateLayout(entry) {
   if (!entry || typeof entry !== 'object') return { ok: false, key: 'fav.err.shape' }
   const name = String(entry.name ?? '').trim()

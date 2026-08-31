@@ -569,6 +569,23 @@
     </div>
   </div>
 
+  <!-- 确认框（D93）：只在"这一步会盖掉你已有的劳动"时出现。
+       「继续」穿破坏红（D72），焦点默认落在「取消」上。 -->
+  <div class="modal" id="confirm-modal" hidden>
+    <div class="modal-backdrop" id="confirm-backdrop"></div>
+    <div class="modal-box confirm-box" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <div class="intro-body">
+        <h3 id="confirm-title"></h3>
+        <p class="lead" id="confirm-body"></p>
+      </div>
+      <footer class="intro-foot">
+        <span class="dots"></span>
+        <button id="confirm-no"></button>
+        <button id="confirm-yes" class="danger"></button>
+      </footer>
+    </div>
+  </div>
+
   <div class="modal" id="summary-modal" hidden>
     <div class="modal-backdrop" id="summary-backdrop"></div>
     <div class="modal-box summary-box">

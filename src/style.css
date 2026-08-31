@@ -1265,7 +1265,8 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   #summary-modal .intro-foot button { flex: 1 1 auto; min-height: 44px; }
 
   /* 浮层里的按钮统一 44px —— 排查发现「更多」有 4 个、总结卡片有 3 个不达标 */
-  .tb-more-group button, #summary-modal button, #rule-modal button { min-height: 44px; }
+  .tb-more-group button, #summary-modal button, #rule-modal button,
+  #confirm-modal button { min-height: 44px; }
 }
 
 /* ---------- 规则编辑器的窄屏形态（D79 第三节） ---------- */
@@ -1605,4 +1606,29 @@ input[type="range"] { touch-action: pan-y; }
     background: var(--panel-2); border: 1px solid var(--line);
     border-radius: 10px;
   }
+}
+
+/* 确认框（D93）：一句话两颗按钮，窄到不像个界面 —— 它只负责拦一下。
+   高度**贴着内容**：.modal-box 那个 min(760px, 92vh) 是给介绍卡与总结卡定的，
+   一句话的框套上去就是一大片空白（本机截图里看见的）。 */
+.confirm-box { width: min(420px, calc(100vw - 24px)); height: auto; max-height: 92vh; }
+.confirm-box .intro-body { padding: 18px 20px 14px; }
+.confirm-box h3 { margin: 0 0 8px; font-size: 16px; }
+.confirm-box .lead { margin: 0; }
+
+/* 精彩局卡片上的「换世界」小标（D93）：这一张点下去会替换整盘，
+   不该等点了才知道。中性灰而不是红 —— 它是预告，不是警告，红留给真正的破坏动作 */
+.show-card { position: relative; }
+.show-swap {
+  position: absolute; right: 6px; top: 6px;
+  font-style: normal; font-size: 10px; letter-spacing: .02em;
+  padding: 1px 5px; border-radius: 999px;
+  color: var(--muted); background: var(--panel-2); border: 1px solid var(--line);
+}
+
+@media (max-width: 767px) {
+  /* 窄屏的卡片只有 96px 宽，小标压在标题上（本机截图里「喂一次吞食者」被盖掉半个名字）。
+     挪到左下角：名字占满上面一行，小标自己待着，两者不再抢同一块地方。 */
+  .show-swap { top: auto; bottom: 5px; left: 6px; right: auto; }
+  .show-card .card-text b { padding-right: 0; }
 }

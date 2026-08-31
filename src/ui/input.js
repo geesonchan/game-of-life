@@ -378,9 +378,9 @@ export function setupCanvasInput(app) {
       return
     }
     if (e.code === 'Space' && !isTyping(e.target)) { spaceHeld = true; e.preventDefault() }
-    else if (e.key === 'Escape' && app.stamp
-      && document.getElementById('rule-modal').hidden
-      && document.getElementById('intro-modal').hidden) {
+    // 模态开着时 Esc 归模态自己管。**这里不再点名**：原先挨个列 id，
+    // 每新开一个模态都得回来补一笔，漏了就是"Esc 把手上的图案弄丢了"（D93）。
+    else if (e.key === 'Escape' && app.stamp && !document.querySelector('.modal:not([hidden])')) {
       // 待放态先退回"拿着图案"，再按一次才放下图案本身 —— 一次 Esc 退一层
       if (app.pendingStamp) app.cancelPending({ keepRef: true })
       else app.setStamp(null)

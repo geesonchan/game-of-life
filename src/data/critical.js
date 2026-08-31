@@ -200,5 +200,37 @@ export function emergenceWindows(samples) {
   return out
 }
 
+/**
+ * 一档的**人话生平**（D89 ③）：给手机上那排小图配一句能读出来的话。
+ * 形如「撒 3% → 7 代就死光」「撒 35% → 热闹三千多代，剩 1355 格」。
+ *
+ * 数字全部来自这一档自己的实测，措辞走词典（中英 + 简洁语域各一套）。
+ * 分三种说法，判据就是这三件事的差别本身：
+ *   · 末态为 0 → 死光了；
+ *   · 撑不过门槛 → 几代就定住（那是余烬，不是涌现）；
+ *   · 撑住了 → 热闹了多少代、剩下多少。
+ * @param {object} sample
+ * @param {(key:string, params?:object)=>string} tr
+ */
+export function plainLife(sample, tr) {
+  if (!sample) return ''
+  const pct = Math.round(sample.density * 100)
+  const p = { pct, gens: sample.gens, final: sample.final, peak: sample.peak }
+  if (sample.final === 0) return tr('crit.plain.dead', p)
+  if (!isEmergent(sample)) return tr('crit.plain.quiet', p)
+  return tr('crit.plain.alive', p)
+}
+
+/**
+ * 小多图带里要插的"跨越点"分界卡（D89 ③）。
+ * 位置由 findCrossings 说了算 —— 图上标的和曲线上夹的是同一处，不会各说各的。
+ * @returns {Map<number, object>} 键是"插在哪一档之前"的密度
+ */
+export function crossingMarks(samples) {
+  const marks = new Map()
+  for (const c of findCrossings(samples)) marks.set(c.hi, c)
+  return marks
+}
+
 /** 曲线的三种纵轴。key 直接是 sample 上的字段名，图注照它写口径。 */
 export const CURVE_METRICS = Object.freeze(['final', 'gens', 'peak'])

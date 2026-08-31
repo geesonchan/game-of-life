@@ -24,19 +24,19 @@ import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
 import { introPages, introNext, appendixPages, placeStarterGift } from '../src/ui/intro.js'
-import { pinchDelta, strokeVerdict, PROMOTE_MS, nudgeCell } from '../src/ui/input.js'
+import { pinchDelta, strokeVerdict, PROMOTE_MS, nudgeCell, tapAction, insideGhostBox } from '../src/ui/input.js'
 import { clampToRange, NUMERIC_SLIDERS, CODEC_SLIDERS } from '../src/ui/numeric-entry.js'
 import { Viewport, fitScaleOf, zoomFromSlider, sliderFromZoom, ZOOM_STEPS } from '../src/render/viewport.js'
 import { zoomLabel, parseZoomInput, DIM_AFTER_MS, ZOOM_BUTTON_STEP } from '../src/ui/zoom-bar.js'
 import { isPageZoomed, PAGE_ZOOM_THRESHOLD } from '../src/ui/page-zoom.js'
 import { CRITICAL_SPEC, CRITICAL_CLASSIFY, EMERGENCE_MIN_GENS, REFINE_WIDTH, densityAxis,
   observeDensity, isEmergent, isLongTransient, findCrossings, planRefinements,
-  emergenceWindows, round3, CURVE_METRICS } from '../src/data/critical.js'
+  emergenceWindows, round3, CURVE_METRICS, plainLife, crossingMarks } from '../src/data/critical.js'
 import { createTwin, measure, diffCells, TWIN, TWIN_EXAMPLES } from '../src/data/twin.js'
 import { LOCKIN_SPEC, findLockIn, baselineStates, canFlipAt, candidateCells, runToEnd } from '../src/data/lockin.js'
-import { ghostFlashAlpha, ghostFlashDone, orientToastKey, orientLabel, shouldShowStampTip, GHOST_FLASH } from '../src/ui/stamp-hint.js'
+import { orientToastKey, orientLabel, shouldShowStampTip } from '../src/ui/stamp-hint.js'
 import { MOTION_KINDS, motionOf, motionNow, motionCached, motionKey, rotateVector,
-  rayEnds, RAY_LEN, centroid } from '../src/engine/motion.js'
+  rayEnds, RAY_FALLBACK, distanceToEdge, centroid } from '../src/engine/motion.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -4292,7 +4292,8 @@ cases.push(
         const touch = DICT[lang]['stamp.hint.touch']
         t.ok(typeof desk === 'string' && typeof touch === 'string', `${lang} 缺提示词条`)
         t.equal(desk.split('·').length, 5, `${lang} 桌面那句要列五件事：旋转/镜像/微调/放下/取消`)
-        t.equal(touch.split('·').length, 3, `${lang} 触屏那句要列三件事：旋转/翻转/放下`)
+        t.equal(touch.split('·').length, 4,
+          `${lang} 触屏那句要列四件事：旋转/翻转/摆好/再点一下放下（两步放置之后多了一步，D89 ①）`)
         t.ok(typeof DICT[lang]['stamp.hint.desk.simple'] === 'string', `${lang} 缺简洁语域`)
         t.ok(typeof DICT[lang]['stamp.hint.touch.simple'] === 'string', `${lang} 缺简洁语域`)
       }
@@ -4338,36 +4339,60 @@ cases.push(
     }
   },
   {
-    name: '选中图案：手机上闪一下幽灵再淡出（D87 ③）',
+    name: '手机两步放置：确认之前引擎一个字都不碰（D89 ①）',
     run(t) {
-      // 触屏没有悬停，幽灵平时不可见 —— 按完 ⟳/⇋ 得让他看见现在是什么形状。
-      t.equal(GHOST_FLASH.hold, 1000, '亮 1 秒')
-      t.ok(GHOST_FLASH.fade > 0, '之后要淡出，不是硬切')
-      t.equal(ghostFlashAlpha(0), 1, '刚按下时全亮')
-      t.equal(ghostFlashAlpha(999), 1, '1 秒内不淡')
-      t.equal(ghostFlashAlpha(GHOST_FLASH.hold), 1, '整 1 秒仍是全亮')
-      t.equal(ghostFlashAlpha(GHOST_FLASH.hold + GHOST_FLASH.fade / 2), 0.5, '淡到一半是 0.5')
-      t.equal(ghostFlashAlpha(GHOST_FLASH.hold + GHOST_FLASH.fade), 0, '淡完是 0')
-      t.equal(ghostFlashAlpha(99999), 0, '过了就是 0，不许变成负的')
-      t.equal(ghostFlashAlpha(-5), 1, '时间倒流也别把画面弄没（防御）')
-      t.equal(ghostFlashDone(GHOST_FLASH.hold + GHOST_FLASH.fade - 1), false, '还没淡完')
-      t.equal(ghostFlashDone(GHOST_FLASH.hold + GHOST_FLASH.fade), true, '淡完了')
+      // 点一下 = 摆个幽灵，再点一下（点在幽灵身上）= 落子，点空白 = 取消。
+      t.equal(tapAction({ pending: false, insideGhost: false }), 'arm', '还没摆 → 先摆一个幽灵')
+      t.equal(tapAction({ pending: false, insideGhost: true }), 'arm', '没进待放态时，点哪儿都是摆')
+      t.equal(tapAction({ pending: true, insideGhost: true }), 'confirm', '点在幽灵身上 = 确认放下')
+      t.equal(tapAction({ pending: true, insideGhost: false }), 'cancel', '点空白 = 取消')
+      t.equal(tapAction(null), 'arm', '缺参数时按最无害的那条走')
 
-      // 幽灵的不透明度是**倍数**，不是绝对值：淡的是整体，两档不透明度的相对关系不变
-      const r = readSrc('src/render/renderer.js')
-      t.ok(/drawGhost\(vp, pattern, ox, oy, boardW, boardH, alpha = 1\)/.test(r), '幽灵要接受一个不透明度倍数')
-      t.ok(/globalAlpha = 0\.6 \* k/.test(r) && /globalAlpha = 0\.9 \* k/.test(r), '两档都乘同一个倍数')
+      // 命中判定用外接框，含边界
+      const p = { w: 3, h: 4 }
+      t.equal(insideGhostBox({ x: 10, y: 10 }, { x: 10, y: 10 }, p), true, '左上角算命中')
+      t.equal(insideGhostBox({ x: 12, y: 13 }, { x: 10, y: 10 }, p), true, '右下角算命中')
+      t.equal(insideGhostBox({ x: 13, y: 13 }, { x: 10, y: 10 }, p), false, '出框就不算')
+      t.equal(insideGhostBox({ x: 9, y: 10 }, { x: 10, y: 10 }, p), false, '左边一格也不算')
+      t.equal(insideGhostBox(null, { x: 0, y: 0 }, p), false, '没有点就不算命中')
 
-      // 闪现只借位置不夺位置：方向键钉住的锚点不能被它清掉
+      // **确认之前不许碰引擎与记账**（D67 那条原则）：摆幽灵那条路上不许出现落子的动作
       const main = stripLiterals(readSrc('src/main.js'))
-      t.ok(/if \(!app\.stampAt\)/.test(main), '已经钉住位置的就不动它')
-      t.ok(/app\.ghostFlashOwned/.test(main), '要记住这个锚点是不是闪现自己借来的')
-      t.ok(/if \(app\.ghostFlashOwned\) \{ app\.stampAt = null/.test(main), '收工时只还自己借的那个')
-      // 桌面 R/F 与手机 ⟳/⇋ 走同一条路：两处都调 rotateStamp/flipStamp
-      const ctl = stripLiterals(readSrc('src/ui/controls.js'))
-      t.ok(/app\.rotateStamp\(1\)/.test(ctl) && /app\.flipStamp\(\)/.test(ctl), '手机两颗按钮调的是同一对函数')
-      const inp = stripLiterals(readSrc('src/ui/input.js'))
-      t.ok(/app\.rotateStamp\(1\)/.test(inp) && /app\.flipStamp\(\)/.test(inp), '桌面 R/F 调的也是同一对')
+      const arm = /app\.armStampAt = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!arm, '应有"摆一个待放幽灵"的动作')
+      for (const forbidden of ['placePattern', 'placeStampAt', 'noteEdit', 'markDirtyRun', 'captureBaseline']) {
+        t.ok(!new RegExp(forbidden).test(arm[0]),
+          `摆幽灵时不许调 ${forbidden} —— 确认之前这一局的历史里什么都没发生`)
+      }
+      const confirm = /app\.confirmStamp = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!confirm && /app\.placeStampAt\(/.test(confirm[0]), '确认那一步才落子')
+      t.ok(/app\.clearPending\(\)/.test(confirm[0]), '落子之后要退出待放态')
+
+      // 触屏走两步、桌面照旧一步
+      const rawInp = readSrc('src/ui/input.js')
+      const inp = stripLiterals(rawInp)
+      t.ok(/if \(!isTouch\(e\)\) \{ app\.placeStampAt\(/.test(inp), '桌面仍是点一下就放')
+      // 模式名是字符串 —— 查它用原文（D88 §3 那条规矩）
+      t.ok(/mode = 'stamp'/.test(rawInp), '触屏进两步放置那条路')
+      t.ok(/app\.armStampAt\(/.test(inp) && /app\.confirmStamp\(\)/.test(inp) && /app\.cancelPending\(\)/.test(inp),
+        '三条出路都要接上')
+      // Esc 一次退一层：先退待放，再退选中
+      t.ok(/if \(app\.pending\) app\.cancelPending\(\)/.test(inp), 'Esc 先取消待放')
+
+      // 「放下」按钮：待放态才出现
+      const html = readSrc('index.html')
+      t.ok(/id="btn-drop"[^>]*hidden/.test(html), '「放下」按钮默认藏着')
+      t.ok(/data-i18n="stamp\.drop"/.test(html), '按钮文案走词典')
+      for (const lang of ['zh', 'en']) {
+        t.ok(typeof DICT[lang]['stamp.drop'] === 'string', `${lang} 缺「放下」`)
+        t.ok(typeof DICT[lang]['stamp.drop.simple'] === 'string', `${lang} 缺简洁语域`)
+      }
+
+      // 闪现方案退役：连同常量与纯函数一起撤走，别留"暂时没人调"的代码
+      const hint = readSrc('src/ui/stamp-hint.js')
+      t.ok(!/GHOST_FLASH|ghostFlashAlpha|ghostFlashDone/.test(hint),
+        '闪现的常量与纯函数要一并删掉（D89 ①：被取代的机制不留半截）')
+      t.ok(!/flashGhost/.test(stripLiterals(readSrc('src/main.js'))), '主循环里也不留闪现的痕迹')
     }
   },
   {
@@ -4443,22 +4468,41 @@ cases.push(
   {
     name: '动向线：几何与开关（D88 ②）',
     run(t) {
-      // 飞船/枪：从图案中心射出去，箭头在远端
-      const ship = rayEnds('ship', { x: 10, y: 10 }, { dx: 1, dy: 1 }, RAY_LEN)
-      t.equal(`${ship.from.x},${ship.from.y}`, '10,10', '飞船的线从图案本身出发')
-      t.ok(ship.to.x > 10 && ship.to.y > 10, '朝它要去的方向延伸')
+      // 线一路画到棋盘边（D89 ②）：截一段固定长度等于替用户决定"看这么远就够了"，
+      // 而他要判断的恰恰是"这条线会不会撞上那个东西"。
+      const B = { w: 200, h: 200 }
+      const ship = rayEnds('ship', { x: 100, y: 100 }, { dx: 1, dy: 1 }, B)
+      t.equal(`${ship.from.x},${ship.from.y}`, '100,100', '飞船的线从图案本身出发')
+      t.equal(`${ship.to.x},${ship.to.y}`, '200,200', '一直画到棋盘角上')
       t.equal(ship.arrowAt, 'to', '箭头在远端 —— 它要去那儿')
-      t.ok(Math.abs(Math.hypot(ship.to.x - 10, ship.to.y - 10) - RAY_LEN) < 1e-9, `线长 ${RAY_LEN} 格`)
-      // 吞食者：线画在来路上，箭头指回嘴
-      const eat = rayEnds('eater', { x: 10, y: 10 }, { dx: 1, dy: 1 }, RAY_LEN)
-      t.ok(eat.from.x < 10 && eat.from.y < 10, '吞食者的线画在来路上（反方向）')
-      t.equal(`${eat.to.x},${eat.to.y}`, '10,10', '另一端落在图案上')
+      t.equal(ship.solidEnd, 'from', '渐变的浓端在图案那一头')
+      // 吞食者：线画在来路上，箭头指回嘴，浓端也在图案那一头
+      const eat = rayEnds('eater', { x: 100, y: 100 }, { dx: 1, dy: 1 }, B)
+      t.equal(`${eat.from.x},${eat.from.y}`, '0,0', '来路一直退到棋盘另一角')
+      t.equal(`${eat.to.x},${eat.to.y}`, '100,100', '另一端落在图案上')
       t.equal(eat.arrowAt, 'to', '箭头指向嘴')
+      t.equal(eat.solidEnd, 'to', '浓端在图案（也就是嘴）那一头')
+      // 横着走的飞船只吃一个方向的边界
+      const west = rayEnds('ship', { x: 100, y: 40 }, { dx: -1, dy: 0 }, B)
+      t.equal(`${west.to.x},${west.to.y}`, '0,40', '朝西的线画到左边缘')
+      // 拿不到棋盘尺寸时退回兜底长度，绝不画出盘外去
+      const fb = rayEnds('ship', { x: 10, y: 10 }, { dx: 1, dy: 0 }, null)
+      t.equal(fb.to.x - fb.from.x, RAY_FALLBACK, `没有棋盘尺寸时退回兜底长度 ${RAY_FALLBACK}`)
+      // 贴着边的图案：线长可以是零点几格，但不许是负的
+      const edge = rayEnds('ship', { x: 199.5, y: 100 }, { dx: 1, dy: 0 }, B)
+      t.ok(edge.to.x >= 199.5 && edge.to.x <= 200, '贴边时线不许倒着画')
+
+      // 渲染那一头：浓端与箭头端是两件事，各画各的
+      const r = readSrc('src/render/renderer.js')
+      t.ok(/createLinearGradient\(near\.x, near\.y, far\.x, far\.y\)/.test(r), '远端要渐淡')
+      t.ok(/const near = solidEnd === 'to' \? b : a/.test(r), '浓端跟着 solidEnd 走，不是跟着箭头走')
+      t.ok(/globalAlpha = 0\.85[\s\S]{0,400}closePath\(\); ctx\.fill\(\)/.test(r),
+        '箭头是实的 —— 它标的是"哪一头要紧"，不该跟着淡掉')
 
       // 落子后线消失、可在设置里关：线只在幽灵存在且开关打开时画
       const main = stripLiterals(readSrc('src/main.js'))
       t.ok(/if \(app\.visualOpts\.motionRay\)/.test(main), '动向线要能在设置里关掉')
-      t.ok(/if \(gp && gc\) \{[\s\S]{0,400}drawMotionRay/.test(main),
+      t.ok(/if \(gp && gc\) \{[\s\S]{0,700}drawMotionRay/.test(main),
         '线画在"有幽灵"这个条件里 —— 落子之后幽灵没了，线自然也没了')
       const html = readSrc('index.html')
       t.ok(/id="in-motion-ray"/.test(html), '设置里要有那个开关')
@@ -4520,6 +4564,69 @@ cases.push(
         t.ok(/⟳/.test(DICT[lang]['stamp.tip']) && /⇋/.test(DICT[lang]['stamp.tip']),
           `${lang} 的气泡要用按钮上的那两个符号`)
       }
+    }
+  },
+  {
+    name: '临界实验室：手机上那几句人话（D89 ③）',
+    run(t) {
+      // 每档一句人话，数字全来自这一档自己的实测，措辞走词典。
+      const tr = (k, p) => k + ':' + JSON.stringify(p || {})
+      const dead = { density: 0.03, gens: 7, final: 0, peak: 1183, outcome: 'quickDeath', capped: false }
+      const quiet = { density: 0.03, gens: 7, final: 31, peak: 1183, outcome: 'shortCycle', capped: false }
+      const alive = { density: 0.35, gens: 3492, final: 1355, peak: 14742, outcome: 'shortCycle', capped: false }
+      t.ok(plainLife(dead, tr).startsWith('crit.plain.dead:'), '末态 0 → 说"死光了"')
+      t.ok(plainLife(quiet, tr).startsWith('crit.plain.quiet:'), '几代就定住 → 说"定住了"，不算涌现')
+      t.ok(plainLife(alive, tr).startsWith('crit.plain.alive:'), '撑住了 → 说"热闹了多少代"')
+      t.equal(plainLife(null, tr), '', '没有样本就没有话')
+      // 百分比是从密度算的，不是另存一份
+      t.ok(plainLife(alive, tr).includes('"pct":35'), '撒 35% 要由 density 算出来')
+
+      // 真跑一档，看那句话读得通
+      const real = observeDensity(0.03)
+      const zh = plainLife(real, (k, p) => {
+        let str = DICT.zh[k]
+        for (const key in p) str = str.split('{' + key + '}').join(String(p[key]))
+        return str
+      })
+      t.equal(zh, '撒 3% → 7 代就定住，只剩 31 格', `0.03 那一档的人话：${zh}`)
+
+      // 跨越点分界卡插在哪儿，由 findCrossings 说了算 —— 与曲线上夹的是同一处
+      const mk = (density, outcome, gens) => ({ density, outcome, gens, capped: false })
+      const rows = [mk(0.03, 'shortCycle', 7), mk(0.04, 'shortCycle', 3089),
+        mk(0.80, 'shortCycle', 1327), mk(0.85, 'still', 7)]
+      const marks = crossingMarks(rows)
+      t.equal(marks.size, 2, '两处跨越点，两张分界卡')
+      t.ok(marks.has(0.04) && marks.has(0.85), '卡插在跨越区间的右侧那一档之前')
+      t.equal(marks.get(0.04).lo, 0.03, '卡上写的区间与 findCrossings 一致')
+      t.equal(crossingMarks(rows).size, findCrossings(rows).length, '有几处跨越点就有几张卡')
+
+      // 词条：中英 + 简洁语域
+      for (const lang of ['zh', 'en']) {
+        for (const k of ['crit.lead', 'crit.summary', 'crit.summaryEmpty', 'crit.crossing',
+          'crit.plain.dead', 'crit.plain.quiet', 'crit.plain.alive']) {
+          t.ok(typeof DICT[lang][k] === 'string', `${lang} 缺 ${k}`)
+        }
+        for (const k of ['crit.lead', 'crit.summary', 'crit.plain.dead', 'crit.plain.alive'])
+          t.ok(typeof DICT[lang][k + '.simple'] === 'string', `${lang} 缺简洁语域的 ${k}`)
+      }
+      // 总结里的窗口数字必须是填进去的，不是写死的
+      for (const lang of ['zh', 'en'])
+        t.ok(/\{from\}/.test(DICT[lang]['crit.summary']) && /\{to\}/.test(DICT[lang]['crit.summary']),
+          `${lang} 的总结要把涌现窗口的两端填进去`)
+
+      // 这几句只在手机上说：桌面那边图注已经把同样的事说完了（D89 ③）
+      const css = readSrc('src/style.css')
+      t.ok(/\.crit-say \{ display: none; \}/.test(css), '开场白与总结桌面上不显示')
+      t.ok(/\.crit-cross \{ display: none; \}/.test(css), '分界卡桌面上不显示')
+      // 每档那句人话要用**够高的特异度**关掉：`.crit-card figcaption em` 是 (0,2,1)，
+      // 单类名 (0,1,0) 压不过它 —— 本项目第七次被特异度绊倒，形状每次一样。
+      t.ok(/\.crit-card figcaption em\.crit-plain \{ display: none; \}/.test(css),
+        '人话那一句要按特异度关掉，不能只写单类名')
+      t.ok(/@media \(max-width: 767px\)[\s\S]*?\.crit-say \{ display: block/.test(css), '窄屏才把话说出来')
+      t.ok(/@media \(max-width: 767px\)[\s\S]*?\.crit-card figcaption em\.crit-plain \{ display: block/.test(css),
+        '窄屏打开人话那一句时，特异度也要够')
+      const html = readSrc('index.html')
+      t.ok(/data-i18n="crit\.lead"/.test(html) && /id="crit-summary"/.test(html), '开场白与总结要在')
     }
   },
   {

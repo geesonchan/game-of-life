@@ -129,6 +129,9 @@
         <div class="stamp-tools" id="stamp-tools" hidden>
           <button id="btn-rotate" data-i18n-title="stamp.rotate" title="旋转">⟳</button>
           <button id="btn-flip" data-i18n-title="stamp.flip" title="镜像">⇋</button>
+          <!-- 两步放置的第二步（D89 ①）：待放态才出现，点它 = 落子。
+               也可以直接点幽灵本身确认，点空白取消。 -->
+          <button id="btn-drop" class="primary" hidden data-i18n="stamp.drop">放下</button>
           <!-- 首次选中图案时冒出来的指向性气泡（D88 ①）：提示要长在动作发生的位置上，
                而不是画布另一角。用过一次就不再出现（偏好键 stampTipSeen）。 -->
           <p class="stamp-tip" id="stamp-tip" hidden data-i18n="stamp.tip">⟳ 转一转 · ⇋ 翻个面</p>
@@ -423,8 +426,11 @@
           <p class="note" id="crit-progress-text"></p>
         </div>
 
+        <p class="note crit-say" data-i18n="crit.lead">这里在试一件事：同一条规则、同一颗种子，只把"一开始撒多密"推过某处，热闹就换成了一片死寂。</p>
+
         <section class="crit-block">
           <h3 class="exp-sub" data-i18n="crit.stripTitle">每一档的末态</h3>
+          <p class="note crit-say" id="crit-summary"></p>
           <p class="note" id="crit-empty" data-i18n="crit.empty">还没跑。点「开跑」把这条轴走一遍。</p>
           <div class="crit-strip" id="crit-strip"></div>
           <p class="note" id="crit-spec-note"></p>

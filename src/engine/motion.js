@@ -216,20 +216,48 @@ export function motionOf(pattern) {
  * · **吞食者**：它自己不动，线画在**可吞食的那条来路**上，箭头指回嘴 ——
  *   要看的是"从哪儿来的能被吃掉"，不是"它要去哪儿"。
  *
- * @returns {{from:{x,y}, to:{x,y}, arrowAt:'to'|'from'}}
+ * `solidEnd` 说的是"图案在哪一端" —— 渐变的浓端要落在那里（D89 ②）。
+ * @returns {{from:{x,y}, to:{x,y}, arrowAt:'to'|'from', solidEnd:'to'|'from'}}
  */
-export function rayEnds(kind, center, dir, len) {
+export function rayEnds(kind, center, dir, bounds) {
   const n = Math.hypot(dir.dx, dir.dy) || 1
   const ux = dir.dx / n, uy = dir.dy / n
+  // 一路画到棋盘边缘（D89 ②）：截一段固定长度等于替用户决定"看这么远就够了"，
+  // 而他要判断的恰恰是"这条线会不会撞上那个东西"——那条线该有多长，由棋盘说了算。
+  const away = distanceToEdge(center, ux, uy, bounds)
+  const back = distanceToEdge(center, -ux, -uy, bounds)
   if (kind === 'eater') {
-    // 来路在反方向上，箭头落在图案这一端
-    return { from: { x: center.x - ux * len, y: center.y - uy * len }, to: { x: center.x, y: center.y }, arrowAt: 'to' }
+    // 来路在反方向上：图案在 to 这一端，箭头也在这一端（指向嘴）
+    return {
+      from: { x: center.x - ux * back, y: center.y - uy * back },
+      to: { x: center.x, y: center.y },
+      arrowAt: 'to', solidEnd: 'to'
+    }
   }
-  return { from: { x: center.x, y: center.y }, to: { x: center.x + ux * len, y: center.y + uy * len }, arrowAt: 'to' }
+  // 飞船/枪：图案在 from 这一端，箭头在远端
+  return {
+    from: { x: center.x, y: center.y },
+    to: { x: center.x + ux * away, y: center.y + uy * away },
+    arrowAt: 'to', solidEnd: 'from'
+  }
 }
 
-/** 动向线画多长（格）。够长到"一眼看出朝哪儿"，又不至于横穿整盘。 */
-export const RAY_LEN = 26
+/**
+ * 从 center 沿 (ux,uy) 走到棋盘边还有多远（格）。
+ * 没给棋盘尺寸时退回一个够用的默认长度 —— 宁可短一点，也不画出盘外去。
+ */
+export function distanceToEdge(center, ux, uy, bounds) {
+  if (!bounds || !(bounds.w > 0) || !(bounds.h > 0)) return RAY_FALLBACK
+  let d = Infinity
+  if (ux > 0) d = Math.min(d, (bounds.w - center.x) / ux)
+  else if (ux < 0) d = Math.min(d, (0 - center.x) / ux)
+  if (uy > 0) d = Math.min(d, (bounds.h - center.y) / uy)
+  else if (uy < 0) d = Math.min(d, (0 - center.y) / uy)
+  return Number.isFinite(d) ? Math.max(0, d) : RAY_FALLBACK
+}
+
+/** 拿不到棋盘尺寸时的兜底长度（格） */
+export const RAY_FALLBACK = 26
 
 /** 把一个方向向量按朝向变换（与 transformPattern 用的是同一套群运算） */
 export function rotateVector(v, o = {}) {

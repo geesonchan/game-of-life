@@ -119,6 +119,8 @@ export function setupCanvasInput(app) {
      单指画 / 双指捏合缩放 + 拖动平移。矛盾在于第二根手指永远晚于第一根 ——
      等我们知道这是手势时，第一笔早画上了。做法是乐观绘制 + 限时回滚。 */
 
+  let stampDownAt = null        // 触屏按下时的格子（判"点"还是"拖"）
+  let stampMoved = false
   const touches = new Map()     // pointerId → {x, y}（设备像素）
   let gesture = null            // {dist, cx, cy} 上一帧的两指距离与中点
   let firstTouchAt = 0
@@ -182,10 +184,19 @@ export function setupCanvasInput(app) {
       app.dirty = true
       return
     }
-    // 选中图案时，左键 = 放置，右键 = 取消选择；此时不进画笔
-    if (app.stamp && (e.button === 0 || e.button === 2) && !spaceHeld) {
-      if (e.button === 2) app.setStamp(null)
-      else app.placeStampAt(vp.screenToCell(p0.x, p0.y))
+    // 选中图案时不进画笔。
+    // **桌面一步到位，触屏两步**（D89 ①）：触屏上点一下只是把幽灵摆出来，
+    // 拖得动、转得了、确认之前引擎与记账一个字都不碰（D67 那条原则）。
+    if (app.stamp && !spaceHeld && (isTouch(e) || e.button === 0 || e.button === 2)) {
+      if (!isTouch(e) && e.button === 2) { app.setStamp(null); return }
+      if (!isTouch(e)) { app.placeStampAt(vp.screenToCell(p0.x, p0.y)); return }
+      // 触屏：按下先记住起点，是"点"还是"拖"要等抬手才知道。
+      // **先记状态再抓指针**：抓指针是锦上添花（手指滑出画布也能继续跟），
+      // 它若抛异常（某些环境下会），也不该把这一次放置整个废掉。
+      mode = 'stamp'
+      stampDownAt = vp.screenToCell(p0.x, p0.y)
+      stampMoved = false
+      canvas.setPointerCapture(e.pointerId)
       return
     }
     canvas.setPointerCapture(e.pointerId)
@@ -224,6 +235,14 @@ export function setupCanvasInput(app) {
         return
       }
     }
+    if (mode === 'stamp') {
+      // 拖着幽灵走。仍旧只改锚点，不碰棋盘（D89 ①）
+      const c = clampCell(vp.screenToCell(p.x, p.y))
+      if (!stampDownAt || c.x !== stampDownAt.x || c.y !== stampDownAt.y) stampMoved = true
+      app.armStampAt(c)
+      lastPointer = p
+      return
+    }
     if (mode === 'select') {
       const c = clampCell(vp.screenToCell(p.x, p.y))
       app.selection = {
@@ -251,6 +270,26 @@ export function setupCanvasInput(app) {
   })
 
   function endDrag(e) {
+    if (mode === 'stamp') {
+      // 拖过就停在拖到的地方（仍是待放）；只是点一下，就按三选一处置
+      if (!stampMoved) {
+        const origin = app.stampAnchor()
+        const what = tapAction({
+          pending: !!app.pending,
+          insideGhost: insideGhostBox(stampDownAt, origin, app.stampPattern())
+        })
+        if (what === 'arm') app.armStampAt(stampDownAt)
+        else if (what === 'confirm') app.confirmStamp()
+        else app.cancelPending()
+      }
+      stampDownAt = null
+      stampMoved = false
+      mode = null
+      if (e && e.pointerId !== undefined && canvas.hasPointerCapture(e.pointerId)) {
+        canvas.releasePointerCapture(e.pointerId)
+      }
+      return
+    }
     if (mode === 'paint' || mode === 'erase') { commitStroke(); app.captureBaseline() }
     if (mode === 'pan') canvas.classList.remove('panning')
     if (mode === 'select' && app.selection && app.onSelectionDone) {
@@ -331,14 +370,17 @@ export function setupCanvasInput(app) {
     // 回车落子（位置取幽灵当前所在，不管是鼠标跟着还是方向键钉住的）
     if (app.stamp && !isTyping(e.target) && e.key === 'Enter') {
       const at = app.stampAt || app.hoverCell
-      if (at) { app.placeStampAt(at); e.preventDefault() }
+      if (at) { app.confirmStamp(at); e.preventDefault() }
       return
     }
     if (e.code === 'Space' && !isTyping(e.target)) { spaceHeld = true; e.preventDefault() }
     else if (e.key === 'Escape' && app.stamp
       && document.getElementById('rule-modal').hidden
       && document.getElementById('intro-modal').hidden) {
-      app.setStamp(null); e.preventDefault()
+      // 待放态先退回"拿着图案"，再按一次才放下图案本身 —— 一次 Esc 退一层
+      if (app.pending) app.cancelPending()
+      else app.setStamp(null)
+      e.preventDefault()
     }
   })
   window.addEventListener('keyup', e => {
@@ -369,6 +411,27 @@ export function setupCanvasInput(app) {
     app.dirty = true
     app.updateHud()
   }
+}
+
+/**
+ * 触屏上"点一下"该干什么（D89 ①，手机两步放置）。
+ * 三选一，纯函数，边界写在测试里：
+ *   · 还没进待放态 → **摆一个幽灵**（不写棋盘，引擎一动不动）
+ *   · 已经在待放态，点在幽灵身上 → **确认落子**
+ *   · 已经在待放态，点在别处（空白）→ **取消**
+ * @param {{pending:boolean, insideGhost:boolean}} o
+ * @returns {'arm'|'confirm'|'cancel'}
+ */
+export function tapAction(o) {
+  if (!o || !o.pending) return 'arm'
+  return o.insideGhost ? 'confirm' : 'cancel'
+}
+
+/** 点的那一格在不在幽灵的外接框里（含边界） */
+export function insideGhostBox(cell, origin, pattern) {
+  if (!cell || !origin || !pattern) return false
+  return cell.x >= origin.x && cell.x < origin.x + pattern.w &&
+    cell.y >= origin.y && cell.y < origin.y + pattern.h
 }
 
 export function isTyping(el) {

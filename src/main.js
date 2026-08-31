@@ -12,8 +12,8 @@ import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
 import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
 import { watchPageZoom } from './ui/page-zoom.js'
-import { ghostFlashAlpha, ghostFlashDone, orientToastKey, orientLabel, shouldShowStampTip, GHOST_FLASH } from './ui/stamp-hint.js'
-import { motionCached, rayEnds, RAY_LEN } from './engine/motion.js'
+import { orientToastKey, orientLabel, shouldShowStampTip } from './ui/stamp-hint.js'
+import { motionCached, rayEnds } from './engine/motion.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
@@ -244,7 +244,6 @@ app.flipStamp = function () {
 function afterOrientChange(kind) {
   app.library.renderPatterns()      // 缩略图即状态：卡片直接画成当前朝向
   app.toast(t(orientToastKey(kind), { orient: orientLabel(app.stampOrient) }))
-  app.flashGhost()                  // 触屏没有悬停，幽灵平时不可见 —— 闪一下让他看见形状
   app.markStampTipUsed()            // 用过一次，那个气泡从此不再冒（D88 ①）
   app.dirty = true
   app.updateHoverReadout()
@@ -275,23 +274,46 @@ app.markStampTipUsed = function () {
   app.syncStampTip()
 }
 
+/* ---------------- 手机两步放置（D89 ①） ---------------- */
 /**
- * 在画布中央闪一下幽灵，1 秒后淡出（D87 ③）。
- * 已经被方向键钉住位置的（app.stampAt 非空）不动它 —— 那是用户自己摆的，
- * 闪现只借位置，不夺位置：借来的收工时还回去，本来就有的一格不改。
+ * 摆一个"待放"的幽灵：**只改锚点，引擎与记账一个字都不碰**（D67 那条原则）。
+ * 确认之前，这一局的历史里什么也没发生 —— 撤销、编年史、台账全都不知道有过这一步。
  */
-app.flashGhost = function () {
-  if (!app.stamp) return
-  if (!app.stampAt) {
-    app.stampAt = { x: app.engine.w >> 1, y: app.engine.h >> 1 }
-    app.ghostFlashOwned = true
-  }
-  app.ghostFlashAt = performance.now()
+app.armStampAt = function (cell) {
+  if (!app.stamp || !cell) return
+  app.stampAt = { x: cell.x, y: cell.y }
+  app.pending = true
+  document.getElementById('btn-drop').hidden = false
   app.dirty = true
+  app.updateHoverReadout()
+}
+
+/** 确认落子。这一步才动引擎 */
+app.confirmStamp = function (cell) {
+  const at = cell || app.stampAt
+  if (!app.stamp || !at) return
+  app.clearPending()
+  app.placeStampAt(at)
+}
+
+/** 取消待放：幽灵收走，图案还拿在手上（再点棋盘可以重摆） */
+app.cancelPending = function () {
+  if (!app.pending) return
+  app.clearPending()
+  app.stampAt = null
+  app.dirty = true
+  app.updateHoverReadout()
+}
+
+/** 只清状态与按钮，不动别的 —— 落子与取消都要走它 */
+app.clearPending = function () {
+  app.pending = false
+  document.getElementById('btn-drop').hidden = true
 }
 
 app.setStamp = function (pattern) {
   app.stamp = pattern
+  app.clearPending()          // 换图案（或取消）时，待放的那个幽灵一并收走
   app.stampAt = null          // 换图案就解除方向键的钉住
   app.stampOrient = { rot: 0, flip: false }   // 换图案也复位朝向
   document.body.classList.toggle('stamp-active', !!pattern)
@@ -640,20 +662,6 @@ function frame(now) {
     app.framesInWindow = 0
   }
 
-  // 闪现的幽灵：亮 1 秒再淡掉（D87 ③）。淡出期间每帧都要重画，所以在这里持续置脏。
-  let ghostAlpha = 1
-  if (app.ghostFlashAt) {
-    const elapsed = now - app.ghostFlashAt
-    if (ghostFlashDone(elapsed, GHOST_FLASH)) {
-      app.ghostFlashAt = 0
-      if (app.ghostFlashOwned) { app.stampAt = null; app.ghostFlashOwned = false }
-      app.dirty = true
-    } else {
-      ghostAlpha = ghostFlashAlpha(elapsed, GHOST_FLASH)
-      app.dirty = true
-    }
-  }
-
   if (app.dirty) {
     app.renderer.draw(app.engine, app.viewport, app.visual, app.visualOpts)
     // 方向键微调后幽灵脱离鼠标跟随（app.stampAt 非空即钉住）
@@ -668,11 +676,12 @@ function frame(now) {
         const m = motionCached(app.stamp, app.stampOrient, () => { app.dirty = true })
         if (m) {
           const center = { x: o.x + (gp.w - 1) / 2, y: o.y + (gp.h - 1) / 2 }
-          const ends = rayEnds(m.kind, center, m, RAY_LEN)
-          app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt)
+          // 线一路画到棋盘边（D89 ②），所以要把棋盘尺寸交给它
+          const ends = rayEnds(m.kind, center, m, { w: app.engine.w, h: app.engine.h })
+          app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd)
         }
       }
-      app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h, ghostAlpha)
+      app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h)
     }
     if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)
     app.dirty = false

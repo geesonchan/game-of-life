@@ -137,6 +137,7 @@ export function setupControls(app) {
   /* ---------- 图案朝向按钮（窄屏；桌面走 R / F 键） ---------- */
   $('btn-rotate').addEventListener('click', () => app.rotateStamp(1))
   $('btn-flip').addEventListener('click', () => app.flipStamp())
+  $('btn-drop').addEventListener('click', () => app.confirmStamp())   // 两步放置的第二步（D89 ①）
 
   /* ---------- 滑块数值直接输入（点数字变输入框） ---------- */
   // 登记表里的滑块一次接完，包括观塔与勘探视图里的 —— 它们的元素在开机时就在 DOM 里。

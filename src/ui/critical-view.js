@@ -2,7 +2,7 @@
 // 这里只管：接线、画图、把"这个数是被什么裁出来的"写在图注上。
 import {
   CRITICAL_SPEC, CURVE_METRICS, densityAxis, emergenceWindows, findCrossings,
-  isEmergent, isLongTransient, round3
+  isEmergent, isLongTransient, round3, plainLife, crossingMarks
 } from '../data/critical.js'
 import { createTwin, TWIN, TWIN_EXAMPLES, diffCells } from '../data/twin.js'
 import { attachNumericEntry } from './numeric-entry.js'
@@ -24,6 +24,7 @@ export function createCriticalView(app) {
     view: $('crit-view'), back: $('crit-back'), stat: $('crit-stat'),
     progress: $('crit-progress'), bar: $('crit-progress-bar'), progressText: $('crit-progress-text'),
     empty: $('crit-empty'), strip: $('crit-strip'), specNote: $('crit-spec-note'),
+    summary: $('crit-summary'),
     metric: $('crit-metric'), curve: $('crit-curve'), curveNote: $('crit-curve-note'),
     density: $('crit-density'), lblDensity: $('crit-lbl-density'), preview: $('crit-preview'),
     start: $('crit-start'), stop: $('crit-stop'),
@@ -109,7 +110,17 @@ export function createCriticalView(app) {
   function renderStrip() {
     el.empty.hidden = samples.length > 0
     el.strip.innerHTML = ''
+    // 跨越点分界卡插在哪儿，由 findCrossings 说了算 ——
+    // 带子上标的和曲线上夹的必须是同一处，不能各说各的（D89 ③）
+    const marks = crossingMarks(samples)
     for (const s of samples) {
+      const mark = marks.get(s.density)
+      if (mark) {
+        const div = document.createElement('figure')
+        div.className = 'crit-cross'
+        div.innerHTML = `<b>${t('crit.crossing')}</b><span>${t('crit.crossingNote', { lo: mark.lo.toFixed(3), hi: mark.hi.toFixed(3) })}</span>`
+        el.strip.appendChild(div)
+      }
       const card = document.createElement('figure')
       card.className = 'crit-card' + (isEmergent(s) ? ' emergent' : '')
       card.appendChild(thumbCanvas(s))
@@ -117,7 +128,8 @@ export function createCriticalView(app) {
       const dot = `<i class="crit-dot" style="background:${OUTCOME_COLOR[s.outcome] || '#888'}"></i>`
       cap.innerHTML = `<b>${s.density.toFixed(3)}</b>${dot}` +
         `<em>${t('crit.card', { gens: s.gens, final: s.final })}</em>` +
-        (isLongTransient(s) ? `<em class="crit-long">${t('crit.longTransient')}</em>` : '')
+        (isLongTransient(s) ? `<em class="crit-long">${t('crit.longTransient')}</em>` : '') +
+        `<em class="crit-plain">${esc(plainLife(s, t))}</em>`   // 手机上那一句人话（D89 ③）
       card.appendChild(cap)
       card.title = t('crit.cardTip', {
         density: s.density.toFixed(3), outcome: t('out.' + s.outcome),
@@ -128,6 +140,22 @@ export function createCriticalView(app) {
     el.specNote.textContent = t('crit.specNote', {
       board: CRITICAL_SPEC.board, seed: CRITICAL_SPEC.seed, cap: CRITICAL_SPEC.genCap
     })
+    // 带子上方那一句实测总结：窗口的数字自动填进去，跑完就变（D89 ③）
+    const wins = emergenceWindows(samples)
+    el.summary.textContent = !samples.length ? t('crit.summaryEmpty')
+      : wins.length ? t('crit.summary', {
+        from: wins[0].from.toFixed(2), to: wins[0].to.toFixed(2),
+        n: samples.length, alive: samples.filter(isEmergent).length
+      })
+      : t('crit.summaryEmpty')
+  }
+
+  /**
+   * 拼 HTML 之前先转义。这里的字全部来自词典与自己算出的数字，
+   * 但"来源可信"是今天的事实，不是明天的保证 —— 转义一次的成本远小于哪天忘了转的代价。
+   */
+  function esc(x) {
+    return String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
   }
 
   /* ---------------- 曲线 ---------------- */

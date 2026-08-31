@@ -1509,6 +1509,14 @@ body.stamp-active .page-zoom-hint { top: 92px; }
 
 #crit-preview { margin: 10px 0; }
 .crit-mobile-note { display: none; }
+/* 手机上的"话"（D89 ③）：开场白、实测总结、每档一句人话、跨越点分界卡。
+   桌面上一律不显示 —— 那边的图注已经把同样的事说完了，再加一遍是重复。 */
+.crit-say { display: none; }
+/* 特异度：`.crit-card figcaption em` 是 (0,2,1)，压得过单类名 (0,1,0)。
+   这是本项目第七次被特异度绊倒，形状每次一样 —— 以为"写在后面就行"，
+   实际要看的是特异度。所以这里写成 (0,3,1)。 */
+.crit-card figcaption em.crit-plain { display: none; }
+.crit-cross { display: none; }
 @media (max-width: 767px) {
   /* 手机首版只放小多图带，其余隐藏并说明 —— 照观塔/勘探的先例（D68） */
   .crit-desk { display: none; }
@@ -1516,6 +1524,17 @@ body.stamp-active .page-zoom-hint { top: 92px; }
   .crit-main { padding: 10px; }
   .crit-thumb { width: 76px; height: 76px; }
   .crit-run-row button { min-height: 44px; }   /* 触控下限，与其它窄屏按钮一致 */
+  /* 手机上把话说出来 */
+  .crit-say { display: block; line-height: 1.7; }
+  .crit-card figcaption em.crit-plain { display: block; margin-top: 3px; font-size: 10px; color: var(--text); line-height: 1.5; }
+  .crit-cross {
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    flex: 0 0 auto; width: 64px; padding: 6px 4px; margin: 0;
+    background: rgba(126, 231, 135, 0.10);
+    border: 1px dashed var(--accent-dim); border-radius: 8px;
+    font-size: 10px; color: var(--accent); text-align: center; line-height: 1.5;
+  }
+  .crit-cross b { display: block; font-size: 11px; }
 }
 
 /* ---------- 触摸行为：所有可交互控件都要表态（D85 ②a） ---------- */

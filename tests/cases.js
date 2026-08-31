@@ -34,7 +34,9 @@ import { CRITICAL_SPEC, CRITICAL_CLASSIFY, EMERGENCE_MIN_GENS, REFINE_WIDTH, den
   emergenceWindows, round3, CURVE_METRICS } from '../src/data/critical.js'
 import { createTwin, measure, diffCells, TWIN, TWIN_EXAMPLES } from '../src/data/twin.js'
 import { LOCKIN_SPEC, findLockIn, baselineStates, canFlipAt, candidateCells, runToEnd } from '../src/data/lockin.js'
-import { ghostFlashAlpha, ghostFlashDone, orientToastKey, orientLabel, GHOST_FLASH } from '../src/ui/stamp-hint.js'
+import { ghostFlashAlpha, ghostFlashDone, orientToastKey, orientLabel, shouldShowStampTip, GHOST_FLASH } from '../src/ui/stamp-hint.js'
+import { MOTION_KINDS, motionOf, motionNow, motionCached, motionKey, rotateVector,
+  rayEnds, RAY_LEN, centroid } from '../src/engine/motion.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -1148,8 +1150,8 @@ cases.push(
       // 白名单挡的是**游戏数据**，不是键的数量。新加一个要同时满足三条（D84 ③）：
       // 是界面偏好而非实验数据、丢了不损失用户劳动、只影响这台设备的这个浏览器。
       // zoomBar（缩放滑条开关）是照这三条收进来的第四个。
-      t.equal(PREF_KEYS.length, 4, '白名单里只有这几个')
-      t.equal(PREF_KEYS.slice().sort().join(','), 'introSeen,lang,mode,zoomBar', '逐个点名')
+      t.equal(PREF_KEYS.length, 6, '白名单里只有这几个')
+      t.equal(PREF_KEYS.slice().sort().join(','), 'introSeen,lang,mode,motionRay,stampTipSeen,zoomBar', '逐个点名')
       // 反面照旧：游戏数据一个都不许进（下面那条用真存储撞过一遍）
       for (const k of ['board', 'save', 'ledger', 'snapshots'])
         t.ok(!PREF_KEYS.includes(k), `${k} 不许进白名单`)
@@ -4271,8 +4273,15 @@ cases.push(
       // 这一条查的是"有没有出现"，而元素 id 是字符串 —— 必须扫原文。
       // 剥过的版本里字符串是空的，`getElementById('stamp-hint')` 会变成 `getElementById('')`，
       // 于是这条禁令永远不会红（自查时抓到过一次，同 D83 §5 那一类）。
-      t.ok(!/getElementById\('stamp-hint'\)/.test(readSrc('src/main.js')),
-        '提示条不该有第二处 JS 开关：状态在 body 的 class 上，CSS 挑一次就够（D87 ①）')
+      //
+      // 禁的是"在 JS 里开关它的显示"，不是"碰都不许碰"：D88 ① 要给它加一下高亮的 class，
+      // 那是装饰不是状态。显示与否仍旧只由 body.stamp-active + CSS 决定。
+      const rawMain = readSrc('src/main.js')
+      t.ok(!/stamp-hint'\)\.hidden|stamp-hint'\)\.style/.test(rawMain),
+        '不许在 JS 里直接开关提示条的显示（D87 ①）')
+      const tipLines = (rawMain.match(/getElementById\('stamp-hint'\)[\s\S]{0,80}/g) || [])
+      t.ok(tipLines.every(x => /classList/.test(x)),
+        '对提示条只许加/去 class —— 显示与否是 CSS 的事')
       // 桌面/触屏各显示各的
       t.ok(/\.stamp-hint-touch \{ display: none; \}/.test(css), '桌面只显示键盘那一句')
       t.ok(/@media \(max-width: 767px\)[\s\S]*?\.stamp-hint-desk \{ display: none; \}/.test(css),
@@ -4359,6 +4368,158 @@ cases.push(
       t.ok(/app\.rotateStamp\(1\)/.test(ctl) && /app\.flipStamp\(\)/.test(ctl), '手机两颗按钮调的是同一对函数')
       const inp = stripLiterals(readSrc('src/ui/input.js'))
       t.ok(/app\.rotateStamp\(1\)/.test(inp) && /app\.flipStamp\(\)/.test(inp), '桌面 R/F 调的也是同一对')
+    }
+  },
+  {
+    name: '动向线：方向一律实测，一个都不许手写（D88 ②）',
+    run(t) {
+      // 登记表只说"这个图案有没有方向、属哪一类"，向量本身永远是跑出来的。
+      t.equal(Object.keys(MOTION_KINDS).sort().join(','), 'eater,glider,gun,lwss', '四个有方向的图案')
+      for (const key of ['pulsar', 'rpentomino', 'matt']) {
+        t.ok(!MOTION_KINDS[key], `${key} 没有方向 —— 给它画箭头就是在编方向`)
+        t.equal(motionOf(getPattern(key)), null, `${key} 不许量出方向来`)
+      }
+
+      // 滑翔机：与 D81 实测的那组一致（40 代位移 +10,+10 → 每 4 代走 (1,1)，朝 SE）
+      const g = motionNow(getPattern('glider'), { rot: 0, flip: false })
+      t.equal(`${g.dx},${g.dy}/${g.gens}`, '1,1/4', '滑翔机每 4 代走 (1,1)，朝 SE')
+      t.equal(g.kind, 'ship', '它是飞船那一类')
+      // 轻量飞船：横着走，c/2
+      const l = motionNow(getPattern('lwss'), { rot: 0, flip: false })
+      t.equal(`${l.dx},${l.dy}/${l.gens}`, '-1,0/2', '轻量飞船每 2 代走一格，朝西')
+      // 枪：只报方向不报速度（射出去的会越攒越多，那团东西的质心速度不是任何一架的速度）
+      const gun = motionNow(getPattern('gun'), { rot: 0, flip: false })
+      t.equal(`${gun.dx},${gun.dy}`, '1,1', '枪的弹道朝 SE')
+      t.equal(gun.gens, null, '枪不报"几代走几格" —— 算得出但意思不对的数比不报更糟')
+      // 吞食者：方向是"可吞食的那条斜线"，而且是把滑翔机喂进去**真吃掉**才算数
+      const e = motionNow(getPattern('eater'), { rot: 0, flip: false })
+      t.equal(`${e.dx},${e.dy}`, '1,1', '默认朝向的吞食者吃的是从 NW 飞来的（沿 +1,+1 撞进来）')
+      t.ok(e.eatenAt > 0 && e.eatenAt < 60, `喂进去确实被吃掉了（第 ${e.eatenAt} 代）`)
+
+      // **禁止手写方向**：源码里不许出现方向常量表
+      const src = readSrc('src/engine/motion.js')
+      t.ok(!/dx:\s*-?[12]\b/.test(src.replace(/dx: dx/g, '')),
+        'motion.js 里不许写死 dx 常量 —— 方向只能是量出来的')
+      t.ok(/measureShip/.test(src) && /measureGun/.test(src) && /measureEater/.test(src), '三种测法都要在')
+      // 吞食者那一趟的判据必须是"逐格复原"，不是"活细胞数对得上"（D64 互动型标准）
+      t.ok(/sameBoard\(e\.cur, before\)/.test(src),
+        '喂食判据要逐格比对：只看数目的话，吞食者被撞坏、别处多出几格也能凑出同一个数')
+      const lib = readSrc('src/engine/patterns.js')
+      t.ok(!/motion|heading|direction/i.test(lib.replace(/方向/g, '')),
+        '图案表里不许夹带方向元数据 —— 那就是手写的方向')
+    }
+  },
+  {
+    name: '动向线：转过之后重新实测，与把向量转一遍必须一致（D88 ②）',
+    run(t) {
+      // 这是这一条的关键断言：线指的方向与放下去之后真会发生的事，必须是同一件事。
+      // 做法是把图案按朝向变换后**重新实测**，再与"把原向量按同一朝向转一遍"比对。
+      const EIGHT = [{ rot: 1, flip: false }, { rot: 2, flip: false }, { rot: 3, flip: false },
+        { rot: 0, flip: true }, { rot: 1, flip: true }, { rot: 2, flip: true }, { rot: 3, flip: true }]
+      for (const key of ['glider', 'lwss', 'gun']) {
+        const base = motionNow(getPattern(key), { rot: 0, flip: false })
+        for (const o of EIGHT) {
+          const measured = motionNow(getPattern(key), o)
+          const expected = rotateVector(base, o)
+          t.equal(`${measured.dx},${measured.dy}`, `${expected.dx},${expected.dy}`,
+            `${key} 转成 ${JSON.stringify(o)} 之后，实测方向应与转过的向量一致`)
+        }
+      }
+      // 吞食者：八个朝向都要**真的吃得到**（吃不到就该返回 null，而不是照画一条线）。
+      // 这也是 D81 那张四朝向表的另一种复核：来路跟着朝向转，一格都不许差。
+      const eBase = motionNow(getPattern('eater'), { rot: 0, flip: false })
+      for (const o of EIGHT) {
+        const m = motionNow(getPattern('eater'), o)
+        t.ok(m && m.eatenAt > 0, `${JSON.stringify(o)} 的吞食者仍要真的吃得到（第 ${m && m.eatenAt} 代吞完）`)
+        const expected = rotateVector(eBase, o)
+        t.equal(`${m.dx},${m.dy}`, `${expected.dx},${expected.dy}`, '来路方向也要跟着转')
+      }
+      // 探针盘不能太小：第一版把盘子缩到 60 又让图案从四分之一处出发，
+      // 轻量飞船 40 代走 20 格正好撞边，量出来的方向直接是错的（-13,3）。
+      t.equal(`${motionNow(getPattern('lwss'), { rot: 0, flip: false }).dx},${motionNow(getPattern('lwss'), { rot: 0, flip: false }).dy}`,
+        '-1,0', '轻量飞船必须是干净的 (-1,0)，不是撞墙撞出来的怪数')
+    }
+  },
+  {
+    name: '动向线：几何与开关（D88 ②）',
+    run(t) {
+      // 飞船/枪：从图案中心射出去，箭头在远端
+      const ship = rayEnds('ship', { x: 10, y: 10 }, { dx: 1, dy: 1 }, RAY_LEN)
+      t.equal(`${ship.from.x},${ship.from.y}`, '10,10', '飞船的线从图案本身出发')
+      t.ok(ship.to.x > 10 && ship.to.y > 10, '朝它要去的方向延伸')
+      t.equal(ship.arrowAt, 'to', '箭头在远端 —— 它要去那儿')
+      t.ok(Math.abs(Math.hypot(ship.to.x - 10, ship.to.y - 10) - RAY_LEN) < 1e-9, `线长 ${RAY_LEN} 格`)
+      // 吞食者：线画在来路上，箭头指回嘴
+      const eat = rayEnds('eater', { x: 10, y: 10 }, { dx: 1, dy: 1 }, RAY_LEN)
+      t.ok(eat.from.x < 10 && eat.from.y < 10, '吞食者的线画在来路上（反方向）')
+      t.equal(`${eat.to.x},${eat.to.y}`, '10,10', '另一端落在图案上')
+      t.equal(eat.arrowAt, 'to', '箭头指向嘴')
+
+      // 落子后线消失、可在设置里关：线只在幽灵存在且开关打开时画
+      const main = stripLiterals(readSrc('src/main.js'))
+      t.ok(/if \(app\.visualOpts\.motionRay\)/.test(main), '动向线要能在设置里关掉')
+      t.ok(/if \(gp && gc\) \{[\s\S]{0,400}drawMotionRay/.test(main),
+        '线画在"有幽灵"这个条件里 —— 落子之后幽灵没了，线自然也没了')
+      const html = readSrc('index.html')
+      t.ok(/id="in-motion-ray"/.test(html), '设置里要有那个开关')
+      t.ok(/data-i18n="vis\.motionRay"/.test(html), '开关文案走词典')
+      for (const lang of ['zh', 'en']) {
+        t.ok(typeof DICT[lang]['vis.motionRay'] === 'string', `${lang} 缺开关文案`)
+        t.ok(typeof DICT[lang]['vis.motionRay.simple'] === 'string', `${lang} 缺简洁语域`)
+        t.ok(typeof DICT[lang]['tip.motionRay'] === 'string', `${lang} 缺提示`)
+      }
+      // 界面取动向线是**异步**的：没量过先回 null，量完再叫醒 —— 吞食者最慢要两百毫秒，
+      // 不能卡在渲染那一帧里
+      const src = stripLiterals(readSrc('src/engine/motion.js'))
+      t.ok(/setTimeout\(run, 0\)/.test(src), '没量过的要让出这一帧再量')
+      t.equal(motionCached({ key: 'pulsar' }, { rot: 0, flip: false }), null, '没方向的图案永远回 null')
+      t.equal(motionKey('glider', { rot: 5, flip: true }), 'glider:1:true', '缓存键要把朝向归一')
+      const mainSrc = stripLiterals(readSrc('src/main.js'))
+      t.ok(/motionCached\(app\.stamp, app\.stampOrient, \(\) => \{ app\.dirty = true \}\)/.test(mainSrc),
+        '界面要传一个"量完叫我"的回调，否则线永远出不来')
+
+      // 质心是这一切的地基，单独验一次
+      const e = new LifeEngine(8, 8, { rule: lifeRule(), boundary: 'dead' })
+      e.set(1, 1, 1); e.set(3, 1, 1); e.stats.alive = 2
+      const c = centroid(e)
+      t.equal(`${c.x},${c.y},${c.n}`, '2,1,2', '质心算对')
+      t.equal(centroid(new LifeEngine(4, 4, { rule: lifeRule() })), null, '空盘没有质心')
+    }
+  },
+  {
+    name: '首次选中的指向性气泡：用过一次就不再出现（D88 ①）',
+    run(t) {
+      // 提示要长在动作发生的位置上 —— 这是这一条的立意，写成了"气泡贴在 ⟳/⇋ 旁边"。
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+      t.ok(/<div class="stamp-tools"[\s\S]*?id="stamp-tip"[\s\S]*?<\/div>/.test(html),
+        '气泡必须长在那两颗按钮所在的容器里，不是画布另一角')
+      t.ok(/\.stamp-tip::before/.test(css), '要有个尖角指着按钮 —— 指向性就在这一笔上')
+      t.ok(/data-i18n="stamp\.tip"/.test(html), '文案走词典')
+
+      // 只冒到"用过一次"为止
+      t.equal(shouldShowStampTip(null, true), true, '没用过 + 选中了 → 冒')
+      t.equal(shouldShowStampTip('1', true), false, '用过了就不再冒')
+      t.equal(shouldShowStampTip(null, false), false, '没选中图案时不冒')
+      t.ok(PREF_KEYS.includes('stampTipSeen'), '这条偏好要登记进白名单（三判据见 D84 ③）')
+      const main = stripLiterals(readSrc('src/main.js'))
+      t.ok(/app\.markStampTipUsed\(\)/.test(main), '转过或翻过一次就要记下来')
+      // "必须真的调用"要查**剥过注释**的版本，"必须出现某个字符串"要查**原文** ——
+      // 两者都要，就两条都写：只查原文的话，把那一行注释掉守卫照样绿（自查时抓到过）。
+      const mark = /app\.markStampTipUsed = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!mark && /prefs\.set\(/.test(mark[0]), '记这件事必须是真代码，不能是注释掉的一行')
+      t.ok(/'stampTipSeen'/.test(readSrc('src/main.js')), '记的就是那个偏好键')
+
+      // 桌面没有那两颗按钮，改成把提示行短暂高亮
+      t.ok(/\.stamp-hint\.flash/.test(css), '桌面首次选中要把提示行高亮一下')
+      t.ok(/@media \(prefers-reduced-motion: reduce\)[\s\S]{0,120}\.stamp-hint\.flash \{ animation: none/.test(css),
+        'reduced-motion 下不做动画')
+      for (const lang of ['zh', 'en']) {
+        t.ok(typeof DICT[lang]['stamp.tip'] === 'string', `${lang} 缺气泡文案`)
+        t.ok(typeof DICT[lang]['stamp.tip.simple'] === 'string', `${lang} 缺简洁语域`)
+        t.ok(/⟳/.test(DICT[lang]['stamp.tip']) && /⇋/.test(DICT[lang]['stamp.tip']),
+          `${lang} 的气泡要用按钮上的那两个符号`)
+      }
     }
   },
   {

@@ -41,7 +41,8 @@ export function setupControls(app) {
     lblNotation: $('lbl-notation'), lblFingerprint: $('lbl-fingerprint'),
     age: $('in-age'), glow: $('in-glow'),
     glowFrames: $('in-glow-frames'), lblGlow: $('lbl-glow'),
-    trails: $('in-trails'), trailLen: $('in-trail-len'), lblTrail: $('lbl-trail')
+    trails: $('in-trails'), trailLen: $('in-trail-len'), lblTrail: $('lbl-trail'),
+    motionRay: $('in-motion-ray')
   }
   app.el = el
 
@@ -119,6 +120,14 @@ export function setupControls(app) {
   app.visualOpts.glow = el.glow.checked
   app.visualOpts.trails = el.trails.checked
   app.visualOpts.trailAlpha = trailAlphaOf(Number(el.trailLen.value))
+  // 动向线（D88 ②）：默认开着，关掉的话连量都不量
+  el.motionRay.checked = prefs.get('motionRay', '1') !== '0'
+  app.visualOpts.motionRay = el.motionRay.checked
+  el.motionRay.addEventListener('change', () => {
+    app.visualOpts.motionRay = el.motionRay.checked
+    prefs.set('motionRay', el.motionRay.checked ? '1' : '0')
+    app.dirty = true
+  })
   el.lblTrail.textContent = trailLabel(Number(el.trailLen.value))
   el.lblGlow.textContent = el.glowFrames.value
   app.renderer.setGlowFrames(Number(el.glowFrames.value))

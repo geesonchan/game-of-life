@@ -13,9 +13,15 @@
  * 白名单挡的是**游戏数据**（棋盘、存档、台账、快照），不是"键的数量" ——
  * 新加一个的判据有三条，三条都满足才收（D84 ③）：
  * 它是界面偏好而非实验数据；它丢了不损失任何用户劳动；它只影响这台设备的这个浏览器。
- * `zoomBar`（缩放滑条开关）是照这三条收进来的第四个。
+ * `zoomBar`（缩放滑条开关）是照这三条收进来的第四个，
+ * `stampTipSeen`（旋转气泡看过没有）与 `motionRay`（动向线开关）是第五、第六个 ——
+ * 前者丢了最多是气泡再冒一次，后者丢了只是回到默认开着，都不损失任何用户劳动。
  */
-export const PREF_KEYS = Object.freeze(['introSeen', 'lang', 'mode', 'zoomBar'])
+export const PREF_KEYS = Object.freeze([
+  'introSeen', 'lang', 'mode', 'zoomBar',
+  'stampTipSeen',   // 旋转气泡看过没有（D88 ①）
+  'motionRay'       // 动向线开关（D88 ②）
+])
 
 /**
  * 书签类数据的键（D82 对 D30 的精修）。收藏列表允许落 localStorage，

@@ -1383,6 +1383,47 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 /* HUD 上的缩放那一格要能点（.hud 整体是 pointer-events:none） */
 .hud .hud-zoom { pointer-events: auto; }
 
+/* ---------- 首次选中图案时的指向性气泡（D88 ①） ---------- */
+/* 它贴在 ⟳/⇋ 两颗按钮下面，尖角指着它们 —— 提示要长在动作发生的位置上，
+   而不是画布另一角（那正是 D87 那条提示条没被看见的原因）。 */
+.stamp-tip {
+  position: absolute;
+  top: calc(100% + 8px); right: 0;
+  margin: 0;
+  padding: 6px 10px;
+  white-space: nowrap;
+  background: var(--accent-dim, #2f6b3a);
+  border: 1px solid var(--accent, #7ee787);
+  border-radius: 8px;
+  font-size: 12px; color: var(--text);
+  pointer-events: none;
+  animation: tipIn .18s ease-out;
+}
+.stamp-tip[hidden] { display: none; }
+.stamp-tip::before {                    /* 尖角：指着那两颗按钮 */
+  content: ''; position: absolute;
+  top: -5px; right: 16px;
+  width: 8px; height: 8px;
+  background: var(--accent-dim, #2f6b3a);
+  border-left: 1px solid var(--accent, #7ee787);
+  border-top: 1px solid var(--accent, #7ee787);
+  transform: rotate(45deg);
+}
+@keyframes tipIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .stamp-tip { animation: none; } }
+
+/* 桌面首次选中：那一行提示短暂高亮一下，让它被看见（D88 ①） */
+.stamp-hint.flash {
+  color: var(--text);
+  border-color: var(--accent, #7ee787);
+  animation: hintFlash 1.6s ease-out;
+}
+@keyframes hintFlash {
+  0%, 60% { background: rgba(126, 231, 135, 0.18); }
+  100% { background: rgba(14, 16, 21, 0.82); }
+}
+@media (prefers-reduced-motion: reduce) { .stamp-hint.flash { animation: none; } }
+
 /* ---------- 选中图案时的操作提示（D87 ①） ---------- */
 /* 它是"自我宣告"：选中期间常驻，取消选中即消失（D75 ②）。
    贴附层（5），与 HUD 同一档 —— 它讲的是画布上正在发生的事。 */

@@ -41,6 +41,15 @@ export function orientToastKey(kind) {
   return kind === 'flip' ? 'stamp.flipped' : 'stamp.rotated'
 }
 
+/**
+ * 这次选中要不要冒那个气泡（D88 ①）。纯函数，把"只冒到用过一次为止"这条规矩写死在一处。
+ * @param {string|null} seenPref 偏好里存的值（'1' = 用过了）
+ * @param {boolean} hasStamp 现在是不是选中了图案
+ */
+export function shouldShowStampTip(seenPref, hasStamp) {
+  return !!hasStamp && seenPref !== '1'
+}
+
 /** 朝向 → 朝向名（四个方向，与 docs/patterns.md 的对应表同一套说法） */
 export const ORIENT_NAMES = Object.freeze(['SE', 'SW', 'NW', 'NE'])
 

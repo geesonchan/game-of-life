@@ -129,6 +129,9 @@
         <div class="stamp-tools" id="stamp-tools" hidden>
           <button id="btn-rotate" data-i18n-title="stamp.rotate" title="旋转">⟳</button>
           <button id="btn-flip" data-i18n-title="stamp.flip" title="镜像">⇋</button>
+          <!-- 首次选中图案时冒出来的指向性气泡（D88 ①）：提示要长在动作发生的位置上，
+               而不是画布另一角。用过一次就不再出现（偏好键 stampTipSeen）。 -->
+          <p class="stamp-tip" id="stamp-tip" hidden data-i18n="stamp.tip">⟳ 转一转 · ⇋ 翻个面</p>
         </div>
         <!-- 缩放滑条（D84）。捏合既不可发现也不精确，这是它的可见、可精确的那一份。
              绝对定位在画布右缘的浮层 —— 不进控制区的行结构，
@@ -202,6 +205,7 @@
             </label>
             <label class="check" data-i18n-title="tip.trails"><input type="checkbox" id="in-trails" /><span data-i18n="vis.trails">拖尾模式</span></label>
             <label class="check" data-i18n-title="tip.zoomBar"><input type="checkbox" id="in-zoombar" checked /><span data-i18n="vis.zoomBar">缩放滑条</span></label>
+            <label class="check" data-i18n-title="tip.motionRay"><input type="checkbox" id="in-motion-ray" checked /><span data-i18n="vis.motionRay">动向线</span></label>
             <label class="field indent" data-i18n-title="tip.trailLen">
               <span><span data-i18n="vis.trailLen">拖尾长度</span> <b id="lbl-trail">中</b></span>
               <input type="range" id="in-trail-len" min="1" max="20" step="1" value="10" />

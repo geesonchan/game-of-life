@@ -12,7 +12,8 @@ import { setupControls, readSeedInput } from './ui/controls.js'
 import { setupCanvasInput } from './ui/input.js'
 import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
 import { watchPageZoom } from './ui/page-zoom.js'
-import { ghostFlashAlpha, ghostFlashDone, orientToastKey, orientLabel, GHOST_FLASH } from './ui/stamp-hint.js'
+import { ghostFlashAlpha, ghostFlashDone, orientToastKey, orientLabel, shouldShowStampTip, GHOST_FLASH } from './ui/stamp-hint.js'
+import { motionCached, rayEnds, RAY_LEN } from './engine/motion.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
@@ -244,8 +245,34 @@ function afterOrientChange(kind) {
   app.library.renderPatterns()      // 缩略图即状态：卡片直接画成当前朝向
   app.toast(t(orientToastKey(kind), { orient: orientLabel(app.stampOrient) }))
   app.flashGhost()                  // 触屏没有悬停，幽灵平时不可见 —— 闪一下让他看见形状
+  app.markStampTipUsed()            // 用过一次，那个气泡从此不再冒（D88 ①）
   app.dirty = true
   app.updateHoverReadout()
+}
+
+/**
+ * 首次选中图案时的指向性气泡（D88 ①）。
+ * 它贴在 ⟳/⇋ 那两颗按钮旁边 —— **提示要长在动作发生的位置上**，
+ * 而不是画布另一角：D87 那条提示条就是因为不在注意力所在处而没被看见。
+ * 桌面没有那两颗按钮（走 R/F 键），所以改成把那一行提示短暂高亮一下。
+ */
+app.syncStampTip = function () {
+  const show = shouldShowStampTip(prefs.get('stampTipSeen'), !!app.stamp)
+  document.getElementById('stamp-tip').hidden = !show
+  const hint = document.getElementById('stamp-hint')
+  hint.classList.remove('flash')
+  if (show) {
+    // 重新触发一次动画：读一下 offsetWidth 强制回流，否则连续两次选中不会再闪
+    void hint.offsetWidth
+    hint.classList.add('flash')
+  }
+}
+
+/** 用过一次（转过或翻过）就把气泡收起来，并记住 */
+app.markStampTipUsed = function () {
+  if (prefs.get('stampTipSeen') === '1') return
+  prefs.set('stampTipSeen', '1')
+  app.syncStampTip()
 }
 
 /**
@@ -269,6 +296,7 @@ app.setStamp = function (pattern) {
   app.stampOrient = { rot: 0, flip: false }   // 换图案也复位朝向
   document.body.classList.toggle('stamp-active', !!pattern)
   document.getElementById('stamp-tools').hidden = !pattern
+  app.syncStampTip()
   app.library.renderPatterns()
   app.canvas.classList.toggle('stamping', !!pattern)
   app.dirty = true
@@ -633,6 +661,17 @@ function frame(now) {
     const gp = app.stampPattern()
     if (gp && gc) {
       const o = centerOrigin(gp, gc.x, gc.y)
+      // 动向线画在幽灵下面：线是"接下来会怎样"，幽灵是"现在放在哪儿"，
+      // 幽灵盖在线上才不会被线切开（D88 ②）
+      if (app.visualOpts.motionRay) {
+        // 没量过的先不画，量完了叫醒下一帧（量吞食者最慢要两百多毫秒，不能卡在这一帧里）
+        const m = motionCached(app.stamp, app.stampOrient, () => { app.dirty = true })
+        if (m) {
+          const center = { x: o.x + (gp.w - 1) / 2, y: o.y + (gp.h - 1) / 2 }
+          const ends = rayEnds(m.kind, center, m, RAY_LEN)
+          app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt)
+        }
+      }
       app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h, ghostAlpha)
     }
     if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)

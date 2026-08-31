@@ -259,6 +259,36 @@ export class Renderer {
    * 画在最上层，不进拖尾图层 —— 它是界面提示，不是棋盘内容。
    */
   /**
+   * 动向线（D88 ②）：一条长虚线射线 + 一个箭头。
+   * 方向从哪儿来不归它管 —— 它只管画；方向一律是引擎实测出来的（engine/motion.js）。
+   */
+  drawMotionRay(vp, from, to, arrowAt = 'to') {
+    const ctx = this.ctx
+    const p = (bx, by) => ({ x: (bx - vp.originX) * vp.scale, y: (by - vp.originY) * vp.scale })
+    const a = p(from.x + 0.5, from.y + 0.5)
+    const b = p(to.x + 0.5, to.y + 0.5)
+    ctx.save()
+    ctx.globalAlpha = 0.75
+    ctx.strokeStyle = rgb(this.flat)
+    ctx.lineWidth = Math.max(1, Math.min(3, vp.scale / 4))
+    ctx.setLineDash([Math.max(4, vp.scale), Math.max(3, vp.scale * 0.6)])
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
+    ctx.setLineDash([])
+    // 箭头画在指定的那一端：飞船朝去处，吞食者朝自己的嘴
+    const tip = arrowAt === 'from' ? a : b
+    const tail = arrowAt === 'from' ? b : a
+    const ang = Math.atan2(tip.y - tail.y, tip.x - tail.x)
+    const size = Math.max(7, Math.min(18, vp.scale * 1.6))
+    ctx.fillStyle = rgb(this.flat)
+    ctx.beginPath()
+    ctx.moveTo(tip.x, tip.y)
+    ctx.lineTo(tip.x - size * Math.cos(ang - 0.4), tip.y - size * Math.sin(ang - 0.4))
+    ctx.lineTo(tip.x - size * Math.cos(ang + 0.4), tip.y - size * Math.sin(ang + 0.4))
+    ctx.closePath(); ctx.fill()
+    ctx.restore()
+  }
+
+  /**
    * 幽灵。`alpha` 是**倍数**不是绝对值（默认 1 = 原来的样子）——
    * 手机上按完 ⟳/⇋ 会闪一下再淡掉，淡的是整体，两档不透明度的相对关系不变（D87 ③）。
    */

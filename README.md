@@ -73,6 +73,7 @@ src/engine/   纯逻辑，零 DOM 依赖，可在 Node 里跑测试
   board.js      双缓冲棋盘与单代演进
   patterns.js   5 个内置图案与放置函数
   rle.js        标准 RLE 格式解析与生成
+  motion.js     图案的动向：飞船质心位移、枪的弹道、吞食者可吞食的斜线（全部实测，禁止手写）
   save.js       存档格式（规格 3.1）与读档重建
 src/render/   只读引擎状态，负责画
   viewport.js       棋盘坐标 ↔ 屏幕坐标 + 缩放滑条的对数刻度

@@ -90,6 +90,13 @@ app.tick = function () {
 }
 
 app.setRunning = function (on) {
+  // **空盘不开跑**（D92 ①）：0 格的棋盘跑一代必然全灭，于是会弹一张"第 1 代 / 峰值 0 / 剩 0"
+  // 的总结卡片，还往实验台账里落一条 —— 那不是一局，那是一次误触。
+  // 从根上不启动，比"跑起来再想办法不记账"干净：终止检测与记账都不必知道有这么个特例。
+  if (on && app.engine.stats.alive === 0) {
+    app.toast(t('toast.emptyBoard'))
+    return
+  }
   // 一开跑，"我刚才把它对着哪儿放的"就成了旧闻：棋盘已经不是那一刻的棋盘了（D91）。
   // 待放态也一并退场：手上举着的那个幽灵，等棋盘跑起来之后已经对不上任何东西了（D90 §4）。
   if (on) app.cancelPending()
@@ -108,6 +115,11 @@ app.setRunning = function (on) {
 }
 
 app.stepOnce = function () {
+  // 空盘单步同理：一步之后仍是空盘，却会被判成"全灭"而落一条台账（D92 ①）
+  if (app.engine.stats.alive === 0) {
+    app.toast(t('toast.emptyBoard'))
+    return
+  }
   // 单步也让棋盘往前走了一格：手上那个幽灵与刚才那条参照线都对不上新盘了（D90 §4）
   app.cancelPending()
   const t0 = performance.now()

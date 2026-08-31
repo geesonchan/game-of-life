@@ -8,6 +8,10 @@
        用 touch-action 精确治，见 docs/decisions.md D85 ②。 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- 图标：相对路径，跟 vite 的 base:'./' 一致，放子目录也能找到 -->
+  <!-- 版本印记（D92 ②）：构建时由 vite 填进来。
+       它存在的唯一理由是"一眼核对线上是哪一版" —— 上一轮真机验的是上一版，
+       而当时没有任何东西能一条命令对出来。 -->
+  <meta name="app-version" content="dev" />
   <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <title>生命游戏实验台</title>
   <link rel="stylesheet" href="/src/style.css" />

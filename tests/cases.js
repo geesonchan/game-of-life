@@ -24,7 +24,7 @@ import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
 import { RingSeries } from '../src/data/series.js'
 import { shouldShowProgress, placeSelectionMenu } from '../src/ui/io.js'
 import { introPages, introNext, appendixPages, placeStarterGift } from '../src/ui/intro.js'
-import { pinchDelta, strokeVerdict, PROMOTE_MS, nudgeCell, tapAction, insideGhostBox } from '../src/ui/input.js'
+import { pinchDelta, strokeVerdict, PROMOTE_MS, nudgeCell, tapAction, insideGhostBox, setupCanvasInput } from '../src/ui/input.js'
 import { clampToRange, NUMERIC_SLIDERS, CODEC_SLIDERS } from '../src/ui/numeric-entry.js'
 import { Viewport, fitScaleOf, zoomFromSlider, sliderFromZoom, ZOOM_STEPS } from '../src/render/viewport.js'
 import { zoomLabel, parseZoomInput, DIM_AFTER_MS, ZOOM_BUTTON_STEP } from '../src/ui/zoom-bar.js'
@@ -4832,6 +4832,132 @@ cases.push(
       for (const word of ['清空', '播放', '单步', '读档', '换世界', '换图案'])
         t.ok(new RegExp(word).test(doc), `退出集合里要点名「${word}」`)
       t.ok(/待放态 × 每个退出动作/.test(doc), '状态清单排查要加上这一组组合')
+    }
+  },
+  {
+    name: '触屏事件序列驱动：待放态的进入与退出（D92 ③）',
+    run(t) {
+      // 上一轮我在浏览器里手点了六条路径，报"全过"，而真机不过 ——
+      // 事后查明真机对着的是上一版（那次修复我没推）。但这件事也照出另一半问题：
+      // **手点出来的验证不是守卫**，它不会在下一次改动时自己红。
+      // 所以把触屏那条路写成可重复的用例：拿一个假 canvas 把真的 setupCanvasInput 接起来，
+      // 再按"按下—抬起"的顺序喂事件，看它调了哪些动作。
+      const handlers = {}
+      const fakeCanvas = {
+        addEventListener: (type, fn) => { (handlers[type] = handlers[type] || []).push(fn) },
+        setPointerCapture() {}, releasePointerCapture() {}, hasPointerCapture() { return false },
+        classList: { add() {}, remove() {}, toggle() {} },
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 400, height: 400 })
+      }
+      const calls = []
+      const app = {
+        canvas: fakeCanvas,
+        engine: new LifeEngine(40, 40, { rule: lifeRule(), boundary: 'dead' }),
+        viewport: Object.assign(new Viewport(), { scale: 4, originX: 0, originY: 0 }),
+        renderer: { dpr: 1 },
+        records: { noteEdit() {} },
+        mode: 'full',
+        stamp: getPattern('glider'),
+        stampOrient: { rot: 0, flip: false },
+        pendingStamp: null,
+        hoverCell: null,
+        stampPattern() { return getPattern('glider') },
+        stampAnchor() { return app.pendingStamp ? { x: app.pendingStamp.x, y: app.pendingStamp.y } : null },
+        armStampAt(c) { calls.push('arm'); app.pendingStamp = { x: c.x, y: c.y } },
+        confirmStamp() { calls.push('confirm'); app.pendingStamp = null },
+        cancelPending() { calls.push('cancel'); app.pendingStamp = null },
+        placeStampAt() { calls.push('place') },
+        setRefRay() {}, markDirtyRun() {}, captureBaseline() {}, updateHud() {},
+        updateHoverReadout() {}, hideSelectionMenu() {}, setStamp() {}, nudgeStamp() { return false },
+        rotateStamp() {}, flipStamp() {}, zoomBar: { wake() {} }
+      }
+      // setupCanvasInput 会往 window 上挂键盘监听；测试环境没有 window/document，临时给两个空壳
+      const hadWindow = 'window' in globalThis, hadDoc = 'document' in globalThis
+      const oldWindow = globalThis.window, oldDoc = globalThis.document
+      globalThis.window = { addEventListener() {} }
+      globalThis.document = { getElementById: () => ({ hidden: true }) }
+      try {
+        setupCanvasInput(app)
+        const fire = (type, x, y, id = 1) => {
+          for (const fn of handlers[type] || []) {
+            fn({ clientX: x, clientY: y, pointerId: id, pointerType: 'touch', button: 0, isPrimary: true,
+              preventDefault() {}, shiftKey: false })
+          }
+        }
+        const tap = (x, y, id) => { fire('pointerdown', x, y, id); fire('pointerup', x, y, id) }
+
+        // ① 第一下：摆一个待放的幽灵，**不落子**
+        tap(100, 100, 1)
+        t.equal(calls.join(','), 'arm', '第一次点只摆幽灵 —— 引擎那条路（place）一次都不许走')
+        t.ok(!!app.pendingStamp, '进入待放态')
+
+        // ② 点在幽灵身上：确认
+        calls.length = 0
+        const anchor = app.pendingStamp
+        tap(anchor.x * 4, anchor.y * 4, 2)
+        t.equal(calls.join(','), 'confirm', '点在幽灵身上 = 确认落子')
+        t.equal(app.pendingStamp, null, '确认之后退出待放态')
+
+        // ③ 点空白：取消
+        calls.length = 0
+        tap(100, 100, 3)          // 先摆
+        tap(360, 360, 4)          // 再点远处的空白
+        t.equal(calls.join(','), 'arm,cancel', '点空白 = 取消，而不是又摆一个')
+        t.equal(app.pendingStamp, null, '取消之后退出待放态')
+
+        // ④ 拖动：只挪幽灵，不落子
+        calls.length = 0
+        fire('pointerdown', 100, 100, 5)
+        fire('pointermove', 200, 160, 5)
+        fire('pointerup', 200, 160, 5)
+        t.ok(calls.includes('arm') && !calls.includes('place') && !calls.includes('confirm'),
+          `拖动只挪幽灵：实际调用 ${calls.join(',')}`)
+        t.ok(app.pendingStamp && app.pendingStamp.x > 20, '幽灵跟着拖到了新位置')
+      } finally {
+        if (hadWindow) globalThis.window = oldWindow; else delete globalThis.window
+        if (hadDoc) globalThis.document = oldDoc; else delete globalThis.document
+      }
+    }
+  },
+  {
+    name: '空盘不开跑：0 格的"局"不该进台账（D92 ①）',
+    run(t) {
+      // 真机截图：待放态按播放，空盘跑一代必然全灭 → 弹"第 1 代 / 峰值 0 / 剩 0"的总结卡片，
+      // 还往台账落一条。那不是一局，是一次误触。从根上不启动，比"跑起来再想办法不记账"干净 ——
+      // 终止检测与记账都不必知道有这么个特例。
+      const main = stripLiterals(readSrc('src/main.js'))
+      const run = /app\.setRunning = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!run, '找得到 setRunning')
+      t.ok(/if \(on && app\.engine\.stats\.alive === 0\)/.test(run[0]), '空盘按播放直接不启动')
+      t.ok(/return\s*\n\s*\}/.test(run[0]), '不启动就直接返回，不往下走')
+      const step = /app\.stepOnce = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!step && /alive === 0/.test(step[0]), '空盘单步同理 —— 一步之后仍是空盘，却会被判成全灭')
+      // 提示要有词条（中英 + 简洁语域）
+      for (const lang of ['zh', 'en']) {
+        t.ok(typeof DICT[lang]['toast.emptyBoard'] === 'string', `${lang} 缺空盘提示`)
+        t.ok(typeof DICT[lang]['toast.emptyBoard.simple'] === 'string', `${lang} 缺简洁语域`)
+      }
+      t.ok(/画|randomize|随机/i.test(DICT.zh['toast.emptyBoard']),
+        '提示要告诉他下一步能做什么，而不是只说"空的"')
+    }
+  },
+  {
+    name: '版本印记：线上是哪一版要能一条命令核对（D92 ②）',
+    run(t) {
+      // 上一轮真机验的是上一版（修好的那次提交我没推），而当时没有任何东西
+      // 能让我或用户一眼核对"线上到底是哪一版"。
+      const html = readSrc('index.html')
+      t.ok(/<meta name="app-version" content="dev" \/>/.test(html),
+        'index.html 里要有版本印记的位置（开发时写着 dev，那也是准的）')
+      const cfg = readSrc('vite.config.js')
+      // 钩子名要**精确**匹配：只查 `transformIndexHtml` 这个子串的话，
+      // 把它改名成 transformIndexHtmlDisabled（等于关掉）守卫照样绿 —— 自查时抓到的。
+      t.ok(/transformIndexHtml\s*\(/.test(cfg), '构建时把版本写进**静态 HTML**（钩子名要对得上）')
+      t.ok(/name="app-version" content="\$\{pkgVersion\}"/.test(cfg), '写进去的就是 package.json 的版本')
+      t.ok(/readFileSync/.test(cfg) && /package\.json/.test(cfg), '版本号取自 package.json，不另抄一份')
+      // 部署流程里要写明"推完怎么核对"
+      const deploy = readSrc('docs/deploy.md')
+      t.ok(/app-version/.test(deploy), 'deploy.md 里要写明推完之后怎么核对线上版本')
     }
   },
   {

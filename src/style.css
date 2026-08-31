@@ -1404,6 +1404,46 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   .page-zoom-hint { top: 48px; font-size: 11px; }
 }
 
+/* ---------- 临界实验室（D86） ---------- */
+/* 外壳复用观塔/勘探那套 .tower-view，这里只加它自己的三块内容 */
+.crit-main { flex: 1; min-width: 0; overflow-y: auto; padding: 12px 14px; }
+.crit-block { margin-bottom: 18px; }
+.crit-run-row { margin-bottom: 10px; }
+.crit-canvas { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #12151c; }
+
+/* 小多图带：一档一张末态缩略图，横滑。与取用区的卡片带同一种姿势（D75 ①） */
+.crit-strip { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+.crit-card {
+  flex: 0 0 auto; margin: 0; padding: 5px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  scroll-snap-align: start;
+}
+.crit-card.emergent { border-color: var(--accent-dim); }   /* 落在涌现窗口里的那几档 */
+.crit-thumb { display: block; width: 88px; height: 88px; image-rendering: pixelated; border-radius: 4px; }
+.crit-thumb-big { display: block; width: 100%; max-width: 200px; height: auto; image-rendering: pixelated; border-radius: 6px; }
+.crit-card figcaption { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); line-height: 1.5; }
+.crit-card figcaption b { color: var(--text); font-variant-numeric: tabular-nums; }
+.crit-card figcaption em { display: block; font-style: normal; }
+.crit-card figcaption .crit-long { color: #e0925f; }
+.crit-dot { display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; vertical-align: middle; }
+
+/* 双宇宙：两块小画布并排，差异格在 B 上另色 */
+.crit-twins { display: flex; gap: 10px; margin: 8px 0; }
+.crit-twins figure { margin: 0; }
+.crit-twins figcaption { margin-top: 4px; font-size: 11px; color: var(--muted); }
+.crit-mini { display: block; width: 200px; height: 200px; image-rendering: pixelated; border: 1px solid var(--line); border-radius: 6px; }
+
+#crit-preview { margin: 10px 0; }
+.crit-mobile-note { display: none; }
+@media (max-width: 767px) {
+  /* 手机首版只放小多图带，其余隐藏并说明 —— 照观塔/勘探的先例（D68） */
+  .crit-desk { display: none; }
+  .crit-mobile-note { display: block; }
+  .crit-main { padding: 10px; }
+  .crit-thumb { width: 76px; height: 76px; }
+  .crit-run-row button { min-height: 44px; }   /* 触控下限，与其它窄屏按钮一致 */
+}
+
 /* ---------- 触摸行为：所有可交互控件都要表态（D85 ②a） ---------- */
 /* 不声明 touch-action 的控件，浏览器会替它做主：iOS Safari 把双击当"放大页面"，
    把落在控件上的两指当"缩放页面"。放大之后用户往往不知道怎么还原，等于被困住。

@@ -134,7 +134,7 @@ export function setupControls(app) {
   // 唯独缩放滑条例外：它的滑块单位（对数档位）与用户读写的量（几倍）不是一回事，
   // 要带一层换算，由 zoom-bar.js 自己接（D84 ③）。接两遍会插出两个输入框。
   for (const [rangeId, labelId] of NUMERIC_SLIDERS) {
-    if (rangeId === CODEC_SLIDERS.zoom) continue
+    if (Object.values(CODEC_SLIDERS).includes(rangeId)) continue
     attachNumericEntry($(rangeId), $(labelId), { ariaLabel: rangeId })
   }
 

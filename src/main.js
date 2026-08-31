@@ -19,6 +19,7 @@ import { setupRecords } from './ui/records.js'
 import { setupIO } from './ui/io.js'
 import { createTowerView } from './ui/tower-view.js'
 import { createExplorerView } from './ui/explorer-view.js'
+import { createCriticalView } from './ui/critical-view.js'
 import { boardBaseline } from './engine/save.js'
 import { AGE_MAX } from './render/palette.js'
 import { placePattern, centerOrigin, transformPattern } from './engine/patterns.js'
@@ -462,22 +463,24 @@ app.intro = createIntro(app)
 document.getElementById('btn-help').addEventListener('click', () => app.intro.open({ chooser: true }))
 app.tower = createTowerView(app)
 app.explorer = createExplorerView(app)
+app.critical = createCriticalView(app)
 
 /**
  * 观塔与勘探都是整屏接管的独立视图，同一时刻只能开一个 ——
  * 两个都开会叠在一起，谁在上面取决于 DOM 顺序，用户完全无从预料。
  */
+const VIEWS = { tower: () => app.tower, explorer: () => app.explorer, critical: () => app.critical }
 app.openView = function (name) {
-  if (name !== 'tower') app.tower.hide()
-  if (name !== 'explorer') app.explorer.hide()
-  if (name === 'tower') app.tower.show()
-  if (name === 'explorer') app.explorer.show()
+  // 名单驱动，不逐个 if —— 加第四个视图时漏掉一处 hide 就会两块叠在一起（D86 ④）
+  for (const key of Object.keys(VIEWS)) if (key !== name) VIEWS[key]().hide()
+  if (VIEWS[name]) VIEWS[name]().show()
   // 窄屏下抽屉把手和「更多」浮层是常驻的，全屏视图打开时得让开，否则会压在上面
-  document.body.classList.toggle('view-open', name === 'tower' || name === 'explorer')
-  if (name === 'tower' || name === 'explorer') { document.body.classList.remove('more-open', 'drawer-open') }
+  document.body.classList.toggle('view-open', !!VIEWS[name])
+  if (VIEWS[name]) document.body.classList.remove('more-open', 'drawer-open')
 }
 document.getElementById('btn-tower').addEventListener('click', () => app.openView('tower'))
 document.getElementById('btn-explorer').addEventListener('click', () => app.openView('explorer'))
+document.getElementById('btn-critical').addEventListener('click', () => app.openView('critical'))
 app.renderer.setAgingLayers(app.engine.rule.agingLayers)
 app.updateRuleInfo()
 
@@ -508,6 +511,7 @@ onLangChange(() => {
   app.tower.relocalize()
   app.explorer.relocalize()
   app.favorites.relocalize()
+  app.critical.relocalize()
   app.zoomBar.relocalize()
   app.refreshTabHint()
 })

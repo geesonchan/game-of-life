@@ -29,6 +29,7 @@ run yourself has not even that.
 | 规则编辑器 · Rule editor | 用「条件 → 结果」的条款写规则，带校验器；能和标准 B/S 记法互转 |
 | 时间之塔 · Tower of Time | 一代一层堆成 3D 塔：静物是直柱，闪灯是麻花，滑翔机是斜线 |
 | 规则勘探器 · Rule explorer | 后台批量跑规则，按"持续复杂"排序，一键跳回主界面复现 |
+| 临界实验室 · Critical lab | 同一条规则同一颗种子，把初始密度推过某处，涌现就换成了没涌现：小多图带、按结局上色的曲线、涌现窗口与跨越点；再看两个只差一格的宇宙如何分道扬镳 |
 | 记录与台账 · Records | 人口曲线、死因统计、编年史、CSV 导出、存档与 RLE 互通 |
 
 玩具盒里的图案与「怎么亲手喂吞食者一次」见 [docs/patterns.md](./docs/patterns.md)。
@@ -88,6 +89,8 @@ src/data/     数据记录，纯逻辑零 DOM
   csv.js            CSV 生成
   tower.js          时间之塔的数据模型（滑动窗口 / 切片 / 几何度量）
   explorer.js       规则勘探：单局观测、结局七类分类、多局总判与排序、B/S 采样
+  critical.js       临界实验室的密度轴：一档一个事实单位、跨越点二分、涌现窗口
+  twin.js           双宇宙：只差一格的两盘并排跑，分道扬镳与合并的判据
   favorites.js      收藏（整局 + 规则）：校验、预算、导入导出、卡片数据
   life-probe.js     生平探针：按内置局同一口径（默认盘 + 自家检测器）实跑一条收藏
 src/i18n/     中英词典与运行时（界面上的每个字都在这里）
@@ -101,12 +104,14 @@ src/ui/       控件绑定与画布交互
   io.js             存档下载读取（分片重放 + 进度条）、RLE 导入与框选导出
   tower-view.js     观塔模式（three.js InstancedMesh + 切片联动）
   explorer-view.js  规则勘探器（批量结果表 / 候选名单 / 一键复现）
+  critical-view.js  临界实验室（小多图带 / 曲线 / 临界滑块 / 分岔时刻）
   favorites-view.js 收藏面板与简洁模式的「精彩局」卡片条
   zoom-bar.js       画布右缘的缩放滑条（浮层、播放时淡出、HUD 倍数可输入）
   page-zoom.js      页面真被浏览器放大时的兜底提示（visualViewport）
 src/workers/
   tower-builder.js  时间之塔的构建 Worker（只搬运，逻辑在 data/tower.js）
   explorer.js       规则勘探的批量 Worker（同样只搬运）
+  critical.js       密度扫描 Worker（一档一报，细化轮次也在这里跑）
 src/main.js   装配与主循环
 tests/        验收用例（Vitest 与 jsc 运行器共用）
 ```

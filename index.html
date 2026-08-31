@@ -71,6 +71,7 @@
         </div>
         <button id="btn-tower" data-i18n="tower.open" data-i18n-title="tower.legend">观塔</button>
         <button id="btn-explorer" data-i18n="exp.open" data-i18n-title="exp.hint">勘探</button>
+        <button id="btn-critical" data-i18n="crit.open" data-i18n-title="crit.hint">临界</button>
         <button class="help-btn" id="btn-help" data-i18n-title="tip.help">?</button>
         </div>
         <p class="note more-note" id="more-note" data-i18n="mobile.deskOnly">观塔和勘探暂时只在电脑上开放 —— 手机屏放不下它们的画面和表格。</p>
@@ -388,6 +389,74 @@
         </div>
         <h3 class="exp-sub" data-i18n="exp.favList">候选名单</h3>
         <div id="exp-favs"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- 临界实验室（D86）。要展现的是**跨越点**：同一条规则、同一颗种子，
+       只把初始密度推过某处，"涌现"就换成了"没涌现"。
+       口径与内置局、自存收藏的生平是同一把尺子（默认 200×200 环形盘 + 自家检测器）。 -->
+  <div class="tower-view" id="crit-view" hidden>
+    <header class="tower-head">
+      <b data-i18n="crit.title">临界实验室</b>
+      <span class="tower-stat" id="crit-stat"></span>
+      <button id="crit-back" data-i18n="crit.back">返回</button>
+    </header>
+    <div class="tower-body">
+      <div class="crit-main">
+        <div class="row btn-row crit-run-row">
+          <button id="crit-start" class="primary" data-i18n="crit.start">开跑</button>
+          <button id="crit-stop" class="danger" data-i18n="crit.stop" disabled>停</button>
+        </div>
+        <div class="progress" id="crit-progress" hidden>
+          <div class="progress-track"><div class="progress-bar" id="crit-progress-bar"></div></div>
+          <p class="note" id="crit-progress-text"></p>
+        </div>
+
+        <section class="crit-block">
+          <h3 class="exp-sub" data-i18n="crit.stripTitle">每一档的末态</h3>
+          <p class="note" id="crit-empty" data-i18n="crit.empty">还没跑。点「开跑」把这条轴走一遍。</p>
+          <div class="crit-strip" id="crit-strip"></div>
+          <p class="note" id="crit-spec-note"></p>
+        </section>
+
+        <section class="crit-block crit-desk">
+          <h3 class="exp-sub" data-i18n="crit.curveTitle">曲线</h3>
+          <div class="btn-group" id="crit-metric" role="group">
+            <button data-metric="final" class="on" data-i18n="crit.metric.final">终局人口</button>
+            <button data-metric="gens" data-i18n="crit.metric.gens">定型代数</button>
+            <button data-metric="peak" data-i18n="crit.metric.peak">人口峰值</button>
+          </div>
+          <canvas id="crit-curve" class="crit-canvas"></canvas>
+          <p class="note" id="crit-curve-note"></p>
+        </section>
+
+        <section class="crit-block crit-desk">
+          <h3 class="exp-sub" data-i18n="crit.twinTitle">分岔时刻</h3>
+          <p class="note" data-i18n="crit.twinLead">同样是只差一格，位置决定它是历史的开端，还是一声没响。</p>
+          <div class="btn-group" id="crit-twin-pick" role="group"></div>
+          <div class="crit-twins">
+            <figure><canvas id="crit-twin-a" class="crit-mini"></canvas><figcaption data-i18n="crit.twin.a">宇宙 A</figcaption></figure>
+            <figure><canvas id="crit-twin-b" class="crit-mini"></canvas><figcaption data-i18n="crit.twin.b">宇宙 B · 只差一格</figcaption></figure>
+          </div>
+          <canvas id="crit-twin-chart" class="crit-canvas"></canvas>
+          <p class="note" id="crit-twin-note"></p>
+          <div class="row btn-row">
+            <button id="crit-twin-run" class="primary" data-i18n="crit.twin.run">并排跑</button>
+            <button id="crit-twin-reset" data-i18n="crit.twin.reset">回到第 0 代</button>
+          </div>
+        </section>
+
+        <p class="note crit-mobile-note" data-i18n="crit.mobileOnly">曲线、临界滑块与分岔时刻暂时只在电脑上开放 —— 手机屏放不下它们。这里的小多图带是完整的。</p>
+      </div>
+
+      <aside class="tower-panel crit-desk">
+        <div class="field" data-i18n-title="crit.tip.density">
+          <span class="field-label"><span data-i18n="crit.density">临界滑块</span> <b id="crit-lbl-density">0.350</b></span>
+          <input type="range" id="crit-density" min="10" max="950" step="1" value="350" />
+        </div>
+        <div id="crit-preview"></div>
+        <p class="note" data-i18n="crit.axisNote">轴从 0.01 起，低端走细步；相邻两档结局不同就二分细化，跨越点是夹出来的。</p>
       </aside>
     </div>
   </div>

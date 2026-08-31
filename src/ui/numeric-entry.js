@@ -100,7 +100,7 @@ export function attachNumericEntry(range, label, opts = {}) {
  * 列在这里而不是在 controls.js 里写死一个 id，是为了让"为什么它是例外"有个落点：
  * 这些滑块的值与用户读写的量不是同一个量（缩放：档位 vs 倍数），要带 toDisplay/fromDisplay。
  */
-export const CODEC_SLIDERS = Object.freeze({ zoom: 'in-zoom' })
+export const CODEC_SLIDERS = Object.freeze({ zoom: 'in-zoom', density: 'crit-density' })
 
 /** 全部带数值标签的滑块：滑块 id → 标签 id。新增滑块必须登记，守卫会查。 */
 export const NUMERIC_SLIDERS = Object.freeze([
@@ -116,5 +116,6 @@ export const NUMERIC_SLIDERS = Object.freeze([
   ['tower-height', 'tower-lbl-height'],
   ['tower-slice', 'tower-lbl-slice'],
   ['re-aging', 're-lbl-aging'],
-  ['in-zoom', 'hud-scale']        // 缩放滑条：它的"数值标签"就是 HUD 上那一项（D84 ③）
+  ['in-zoom', 'hud-scale'],       // 缩放滑条：它的"数值标签"就是 HUD 上那一项（D84 ③）
+  ['crit-density', 'crit-lbl-density']   // 临界滑块：滑块存千分位，用户读写 0.xxx（D86 ①）
 ])

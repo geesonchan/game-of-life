@@ -29,6 +29,10 @@ import { clampToRange, NUMERIC_SLIDERS, CODEC_SLIDERS } from '../src/ui/numeric-
 import { Viewport, fitScaleOf, zoomFromSlider, sliderFromZoom, ZOOM_STEPS } from '../src/render/viewport.js'
 import { zoomLabel, parseZoomInput, DIM_AFTER_MS, ZOOM_BUTTON_STEP } from '../src/ui/zoom-bar.js'
 import { isPageZoomed, PAGE_ZOOM_THRESHOLD } from '../src/ui/page-zoom.js'
+import { CRITICAL_SPEC, CRITICAL_CLASSIFY, EMERGENCE_MIN_GENS, REFINE_WIDTH, densityAxis,
+  observeDensity, isEmergent, isLongTransient, findCrossings, planRefinements,
+  emergenceWindows, round3, CURVE_METRICS } from '../src/data/critical.js'
+import { createTwin, measure, diffCells, TWIN, TWIN_EXAMPLES } from '../src/data/twin.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
   ruleFromNotation, relativeVariation, OUTCOMES, DEFAULTS } from '../src/data/explorer.js'
@@ -3757,8 +3761,11 @@ cases.push(
 
       // 缩放滑条自带换算，不能再被通用循环接一遍（接两遍会插出两个输入框）
       const controls = stripLiterals(readSrc('src/ui/controls.js'))
-      t.ok(/CODEC_SLIDERS\.zoom/.test(controls), '通用接线循环要跳过自带换算的滑条')
-      t.equal(CODEC_SLIDERS.zoom, 'in-zoom', '自带换算的就是缩放这一个')
+      t.ok(/CODEC_SLIDERS/.test(controls), '通用接线循环要跳过自带换算的滑条')
+      t.equal(CODEC_SLIDERS.zoom, 'in-zoom', '缩放滑条自带换算')
+      // 例外表长出第二个成员时，跳过的写法必须是"照表跳"而不是写死一个 id
+      t.ok(/Object\.values\(CODEC_SLIDERS\)/.test(controls),
+        '要按例外表整表跳过 —— 写死一个 id 的话，第二个自带换算的滑条会被接两遍（D86 ①）')
       t.ok(NUMERIC_SLIDERS.some(([r, l]) => r === 'in-zoom' && l === 'hud-scale'),
         '缩放滑条仍要登记在册，标签是 HUD 上那一格')
     }
@@ -3901,6 +3908,251 @@ cases.push(
       t.ok(/#in-zoom \{[^}]*appearance:\s*none/.test(css), '自绘轨道要 appearance: none')
       t.ok(/@supports not \(writing-mode: vertical-lr\)[\s\S]{0,200}slider-vertical/.test(css),
         '没有竖排 writing-mode 的老引擎要有兜底')
+    }
+  },
+  {
+    name: '临界实验室：密度轴与口径（D86 ①）',
+    run(t) {
+      // 口径三件套 —— 与内置精选局、自存收藏的生平同一把尺子（D82 §8）
+      t.equal(CRITICAL_SPEC.board, 200, '默认盘 200')
+      t.equal(CRITICAL_SPEC.boundary, 'torus', '默认环形')
+      t.equal(CRITICAL_SPEC.genCap, 5000, '代数上限 5000')
+
+      const axis = densityAxis()
+      t.equal(axis[0], 0.01, '轴从 0.01 起 —— 低端的跨越点（0.03–0.04）不能落在轴外')
+      t.equal(axis[axis.length - 1], 0.95, '轴到 0.95')
+      t.equal(axis.length, 27, `低端 10 档细步 + 高端 17 档粗步，实为 ${axis.length}`)
+      t.equal(axis.slice(0, 4).join(','), '0.01,0.02,0.03,0.04', '低端走 0.01 的细步')
+      t.equal(axis[10], 0.15, '过了 0.10 改走 0.05')
+      for (const d of axis) t.equal(d, round3(d), `${d} 必须是收敛到 3 位小数的数`)
+      const sorted = [...axis].sort((a, b) => a - b)
+      t.equal(axis.join(','), sorted.join(','), '轴必须升序')
+      t.equal(new Set(axis).size, axis.length, '轴上不许有重复档')
+    }
+  },
+  {
+    name: '临界实验室：跨越点是夹出来的，涌现窗口是推出来的（D86 ①）',
+    run(t) {
+      // 这条不跑仿真：拿构造出来的样本验纯函数，二分收敛与窗口合并才测得准、测得快
+      const mk = (density, outcome, gens) => ({ density, outcome, gens, capped: false })
+      const rows = [
+        mk(0.01, 'quickDeath', 2), mk(0.02, 'shortCycle', 4), mk(0.03, 'shortCycle', 7),
+        mk(0.04, 'shortCycle', 3089), mk(0.05, 'shortCycle', 1471), mk(0.80, 'shortCycle', 1327),
+        mk(0.85, 'still', 7), mk(0.90, 'quickDeath', 2)
+      ]
+      // "有戏"要两条都满足：结局有结构，且撑得够久 —— 第 4 代就定住的十来个格子是余烬，不是涌现
+      t.equal(isEmergent(rows[1]), false, '4 代就定型的 shortCycle 不算涌现')
+      t.equal(isEmergent(rows[3]), true, '3089 代的 shortCycle 算涌现')
+      t.equal(isEmergent({ ...mk(0.5, 'complex', 5000), capped: true }), true, '跑满上限的一律算数')
+      t.equal(isEmergent(mk(0.9, 'explosion', 900)), false, '爆炸不在"有戏"那三类里')
+      t.ok(EMERGENCE_MIN_GENS === 100, '门槛 100 代')
+
+      const cr = findCrossings(rows)
+      t.equal(cr.length, 2, '两个跨越点：低端一个、高端一个')
+      t.equal(`${cr[0].lo}-${cr[0].hi}`, '0.03-0.04', '低端跨越点夹在 0.03 与 0.04 之间')
+      t.equal(`${cr[1].lo}-${cr[1].hi}`, '0.8-0.85', '高端跨越点夹在 0.80 与 0.85 之间')
+
+      // 二分：宽的那个要细化，已经够窄的不动
+      const plan = planRefinements(rows, REFINE_WIDTH)
+      t.equal(plan.join(','), '0.825', '只对还太宽的那个区间取中点')
+      t.equal(planRefinements([mk(0.03, 'quickDeath', 2), mk(0.04, 'shortCycle', 3089)]).length, 0,
+        '区间已经 ≤0.01 就不再细化 —— 否则永远收敛不了')
+      // 反复细化必须真的收敛（拿假的采样器跑，不烧仿真）
+      let fake = [mk(0.1, 'quickDeath', 2), mk(0.9, 'shortCycle', 3000)]
+      let rounds = 0
+      for (; rounds < 20; rounds++) {
+        const next = planRefinements(fake, REFINE_WIDTH)
+        if (!next.length) break
+        for (const d of next) fake.push(mk(d, d < 0.5 ? 'quickDeath' : 'shortCycle', d < 0.5 ? 2 : 3000))
+        fake.sort((a, b) => a.density - b.density)
+      }
+      t.ok(rounds <= 8, `二分要在 8 轮内收敛，实为 ${rounds} 轮`)
+      const last = findCrossings(fake)[0]
+      t.ok(last.hi - last.lo <= REFINE_WIDTH + 1e-9, `最终区间要 ≤${REFINE_WIDTH}，实为 ${(last.hi - last.lo).toFixed(4)}`)
+
+      const wins = emergenceWindows(rows)
+      t.equal(wins.length, 1, '一个涌现窗口')
+      t.equal(`${wins[0].from}-${wins[0].to}`, '0.04-0.8', '窗口是连续"有戏"的那一段')
+      // 窗口边界必须与跨越点对齐 —— 两个东西同源，对不上就是有一个算错了
+      t.equal(wins[0].from, cr[0].hi, '窗口左端 = 低端跨越点的右侧')
+      t.equal(wins[0].to, cr[1].lo, '窗口右端 = 高端跨越点的左侧')
+      t.equal(CURVE_METRICS.join(','), 'final,gens,peak', '曲线三种纵轴')
+    }
+  },
+  {
+    name: '临界实验室：分类判据必须为密度轴重标定（D86 §1 的反面断言）',
+    run(t) {
+      // 勘探器的默认阈值是按"扫规则、密度固定 0.10"标定的。直接拿来扫密度会说谎：
+      // explosionFlood 判的是绝对占比，而这条轴上密度正是自变量。
+      // 这条把"我们确实换了判据"钉住 —— 哪天有人把 opts 删了，图上不会红，只会悄悄说谎。
+      const life = { clauses: parseBS('B3/S23'), agingLayers: 0 }
+      const dense = probeRule(life, { boardSize: 96, density: 0.90, genCap: 300, seed: 4271, boundary: 'torus' })
+      t.equal(dense.outcome, 'explosion',
+        '默认参数下，密度 0.90（其实是第 2 代就全灭）会被判成「爆炸」—— 这正是不能照搬的理由')
+
+      // 换成临界实验室的判据：同一局必须得到"死得快"这一类
+      const recal = probeRule(life, {
+        boardSize: 96, density: 0.90, genCap: 300, seed: 4271, boundary: 'torus',
+        ...CRITICAL_CLASSIFY
+      })
+      t.ok(recal.outcome === 'quickDeath' || recal.outcome === 'extinct',
+        `重标定之后应当判成死得快/灭绝，实为 ${recal.outcome}`)
+      t.ok(CRITICAL_CLASSIFY.explosionFlood > 1,
+        '重标定的做法是停用"绝对占比"那一条（>1 即永不触发），不是改小它')
+      // 重标定里**只准放分类判据**。第一版写成 {...DEFAULTS, explosionFlood: 1.01}，
+      // 于是它把 density: 0.10 也带上了 —— 谁把它当 spec 传进去，被测的那一局就被悄悄换掉，
+      // 而分类结果看着还挺合理。就是这条断言把它抓出来的。
+      for (const k of ['boardSize', 'density', 'genCap', 'seed', 'boundary'])
+        t.ok(!(k in CRITICAL_CLASSIFY),
+          `重标定里不许出现「${k}」这种"跑什么局"的参数 —— 混进去会把被测的那一局换掉`)
+      // "相对起点的增长"那一条仍然生效（没有被覆盖成别的值）
+      t.equal(classifyRun({ end: null, growth: 3, finalFill: 0.3, maxFill: 0.3, variation: 0.2, gens: 100 },
+        CRITICAL_CLASSIFY), 'explosion', '真的涨了三倍还占着三成，仍旧判爆炸')
+    }
+  },
+  {
+    name: '临界实验室：实跑三档的回归钉子（D86 ⑤）',
+    run(t) {
+      // 口径写死，数字就必须钉死。这三档一头一尾一中间，跨越点两侧各一个。
+      const w = observeDensity(0.35)
+      t.equal(w.start, 14127, '0.35 起步 14127 格')
+      t.equal(w.gens, 3492, '第 3492 代定型')
+      t.equal(w.end && w.end.type, 'cycle', '以循环收场')
+      t.equal(w.end && w.end.period, 2, '周期 2')
+      t.equal(w.peak, 14742, '峰值 14742')
+      t.equal(w.peakGen, 1, '峰值在第 1 代')
+      t.equal(w.final, 1355, '末态 1355')
+      t.equal(w.finalCells.length, w.final, '缩略图的亮格数必须等于 final —— 缩略图不许撒谎')
+      t.ok(isEmergent(w), '0.35 落在涌现窗口里')
+
+      const dead = observeDensity(0.90)
+      t.equal(dead.gens, 2, '0.90 第 2 代就全灭')
+      t.equal(dead.final, 0, '一格不剩')
+      t.equal(dead.finalCells.length, 0, '缩略图上一个亮格都没有')
+      t.equal(dead.outcome, 'quickDeath', '重标定之后是"死得快"，不是"爆炸"')
+      t.equal(isEmergent(dead), false, '不算涌现')
+
+      const edge = observeDensity(0.03)
+      t.equal(edge.gens, 7, '0.03 第 7 代就定住')
+      t.equal(edge.final, 31, '只剩 31 格')
+      t.equal(isEmergent(edge), false, '7 代就定住的不算涌现 —— 低端跨越点就在它与 0.04 之间')
+    }
+  },
+  {
+    name: '临界实验室：分岔时刻的两个阈值与三个内置示例（D86 ②）',
+    run(t) {
+      t.equal(TWIN.escapeRadius, 2, '逃逸半径 2')
+      t.equal(TWIN.mergeGens, 8, '连续 8 代差异为零算合并')
+      t.equal(TWIN_EXAMPLES.length, 3, '三个内置示例')
+
+      const run = key => {
+        const ex = TWIN_EXAMPLES.find(x => x.key === key)
+        const tw = createTwin({ pattern: ex.pattern, dx: ex.dx, dy: ex.dy, gens: 800 })
+        tw.run(800)
+        return tw
+      }
+
+      // ① Matt 那颗孤立格：第 3 代分道，此后再不合并
+      const lonely = run('lonely')
+      t.equal(lonely.diff[0], 1, '第 0 代差异恒为 1 —— 两个宇宙就差这一格，这是构造出来的')
+      t.equal(lonely.diverged && lonely.diverged.gen, 3, '第 3 代分道扬镳')
+      t.equal(lonely.merged, null, '永不合并')
+      t.equal(Math.max(...lonely.diff), 396, '峰值差异 396')
+      t.equal(lonely.diff.indexOf(396), 714, '峰值出现在第 714 代')
+
+      // ② 贴着图案的空格：同样第 3 代分道
+      const edge = run('edge')
+      t.equal(edge.diverged && edge.diverged.gen, 3, '贴边那格也是第 3 代分道')
+      t.equal(edge.merged, null, '也不合并')
+
+      // ③ 真空里一格：孤格必死，两个宇宙第 8 代判为合并 —— 一声没响
+      const vac = run('vacuum')
+      t.equal(vac.diverged, null, '从未分道')
+      t.equal(vac.merged && vac.merged.gen, 8, `连续 ${TWIN.mergeGens} 代为零 → 第 8 代判合并`)
+      t.equal(Math.max(...vac.diff), 1, '差异最多就是最初那一格')
+      t.equal(vac.diff[1], 0, '第 1 代那格就死了，差异归零')
+      t.ok(vac.done, '合并即收工，不必再跑')
+    }
+  },
+  {
+    name: '临界实验室：差异只能沿光锥扩散（D86 几何断言）',
+    run(t) {
+      // 元胞自动机的内禀性质：第 g+1 代的差异格必然落在第 g 代差异格的 8 邻域里。
+      // 它也是"差异高亮不会乱跳"的保证 —— 跳出去就说明比对错了盘。
+      const ex = TWIN_EXAMPLES[0]
+      const tw = createTwin({ pattern: ex.pattern, dx: ex.dx, dy: ex.dy, gens: 60 })
+      const n = tw.spec.board
+      let prev = new Set([tw.flip.y * n + tw.flip.x])
+      for (let g = 1; g <= 60; g++) {
+        tw.run(1)
+        const now = diffCells(tw.a, tw.b)
+        for (const i of now) {
+          const x = i % n, y = (i / n) | 0
+          let ok = false
+          for (let dy = -1; dy <= 1 && !ok; dy++) for (let dx = -1; dx <= 1 && !ok; dx++) {
+            const j = ((y + dy + n) % n) * n + ((x + dx + n) % n)
+            if (prev.has(j)) ok = true
+          }
+          t.ok(ok, `第 ${g} 代的差异格 (${x},${y}) 必须落在上一代差异格的 8 邻域里`)
+        }
+        prev = new Set(now)
+      }
+      // 差异格数与外接框是同一趟扫描算出来的，两者必须自洽
+      const m = measure(tw.a, tw.b, n)
+      t.equal(m.count, diffCells(tw.a, tw.b).length, '差异格数与差异格集合必须一致')
+      t.ok(m.x1 >= m.x0 && m.y1 >= m.y0, '外接框不许是空的')
+    }
+  },
+  {
+    name: '接线守卫：临界实验室与观塔/勘探并列，手机只留小多图带（D86 ④）',
+    run(t) {
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+      const main = stripLiterals(readSrc('src/main.js'))
+      for (const id of ['crit-view', 'crit-strip', 'crit-curve', 'crit-density', 'crit-lbl-density',
+        'crit-start', 'crit-stop', 'crit-twin-pick', 'crit-twin-a', 'crit-twin-b', 'crit-twin-chart',
+        'btn-critical'])
+        t.ok(html.includes(`id="${id}"`), `index.html 缺 #${id}`)
+
+      // 三个全屏视图互斥：名单驱动，不逐个 if —— 加第四个时漏掉一处 hide 就会两块叠在一起
+      t.ok(/const VIEWS = \{[^}]*critical/.test(main), '视图名单里要有 critical')
+      t.ok(/for \(const key of Object\.keys\(VIEWS\)\)/.test(main), '互斥要照名单整表来')
+      t.ok(/openView\('critical'\)/.test(readSrc('src/main.js')), '顶栏按钮要能打开它')
+
+      // 手机首版只放小多图带，其余隐藏并说明（照观塔/勘探的先例）
+      t.ok(/@media \(max-width: 767px\)[\s\S]*?\.crit-desk \{ display: none; \}/.test(css),
+        '窄屏要把曲线/滑块/分岔时刻收起来')
+      t.ok(/\.crit-mobile-note \{ display: none; \}/.test(css) &&
+        /@media \(max-width: 767px\)[\s\S]*?\.crit-mobile-note \{ display: block; \}/.test(css),
+        '窄屏要显示那句说明，桌面上不显示')
+      t.ok(/data-i18n="crit\.mobileOnly"/.test(html), '说明文案走词典')
+      // 入口在窄屏**不隐藏**（与观塔/勘探不同）：手机上有小多图带可看
+      t.ok(!/#btn-tower, #btn-explorer, #btn-critical \{ display: none/.test(css),
+        '临界的入口不许跟着观塔/勘探一起在窄屏隐藏 —— 手机上它有东西可看')
+
+      // 临界滑块登记进数值输入，且不被通用循环接第二遍
+      t.ok(NUMERIC_SLIDERS.some(([r, l]) => r === 'crit-density' && l === 'crit-lbl-density'),
+        '临界滑块要登记数值输入')
+      t.equal(CODEC_SLIDERS.density, 'crit-density', '它自带换算（滑块存千分位，用户读写 0.xxx）')
+
+      // Worker 只搬运：逻辑留在 data/ 里才测得到
+      const wk = stripLiterals(readSrc('src/workers/critical.js'))
+      t.ok(/observeDensity/.test(wk) && /planRefinements/.test(wk), 'Worker 调的是 data 层的纯函数')
+      t.ok(!/function classify|Math\.pow|new LifeEngine/.test(wk), 'Worker 里不许自己写判据或跑引擎')
+
+      // 词条齐备（含简洁语域）
+      for (const lang of ['zh', 'en']) {
+        for (const k of ['crit.open', 'crit.title', 'crit.stripTitle', 'crit.curveTitle',
+          'crit.twinTitle', 'crit.mobileOnly', 'crit.specNote', 'crit.longTransient'])
+          t.ok(typeof DICT[lang][k] === 'string', `${lang} 缺 ${k}`)
+        t.ok(typeof DICT[lang]['crit.twinLead.simple'] === 'string', `${lang} 缺简洁语域的开场白`)
+      }
+      // 那句话是这一节的立意，写进文案里
+      t.ok(/一声没响/.test(DICT.zh['crit.twinLead']), '中文要留住"位置决定它是历史的开端，还是一声没响"')
+      t.ok(/nothing at all/i.test(DICT.en['crit.twinLead']), '英文同理')
+      // 图注要答得上"这个数是被什么裁出来的"
+      t.ok(/\{board\}/.test(DICT.zh['crit.specNote']) && /\{seed\}/.test(DICT.zh['crit.specNote']) &&
+        /\{cap\}/.test(DICT.zh['crit.specNote']), '口径注里要写全盘面、种子、代数上限')
     }
   },
   {

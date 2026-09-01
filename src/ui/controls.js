@@ -59,6 +59,7 @@ export function setupControls(app) {
   el.speed.addEventListener('input', () => {
     app.speed = Number(el.speed.value)
     el.lblSpeed.textContent = app.speed
+    app.showEnv = null   // 你自己动了手，就不必我再替你还原（D104）
   })
 
   el.density.addEventListener('input', () => {
@@ -68,6 +69,7 @@ export function setupControls(app) {
 
   el.boundary = setupBtnGroup('in-boundary', app.engine.boundary, v => {
     app.engine.setBoundary(v)
+    app.showEnv = null   // 同上：手动改过边界，就别再拿旧快照盖回去
     app.toast(t(v === 'torus' ? 'toast.boundaryTorus' : 'toast.boundaryDead'))
   })
 
@@ -76,6 +78,18 @@ export function setupControls(app) {
    * **按钮组也要跟着变** —— 引擎换了而按钮还停在原处，就又是两份状态了。
    * 用户自己点按钮那条路照旧，这里只是另一个入口，最终都落到同一处。
    */
+  /**
+   * 从代码里改速度（D104）：Show 自带的建议速度、以及退出时还原用户原速度都走它。
+   * **滑块与数字跟着变** —— 又是那条老规矩：一个量只许有一个来源。
+   */
+  app.setSpeed = function (v) {
+    const n = Math.max(1, Math.min(60, Math.round(v)))
+    if (app.speed === n) return
+    app.speed = n
+    el.speed.value = String(n)
+    el.lblSpeed.textContent = String(n)
+  }
+
   app.setBoundary = function (v) {
     if (app.engine.boundary === v) return
     app.engine.setBoundary(v)

@@ -29,6 +29,7 @@ export const BUILTIN_LAYOUTS = Object.freeze([
   {
     id: 'builtin:wildfire',
     nameKey: 'fav.builtin.wildfire',
+    board: 200, boundary: 'torus',   // 这三条的生平就是在默认盘上量的（D104）
     rle: 'x = 18, y = 5, rule = B3/S23\nb3o11b3o$o2bo10bo2bo$3bo4b3o6bo$3bo4bo2bo5bo$2bo4bo8bo!',
     // 生平的口径是**用户实际会看到的那一局**：应用默认的 200×200 环形盘，
     // 用应用自己的终止检测器 —— 点「复现」再播放，总结卡片上就是这几个数。
@@ -42,6 +43,7 @@ export const BUILTIN_LAYOUTS = Object.freeze([
   {
     id: 'builtin:feeding',
     nameKey: 'fav.builtin.feeding',
+    board: 200, boundary: 'torus',   // 这三条的生平就是在默认盘上量的（D104）
     rle: 'x = 14, y = 14, rule = B3/S23\nbo$2bo$3o8$10b2o$10bobo$12bo$12b2o!',
     // 滑翔机 + 吞食者，第 30 代吞完并逐格复原（docs/patterns.md 那一局）
     life: { start: 12, eatenAt: 30, after: 7 }
@@ -49,6 +51,7 @@ export const BUILTIN_LAYOUTS = Object.freeze([
   {
     id: 'builtin:feeder',
     nameKey: 'fav.builtin.feeder',
+    board: 200, boundary: 'torus',   // 这三条的生平就是在默认盘上量的（D104）
     rle: 'x = 42, y = 28, rule = B3/S23\n24bo$22bobo$12b2o6b2o12b2o$11bo3bo4b2o12b2o$2o8bo5bo3b2o$2o8bo3bob2o4b\nobo$10bo5bo7bo$11bo3bo$12b2o16$38b2o$38bobo$40bo$40b2o!',
     // 滑翔机枪对着吞食者：跑稳后整盘严格周期 30，人口恒为 65。永动喂食机。
     life: { start: 43, period: 30, steady: 65 }
@@ -73,9 +76,11 @@ export function ruleOf(rle) {
  * 只有换规则才需要整盘替换：规则一换，当前这盘就已经是另一个世界的东西了，
  * 盖上去没有意义。同规则则完全没有清盘的理由 —— 那是过去顺手写下的破坏，不是需求。
  */
-export function showEntryPlan({ sameRule, boardEmpty, running, fits = true }) {
-  // 摆得下、又是同一个世界，才谈得上"盖上去"。摆不下的只能换盘，而换盘就是清盘（D94 ②）
-  if (sameRule && fits) return 'stamp'
+export function showEntryPlan({ sameRule, boardEmpty, running, fits = true, sameEnv = true }) {
+  // 摆得下、同一个世界、**而且环境也对得上**，才谈得上"盖上去"。
+  // 环境（盘的尺寸与边界）与规则是同一类东西：它们定义的是"这一局在什么世界里跑"（D104 ①）。
+  // 一局的生平是在它自带的环境里量出来的 —— 摆到别的环境里，卡片上那行数字就没了出处。
+  if (sameRule && fits && sameEnv) return 'stamp'
   return (boardEmpty && !running) ? 'replace' : 'confirm'
 }
 
@@ -216,7 +221,7 @@ export function layoutRow(entry, tr) {
   const size = {
     board: entry.board || 0, scale: entry.scale || '',
     rleUrl: entry.rleUrl || '', w: entry.w || 0, h: entry.h || 0,
-    boundary: entry.boundary || ''
+    boundary: entry.boundary || '', speed: entry.speed || 0
   }
   if (entry.nameKey) {
     return {

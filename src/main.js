@@ -138,8 +138,42 @@ app.stepOnce = function () {
   app.updateHud()
 }
 
+/**
+ * Show 自带环境（D104）。每一局都声明自己该在什么盘、什么边界、多快跑 ——
+ * **点开时切过去，退出时把用户原来的设置还回去**。
+ *
+ * 为什么要有这一层：这些局的生平都是在各自的环境里量出来的。
+ * 繁殖者的数是 2048² 死边界上的数；把它放到 200 环形盘上，量到的是另一回事，
+ * 而用户看到的却是同一张卡片上的同一行字 —— 那行字就成了假话。
+ *
+ * "退出"的定义与 D90 §4 那张退出表同一个思路：**清空、读档、换局**。
+ * 换局时不改已经存下的那份 —— 存的是**用户自己的**设置，不是上一局的。
+ */
+app.showEnv = null
+
+app.enterShowEnv = function (entry) {
+  if (!entry) return
+  if (!app.showEnv) {
+    app.showEnv = { board: app.engine.w, boundary: app.engine.boundary, speed: app.speed }
+  }
+  if (entry.boundary) app.setBoundary(entry.boundary)
+  if (entry.speed) app.setSpeed(entry.speed)
+}
+
+app.exitShowEnv = function () {
+  const env = app.showEnv
+  if (!env) return
+  app.showEnv = null
+  if (app.engine.boundary !== env.boundary) app.setBoundary(env.boundary)
+  if (app.speed !== env.speed) app.setSpeed(env.speed)
+  // 盘尺寸不在这里还原：换回去要重建整块棋盘，而用户此刻多半正想在这个盘上接着玩。
+  // 尺寸按钮就在旁边，一眼看得见、一点就回去 —— 边界与速度不一样，它们藏在设置里，
+  // 悄悄留着才是坑。
+}
+
 app.clear = function (opts = {}) {
   app.setRunning(false)
+  if (!opts.keepShowEnv) app.exitShowEnv()   // 清空 = 退出这一局（D104）
   app.cancelPending()               // 待放态整体退场，参照线一并清（D90 §4）
   app.engine.clear()
   app.visual.sync(app.engine)
@@ -505,6 +539,7 @@ app.adoptEngine = function (engine) {
   // 读档 / 换盘：整盘换掉，待放态与参照线一起退场（D90 §4）。
   // 放在这里而不是放在 io.js 的读档回调里 —— 凡是"整盘换掉"都走这个口，一处管住所有来路。
   app.cancelPending()
+  app.exitShowEnv()          // 读档 = 退出这一局（D104）
   app.engine = engine
   app.visual.sync(engine)
   app.series.clear()
@@ -553,15 +588,25 @@ app.handleResize = function () {
   app.dirty = true
 }
 
-/** 记录单代耗时；超过 16ms 触发自动降速 */
+/**
+ * 记录单代耗时；超过 16ms 自动降速。
+ *
+ * **大盘上不再弹那行黄字**（D104）：在 2048² 上"单代超过 16 毫秒"是预料之中的事，
+ * 尺寸那一栏早就写着"预期约 N 代/秒"。把预料之中的事报成警告，
+ * 会教用户把黄字当背景 —— 那样真正意外的那次也就没人看了。
+ * **降速照旧生效**，只是不再嚷嚷。
+ */
 app.recordStepCost = function (totalMs, count) {
   const per = totalMs / count
   app.stepMsEma = app.stepMsEma === 0 ? per : app.stepMsEma * 0.8 + per * 0.2
   const shouldThrottle = app.stepMsEma > 16
   if (shouldThrottle !== app.throttled) {
     app.throttled = shouldThrottle
-    document.getElementById('throttle-note').hidden = !shouldThrottle
   }
+  // 只有在"没预告过"的盘上才提示：大盘的慢是说好的，小盘的慢才是意外
+  const shout = app.throttled && !isBigBoard(app.engine.w)
+  const note = document.getElementById('throttle-note')
+  if (note.hidden === shout) note.hidden = !shout
 }
 
 /** 实际生效的速度：单代太慢时按实测耗时压到能跑得动的水平 */

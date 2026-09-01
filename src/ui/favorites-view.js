@@ -54,14 +54,16 @@ export function createFavorites(app) {
    */
   app.replayLayout = function (entry) {
     const rule = ruleOf(entry.rle)
-    // 边界也是这一局的一部分（D103）：整台机器要死边界 —— 它是一台机器，
-    // 不该让自己吐出去的东西绕回来撞自己。只有声明了的才动，其余局一概不碰用户的设置。
-    if (entry.boundary && app.engine.boundary !== entry.boundary) app.setBoundary(entry.boundary)
+    // **这一局自带的环境**（D104）：边界、速度先切过去，用户原来的设置替他存着，
+    // 清空 / 读档 / 换局时再还回去。这些局的生平都是在各自的环境里量出来的 ——
+    // 繁殖者那几个数是 2048² 死边界上的数，摆到 200 环形盘上，卡片那行字就成了假话。
+    app.enterShowEnv(entry)
     // 中量级经典要更大的盘才摆得下（D94 ②）。换盘会清盘，所以顺序是"先换盘再铺"，
     // 而且这一步之前必须已经问过用户 —— 问在 openShowEntry 那里，不在这里。
     const need = boardNeededBy(entry)
     if (need && app.engine.w < need) app.resizeBoard(need, need, { silent: true })
-    app.clear({ silent: true })
+    // keepShowEnv：这次清空是"铺这一局"的一部分，不是"退出这一局"（D104）
+    app.clear({ silent: true, keepShowEnv: true })
     if (rule) app.applyNotation(rule)
     const ok = app.importRleText(entry.rle, { center: true })
     if (ok) app.toast(t('fav.replayed', { name: entry.name || t(entry.nameKey) }))
@@ -251,11 +253,19 @@ export function createFavorites(app) {
   }
 
   /** 点一张精彩局卡片。返回走了哪条路（测试与守卫要看它） */
+  /** 这一局自带的环境与当前是不是一回事（D104 ①） */
+  function sameEnvAsBoard(entry) {
+    if (entry.boundary && entry.boundary !== app.engine.boundary) return false
+    if (entry.board && entry.board !== app.engine.w) return false
+    return true
+  }
+
   app.openShowEntry = function (entry) {
     const sameRule = sameRuleAsBoard(entry)
     const fits = fitsBoard(entry)
+    const sameEnv = sameEnvAsBoard(entry)
     const plan = showEntryPlan({
-      sameRule, fits,
+      sameRule, fits, sameEnv,
       boardEmpty: app.engine.stats.alive === 0,
       running: !!app.running
     })
@@ -278,13 +288,17 @@ export function createFavorites(app) {
       if (app.replayLayout(entry)) app.setRunning(true)
     }
     if (plan === 'replace') { go(); return plan }
-    // 换的是什么，就说什么：规则、盘、还是两样都换。
+    // 换的是什么，就说什么：规则、环境、还是两样都换。
     // 三句独立成条而不是拼字符串 —— 拼出来的句子在另一种语言里往往不成话。
-    const need = boardNeededBy(entry)
-    const which = !sameRule && !fits ? 'needBoth' : (!sameRule ? 'needRule' : 'needBoard')
+    const need = Math.max(boardNeededBy(entry) || 0, entry.board || 0) || app.engine.w
+    const envDiffers = !fits || !sameEnv
+    const which = !sameRule && envDiffers ? 'needBoth' : (!sameRule ? 'needRule' : 'needEnv')
     app.confirmAction({
       title: t('fav.show.' + which + '.title'),
-      body: t('fav.show.' + which + '.body', { name: entry.name, rule: ruleOf(entry.rle), n: need || app.engine.w }),
+      body: t('fav.show.' + which + '.body', {
+        name: entry.name, rule: ruleOf(entry.rle), n: need,
+        edge: t(entry.boundary === 'dead' ? 'board.dead' : 'board.torus')
+      }),
       yes: t('fav.show.' + which + '.yes')
     }, go)
     return plan

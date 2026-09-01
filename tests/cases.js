@@ -2408,18 +2408,20 @@ cases.push(
 
       // ③ 页脚窄屏重排 + 浮层按钮 44px（排查发现「更多」4 个、总结卡片 3 个不达标）
       t.ok(/#summary-modal \.intro-foot \{[^}]*flex-wrap:\s*wrap/.test(css), '总结卡片页脚窄屏可换行')
-      t.ok(/\.tb-more-group button, #summary-modal button, #rule-modal button,\s*\n?\s*#confirm-modal button \{ min-height: 44px; \}/.test(css),
-        '浮层里的按钮统一 44px 触控区')
+      t.ok(/\.tb-more-group button, #summary-modal button, #rule-modal button,\s*\n?\s*#confirm-modal button, #intro-modal button \{ min-height: 44px; \}/.test(css),
+        '浮层里的按钮统一 44px 触控区（介绍卡也在名单里了，D104）')
 
       // 这条规则是**点名**的 —— 新开一个模态就得回来补一笔，漏了就是触控区不达标。
       // 所以让测试替人记这份名单：index.html 里每一个模态都要在名单上。
       // 例外只有介绍卡，理由写在下面那条里（实测数据，不是拍脑袋）。
       const modalIds = [...readSrc('index.html').matchAll(/class="modal"\s+id="([\w-]+)"/g)].map(m => m[1])
       t.ok(modalIds.length >= 4, `扫到 ${modalIds.length} 个模态`)
+      // **不再有例外**（D104）：介绍卡当初被放过，实测那几颗只有 19/21/37px；这一轮补齐了
       for (const id of modalIds) {
-        if (id === 'intro-modal') continue
         t.ok(css.indexOf('#' + id + ' button') > -1, `窄屏 44px 名单漏了 #${id}`)
       }
+      t.ok(/#intro-modal \.intro-head-right \.seg button \{[^}]*min-width: 44px/.test(css),
+        '介绍卡里最小的那两颗（中 / EN）也补到 44px')
     }
   },
   {
@@ -5229,18 +5231,23 @@ cases.push(
         '同规则 + 摆得下 = 拿在手上')
       t.equal(showEntryPlan({ sameRule: true, fits: false, boardEmpty: false, running: false }), 'confirm',
         '同规则但摆不下 —— 得换盘，而换盘就是清盘，所以要问')
+      t.equal(showEntryPlan({ sameRule: true, fits: true, sameEnv: false, boardEmpty: false, running: false }), 'confirm',
+        '摆得下、同规则，但**环境不是它要的那个** —— 也要问（D104 ①）')
+      t.equal(showEntryPlan({ sameRule: true, fits: true, sameEnv: true, boardEmpty: false, running: false }), 'stamp',
+        '三样都对上，才拿在手上')
       t.equal(showEntryPlan({ sameRule: true, fits: false, boardEmpty: true, running: false }), 'replace',
         '摆不下但盘是空的：没有劳动可毁，直接换')
       const src = stripLiterals(readSrc('src/ui/favorites-view.js'))
       t.ok(/resizeBoard\(need, need, \{ silent: true \}\)/.test(src), '复现时先把盘换到够大再铺')
       // 三种理由三句话，不拼字符串
-      for (const which of ['needRule', 'needBoard', 'needBoth']) {
+      for (const which of ['needRule', 'needEnv', 'needBoth']) {
         for (const lang of ['zh', 'en']) {
           t.ok((`fav.show.${which}.body`) in DICT[lang], `${lang} 缺 fav.show.${which}.body`)
           t.ok((`fav.show.${which}.body.simple`) in DICT[lang], `${lang} 缺简洁语域的 fav.show.${which}.body`)
         }
       }
-      t.ok(/\{n\}/.test(DICT.zh['fav.show.needBoard.body']), '换盘那句要写明换成多大')
+      t.ok(/\{n\}/.test(DICT.zh['fav.show.needEnv.body']) && /\{edge\}/.test(DICT.zh['fav.show.needEnv.body']),
+        '换环境那句要写明换成多大的盘、什么边界')
     }
   },
   {
@@ -5922,6 +5929,65 @@ cases.push(
       // 代价要写在代码里：最近邻采样会漏格，别让下一个人以为它无损
       const raw = readSrc('src/render/renderer.js')
       t.ok(/最近邻采样，会漏格/.test(raw), '注释里写明这是有损的：会漏格')
+    }
+  },
+  {
+    name: 'Show 自带环境：每一局都声明自己该在什么盘上跑（D104 ①）',
+    run(t) {
+      const all = BUILTIN_LAYOUTS.concat(BIG_LAYOUTS, MACHINE_LAYOUTS, [METAPIXEL_LAYOUT])
+      for (const e of all) {
+        t.ok(e.board > 0, `${e.id} 声明了盘尺寸`)
+        t.ok(e.boundary === 'dead' || e.boundary === 'torus', `${e.id} 声明了边界`)
+        // 生平里记了口径的，必须与它自带的环境一致 —— 两处对不上，卡片上那行数字就没了出处。
+        // （最早那两条互动型的生平是自由格式，只记"第几代吃完"，没有口径字段，跳过。）
+        if (e.life && typeof e.life === 'object' && e.life.board) {
+          t.equal(e.life.board, e.board, `${e.id} 生平的盘与自带环境一致`)
+          t.equal(e.life.boundary, e.boundary, `${e.id} 生平的边界与自带环境一致`)
+        }
+      }
+      // **无限增长类必须声明死边界**：它们在环面上会绕回来撞自己的尾迹，
+      // 而那时量到的东西是盘的性质，不是这一局的。
+      for (const e of all) {
+        const endless = e.life && typeof e.life === 'object' && e.life.end === 'capped'
+        if (endless) t.equal(e.boundary, 'dead', `${e.id} 是跑不完的那类，必须死边界`)
+      }
+      // 卡片那一层也要把环境透传下去 —— 少传一个字段，进环境时就少切一样（速度那次就是这么漏的）
+      const tr2 = k => k
+      const row = layoutRow(MACHINE_LAYOUTS[3], tr2)
+      t.equal(row.board, MACHINE_LAYOUTS[3].board, '卡片带着盘尺寸')
+      t.equal(row.boundary, MACHINE_LAYOUTS[3].boundary, '卡片带着边界')
+      t.equal(row.speed, MACHINE_LAYOUTS[3].speed, '卡片带着建议速度')
+
+      // 进出的接线：进去切、出来还
+      const src = stripLiterals(readSrc('src/main.js'))
+      t.ok(/app\.enterShowEnv = function/.test(src) && /app\.exitShowEnv = function/.test(src), '有进有出')
+      t.ok(/if \(!opts\.keepShowEnv\) app\.exitShowEnv\(\)/.test(src), '清空 = 退出（除非这次清空是铺局的一部分）')
+      const adopt = /app\.adoptEngine = function[\s\S]*?\n\}/.exec(src)
+      t.ok(adopt && /app\.exitShowEnv\(\)/.test(adopt[0]), '读档 = 退出')
+      const view = stripLiterals(readSrc('src/ui/favorites-view.js'))
+      t.ok(/app\.enterShowEnv\(entry\)/.test(view), '复现一局时先进它的环境')
+      t.ok(/keepShowEnv: true/.test(view), '铺局时那次清空不算退出')
+      // 换局不该把"用户自己的设置"覆盖成上一局的
+      t.ok(/if \(!app\.showEnv\)/.test(src), '存的是用户自己的那一份，换局不覆盖')
+      // 用户自己动手改过，就不再替他还原
+      const ctrl = stripLiterals(readSrc('src/ui/controls.js'))
+      t.equal((ctrl.match(/app\.showEnv = null/g) || []).length, 2, '手动改速度或边界都取消还原')
+    }
+  },
+  {
+    name: '大盘：慢是说好的，不再报成黄字警告（D104 ②）',
+    run(t) {
+      const src = stripLiterals(readSrc('src/main.js'))
+      const m = /app\.recordStepCost = function[\s\S]*?\n\}/.exec(src)
+      t.ok(!!m, '找得到 recordStepCost')
+      t.ok(/!isBigBoard\(app\.engine\.w\)/.test(m[0]), '大盘上不弹那行黄字')
+      t.ok(/app\.throttled = shouldThrottle/.test(m[0]), '**降速照旧生效**，只是不嚷嚷')
+      // 预告口径写进文案
+      for (const lang of ['zh', 'en']) {
+        const note = DICT[lang]['board.bigNote']
+        t.ok(/\{gps\}/.test(note), `${lang} 的大盘说明报的是代/秒`)
+        t.ok(/预期|runs at about/.test(note), `${lang} 的大盘说明是预告口径`)
+      }
     }
   },
   {

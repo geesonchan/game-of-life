@@ -41,41 +41,50 @@ $69bo$69b2o3$77b2ob2o$78bob2o$78bo$70b2o4b3o$70b2o3bo3b2o$75b4o2bo$61b
 export const MACHINE_LAYOUTS = Object.freeze([
   {
     id: 'builtin:mp-annihilate', nameKey: 'fav.mp.annihilate', rle: ANNIHILATE, full: true,
+    board: 200, boundary: 'dead', speed: 15,
     // 实测（默认盘 200 环形）：10 格起步，第 53 代峰值 14 格，**第 60 代全空**。
     // 两架正对头撞上，谁也没留下 —— 元像素里「互相抵消」就是这么一回事。
-    life: { end: 'extinction', board: 200, boundary: 'torus', start: 10, gen: 60, peak: 14, peakGen: 53, final: 0 }
+    life: { end: 'extinction', board: 200, boundary: 'dead', start: 10, gen: 60, peak: 14, peakGen: 53, final: 0 }
   },
   {
     id: 'builtin:mp-create', nameKey: 'fav.mp.create', rle: CREATE, full: true,
+    board: 200, boundary: 'dead', speed: 15,
     // 实测：10 格起步，**第 39 代定型为一块 4 格方块**。
     // 死边界 60 盘与 200 环形盘上量出来一模一样 —— 这是撞出来的，不是墙造的。
-    life: { end: 'still', board: 200, boundary: 'torus', start: 10, gen: 39, peak: 10, peakGen: 0, final: 4 }
+    life: { end: 'still', board: 200, boundary: 'dead', start: 10, gen: 39, peak: 10, peakGen: 0, final: 4 }
   },
   {
     id: 'builtin:mp-crossfire', nameKey: 'fav.mp.crossfire', rle: CROSSFIRE, full: true,
+    board: 200, boundary: 'dead', speed: 15,
     // 实测（默认盘）：72 格起步，第 68 代峰值 142，**第 45 代起严格周期 30，人口 94**。
     // 两台枪对射，两条流在中间互相打掉 —— 一条稳定的火线。
-    life: { end: 'cycle', board: 200, boundary: 'torus', start: 72, gen: 75, period: 30, peak: 142, peakGen: 68, final: 94 }
+    life: { end: 'cycle', board: 200, boundary: 'dead', start: 72, gen: 75, period: 30, peak: 142, peakGen: 68, final: 94 }
   },
   {
     id: 'builtin:mp-door-shut', nameKey: 'fav.mp.doorShut', rle: DOOR_SHUT, full: true,
+    board: 200, boundary: 'dead', speed: 15,
     // 实测（默认盘）：43 格起步，第 98 代峰值 83，**周期 30、人口 64**。
     // 吞食者正对着弹道：每一架都被吃掉，下游一格不剩。
-    life: { end: 'cycle', board: 200, boundary: 'torus', start: 43, gen: 117, period: 30, peak: 83, peakGen: 98, final: 64 }
+    life: { end: 'cycle', board: 200, boundary: 'dead', start: 43, gen: 117, period: 30, peak: 83, peakGen: 98, final: 64 }
   },
   {
     id: 'builtin:mp-door-open', nameKey: 'fav.mp.doorOpen', rle: DOOR_OPEN, full: true,
+    board: 200, boundary: 'dead', speed: 15,
     // **与上一局只差一格**：吞食者右移一格，那条流就全部通过。
-    // 实测（默认盘）：滑翔机一架不落地飞出去，绕回来越积越多，第 2351 代峰值 437，跑满 3000 代未定型。
-    // 后半段的数字是盘子给的（环形盘上飞出去的会绕回来），这一局要看的是**前一百代：过，还是不过**。
-    life: { end: 'capped', board: 200, boundary: 'torus', start: 43, gen: 3000, peak: 437, peakGen: 2351, final: 223 }
+    // 实测（200 死边界，Show 自带的环境）：滑翔机一架不落地飞出去，撞到盘边消失，
+    // 第 698 代峰值 135，**第 667 代起周期 60、人口 117**。
+    // **这一局的口径是死边界**（D104）：环形盘上飞出去的会绕回来把自己搅乱，
+    // 那样量到的后半段是盘子的性质，不是这一局的。
+    life: { end: 'cycle', board: 200, boundary: 'dead', start: 43, gen: 727, period: 60, peak: 135, peakGen: 698, final: 117 }
   },
   {
     id: 'builtin:mp-turn', nameKey: 'fav.mp.turn', rle: TURN, full: true,
+    board: 200, boundary: 'dead', speed: 15,
     // 周期 46 的枪（Bill Gosper 的 p46 gun）对着 Snark 反射器。
     // **为什么非得用 p46 而不是常见的那台 p30**：实测 Snark 的恢复时间是 43 代，
     // 而 Gosper 枪每 30 代吐一架 —— 第二架会撞在还没恢复的它身上。46 ≥ 43，才喂得动。
-    // 实测（240 死边界跑 700 代）：直行方向一架不剩、拐弯方向 35 格在飞、**反射器逐格完好**。
-    life: { end: 'capped', board: 200, boundary: 'torus', start: 102, gen: 3000, peak: 647, peakGen: 1878, final: 436 }
+    // 实测（200 死边界，Show 自带的环境）：**第 439 代起周期 92（= 2 × 46，枪的节拍）、人口 162**，
+    // 直行方向一架不剩、拐弯方向一直有东西在飞、反射器逐格完好。
+    life: { end: 'cycle', board: 200, boundary: 'dead', start: 102, gen: 531, period: 92, peak: 233, peakGen: 516, final: 162 }
   },
 ])

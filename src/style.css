@@ -1287,7 +1287,15 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
   /* 浮层里的按钮统一 44px —— 排查发现「更多」有 4 个、总结卡片有 3 个不达标 */
   .tb-more-group button, #summary-modal button, #rule-modal button,
-  #confirm-modal button { min-height: 44px; }
+  #confirm-modal button, #intro-modal button { min-height: 44px; }
+  /* 介绍卡也补齐 44px（D104，旧账清理）。原先它不在名单里，实测那几颗只有 19/21/37px ——
+     其中「中 / EN」那两颗最小。**不留例外**：一张给第一次来的人看的卡片，
+     恰恰最不该有按不着的按钮。 */
+  #intro-modal .intro-head-right .seg button { padding: 8px 14px; min-width: 44px; }
+  #intro-modal .linkish { min-height: 44px; padding: 0 6px; }
+  #intro-modal .intro-foot { flex-wrap: wrap; gap: 8px; }
+  #intro-modal .intro-foot button { flex: 1 1 auto; }
+  /* 挑版本那两张大卡本来就比 44px 高得多，不必再压一层（与 .card 同理，见文件开头那条注释） */
 }
 
 /* ---------- 规则编辑器的窄屏形态（D79 第三节） ---------- */

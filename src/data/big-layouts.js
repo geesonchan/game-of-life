@@ -583,32 +583,32 @@ $139b2o!`
  */
 export const BIG_LAYOUTS = Object.freeze([
   {
-    id: 'builtin:max', nameKey: 'fav.builtin.max', rle: MAX, board: 1024, scale: 'big', full: true,
+    id: 'builtin:max', nameKey: 'fav.builtin.max', rle: MAX, board: 1024, scale: 'big', full: true, boundary: 'dead', speed: 30,
     // 实测（1024² 死边界）：187 格起步，第 995 代铺到盘边，第 1146 代 300316 格。
     // 跑满 1200 代仍在长 —— 它是二次增长，永远不会定型，这里的数字全是被盘裁出来的。
     life: { end: 'capped', board: 1024, boundary: 'dead', start: 187, gen: 1200, peak: 300316, peakGen: 1146, final: 293789 }
   },
   {
-    id: 'builtin:breeder', nameKey: 'fav.builtin.breeder', rle: BREEDER1, board: 2048, scale: 'big', full: true,
+    id: 'builtin:breeder', nameKey: 'fav.builtin.breeder', rle: BREEDER1, board: 2048, scale: 'big', full: true, boundary: 'dead', speed: 30,
     // 实测（2048² 死边界）：4060 格起步，第 1299 代碰到盘边，第 4000 代 19713 格。
     // 人口 ~ 代数²：第 1200 代 7404 格、第 4000 代 19713 格 —— 这就是二次增长的样子。
     life: { end: 'capped', board: 2048, boundary: 'dead', start: 4060, gen: 4000, peak: 19713, peakGen: 3995, final: 19646 }
   },
   {
-    id: 'builtin:deepcell', nameKey: 'fav.builtin.deepcell', rle: DEEPCELL, board: 1024, scale: 'big', full: true,
+    id: 'builtin:deepcell', nameKey: 'fav.builtin.deepcell', rle: DEEPCELL, board: 1024, scale: 'big', full: true, boundary: 'dead', speed: 30,
     // 实测（1024² 死边界）：5449 格，跑 6000 代人口只在 5449–5792 之间晃。
     // **数字无聊是它的实情**：一个元胞走一步要几千代，而且独放没有邻居可对话 ——
     // 按 D64 的互动型一档，它的看点是结构本身，不是这几个数（说明栏就这么写）。
     life: { end: 'capped', board: 1024, boundary: 'dead', start: 5449, gen: 6000, peak: 5792, peakGen: 5371, final: 5476 }
   },
   {
-    id: 'builtin:primer', nameKey: 'fav.builtin.primer', rle: PRIMER, board: 1024, scale: 'big', full: true,
+    id: 'builtin:primer', nameKey: 'fav.builtin.primer', rle: PRIMER, board: 1024, scale: 'big', full: true, boundary: 'dead', speed: 30,
     // 实测（1024² 死边界）：2953 格起步，第 584 代吐出的滑翔机流碰到盘边，
     // 第 694 代峰值 6648 格。素数筛在盘上会一直跑下去，跑满 4000 代未定型。
     life: { end: 'capped', board: 1024, boundary: 'dead', start: 2953, gen: 4000, peak: 6648, peakGen: 694, final: 5240 }
   },
   {
-    id: 'builtin:hacksaw', nameKey: 'fav.builtin.hacksaw', rle: HACKSAW, board: 1024, scale: 'big', full: true,
+    id: 'builtin:hacksaw', nameKey: 'fav.builtin.hacksaw', rle: HACKSAW, board: 1024, scale: 'big', full: true, boundary: 'dead', speed: 30,
     // 实测（1024² 死边界）：687 格起步，第 283 代峰值 1269 格，第 825 代碰到盘边，
     // 之后剩下的机器从第 1108 代起严格周期 120（第 1228 代判定）。
     // **那个周期是盘给的，不是图案的性质**：无限盘上它是锯齿形无限增长。

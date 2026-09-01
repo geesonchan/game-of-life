@@ -7,7 +7,7 @@ import { normalizeSeed } from '../src/engine/prng.js'
 import { validateRule, validateClauses } from '../src/engine/validate.js'
 import { presetRule, PRESETS } from '../src/engine/presets.js'
 import { exportRule, importRule } from '../src/engine/rule-io.js'
-import { PATTERNS, getPattern, placePattern, centerOrigin, transformPattern } from '../src/engine/patterns.js'
+import { PATTERNS, PATTERN_GROUPS, groupedPatterns, getPattern, placePattern, centerOrigin, transformPattern } from '../src/engine/patterns.js'
 import { parseRLE, toRLE, boardToRLE } from '../src/engine/rle.js'
 import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_VERSION } from '../src/engine/save.js'
 import { DICT } from '../src/i18n/dict.js'
@@ -5445,6 +5445,95 @@ cases.push(
         t.ok(/rule = [bB]3\/[sS]23/.test(before), `${key} 紧挨着的注释里要有它自己的 RLE 原文`)
       }
       t.ok(/Mike Playle/.test(src) && /Bill Gosper/.test(src), '作者署名照录')
+    }
+  },
+  {
+    name: '玩具盒：每张卡有且仅有一组（D97 ③）',
+    run(t) {
+      // 分组登记表只此一份。这条守卫盯的就是"新加一个图案却忘了给它分组"——
+      // 忘了的话它会从竖条上消失（分组渲染只画登记在册的），而卡片本身还在盒里。
+      for (const p of PATTERNS) {
+        t.ok(!!p.group, `${p.key} 没有分组`)
+        t.ok(PATTERN_GROUPS.includes(p.group), `${p.key} 的分组 ${p.group} 不在登记表里`)
+      }
+      const grouped = groupedPatterns()
+      const flat = grouped.flatMap(g => g.items.map(i => i.key))
+      t.equal(flat.length, PATTERNS.length, '分组之后一张不多一张不少')
+      t.equal(new Set(flat).size, flat.length, '没有一张卡被分进两组')
+      for (const g of grouped) t.ok(g.items.length > 0, `分组 ${g.group} 是空的 —— 空分组只会在竖条上留个孤零零的标题`)
+      // 分组标题中英 + 简洁语域齐备
+      for (const lang of ['zh', 'en']) {
+        for (const g of PATTERN_GROUPS) {
+          t.ok(('pattern.group.' + g) in DICT[lang], `${lang} 缺 pattern.group.${g}`)
+          t.ok(('pattern.group.' + g + '.simple') in DICT[lang], `${lang} 缺简洁语域的 pattern.group.${g}`)
+        }
+      }
+      // 吞食者与反射器同组：它俩都是"静物形态的机关"，按长相拆开等于把同一件事说成两件
+      t.equal(PATTERNS.find(p => p.key === 'eater').group, PATTERNS.find(p => p.key === 'snark').group,
+        '吞食者与反射器同组')
+      t.equal(PATTERNS.find(p => p.key === 'matt').group, 'original', 'Matt 自己一组（D64 那条界线）')
+    }
+  },
+  {
+    name: '玩具盒竖条：宽度够两列，且滚动条冒出来也塌不回一列（D97 ①）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      const rail = /\.toolrail \{[\s\S]*?\n\}/.exec(css)
+      t.ok(!!rail, '找得到竖条的样式')
+      const width = Number((/width: (\d+)px/.exec(rail[0]) || [])[1])
+      const pad = /padding: \d+px (\d+)px/.exec(rail[0])
+      const padX = Number(pad ? pad[1] : NaN) * 2
+      const gap = Number((/\.rail-list \{ gap: (\d+)px/.exec(css) || [])[1])
+      const min = Number((/\.toolrail \.card-list \{ grid-template-columns: repeat\(auto-fill, minmax\(min\((\d+)px/.exec(css) || [])[1])
+      for (const [name, v] of [['宽度', width], ['内边距', padX], ['列间距', gap], ['列宽下限', min]]) {
+        t.ok(Number.isFinite(v), `${name} 读得出来`)
+      }
+      // 实测：Chrome 上标准属性 scrollbar-width: thin 优先，滚动条 12px；再加 1px 右边框
+      const SCROLLBAR = 12, BORDER = 1
+      const usable = width - padX - BORDER - SCROLLBAR
+      t.ok(usable >= min * 2 + gap,
+        `滚动条冒出来之后仍排得下两列：可用 ${usable} ≥ ${min * 2 + gap}（否则会塌成一列，` +
+        '内容更高、滚动条更下不去 —— 第一版取 200px 就撞上了这个反馈环）')
+      // 不许再按屏宽把竖条收窄回一列
+      t.ok(!/@media \(max-width: 900px\) \{ \.toolrail \{ width/.test(css),
+        '不许再有"窄一点的桌面就收窄竖条"那条规则 —— 一收就只剩一列')
+    }
+  },
+  {
+    name: '玩具盒竖条：卡片压扁、名称单行、标题只在桌面（D97 ②③）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      const art = Number((/\.toolrail \.card-art \{ width: (\d+)px/.exec(css) || [])[1])
+      t.ok(art <= 26, `缩略图缩了一档（${art}px ≤ 26px）`)
+      const b = /\.toolrail \.card-text b \{[\s\S]*?\}/.exec(css)
+      t.ok(b && /white-space: nowrap/.test(b[0]) && /text-overflow: ellipsis/.test(b[0]),
+        '名称单行，超长截断 —— 说明本来就在 title 里')
+      // 标题横跨整行，窄屏不出现
+      t.ok(/\.rail-group \{[\s\S]*?grid-column: 1 \/ -1/.test(css), '分组标题横跨整行')
+      t.ok(/@media \(max-width: 767px\) \{ \.rail-group \{ display: none; \} \}/.test(css),
+        '窄屏横滑带不显示分组标题（那儿没地方摆，还会把横滑打断）')
+      // 手机卡片一字不动：窄屏那几条原样还在（D75）
+      const narrow = [...css.matchAll(/@media \(max-width: 767px\) \{[\s\S]*?\n\}/g)].map(m => m[0]).join('\n')
+      t.ok(/flex: 0 0 calc\(\(100% - 24px\) \/ 3\.4\)/.test(narrow), '窄屏卡片宽仍是容器的 1/3.4')
+      t.ok(/\.toolrail \.card-art, \.strip \.card-art \{ width: 22px/.test(narrow), '窄屏缩略图仍是 22px')
+    }
+  },
+  {
+    name: '滚动条：全站一处样式（D97 ④）',
+    run(t) {
+      const css = readSrc('src/style.css')
+      t.ok(/\* \{ scrollbar-width: thin;/.test(css), '标准属性写在通配选择器上，全站一致')
+      t.ok(/::-webkit-scrollbar \{ width: 8px; height: 8px; \}/.test(css), '老 Safari 有兜底')
+      // 不许给某个容器单开滚动条样式 —— 那是下一次不一致的开始
+      // 逐行看：带 ::-webkit-scrollbar 的那几行，选择器必须**从它自己开头**。
+      // 用正则在全文里找"前面有东西"会跨到上一条规则去（第一次就这么假红的）。
+      // 注释行不算数（说明文字里也会提到这个选择器）—— 只看真正的规则行
+      const offenders = css.split('\n')
+        .filter(line => line.includes('::-webkit-scrollbar') && line.includes('{'))
+        .filter(line => !line.trim().startsWith('::-webkit-scrollbar'))
+      t.equal(offenders.length, 0, `不许给单个容器另写滚动条样式（发现 ${offenders.join(' / ')}）`)
+      // 说清楚它不是真"覆盖式"：注释里要写明白，别让下一个人以为做到了
+      t.ok(/真正的"覆盖式"|不占布局宽度/.test(css), '注释里说明这是细而半透明，不是真覆盖式')
     }
   },
   {

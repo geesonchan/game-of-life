@@ -1,7 +1,7 @@
 // 图案盒子与世界卡片。
 // 图案盒子：点一张卡 → 图案跟随鼠标 → 点画布放下。
 // 世界卡片：简洁模式下规则预设的另一种呈现（同一批 PRESETS，只是换了说法）。
-import { PATTERNS } from '../engine/patterns.js'
+import { PATTERNS, groupedPatterns } from '../engine/patterns.js'
 import { PRESETS, presetRule } from '../engine/presets.js'
 import { t } from '../i18n/index.js'
 
@@ -18,15 +18,15 @@ export function setupLibrary(app) {
   // 预设指纹只算一次，用来高亮"当前所在的世界"
   const worldFingerprints = new Map(PRESETS.map(p => [p.key, presetRule(p.key).fingerprint]))
 
-  function renderPatterns() {
-    patternList.innerHTML = PATTERNS.map(p => {
-      const on = !!(app.stamp && app.stamp.key === p.key)
-      // 缩略图即状态（D87 ②）：选中的那张按**当前朝向**画。
-      // 用的是 app.stampPattern() —— 与落子用的是同一个函数，
-      // 所以"卡上显示的"与"放下去的"不可能不一致（D87 ④，D70 类的承诺对账）。
-      // 这里绝不许自己再调一次 transformPattern：那就是第二份实现，迟早对不上。
-      const shown = on ? (app.stampPattern() || p) : p
-      return `
+  /** 一张卡。分组标题由 renderPatterns 插在段首（D97 ③） */
+  function cardHtml(p) {
+    const on = !!(app.stamp && app.stamp.key === p.key)
+    // 缩略图即状态（D87 ②）：选中的那张按**当前朝向**画。
+    // 用的是 app.stampPattern() —— 与落子用的是同一个函数，
+    // 所以"卡上显示的"与"放下去的"不可能不一致（D87 ④，D70 类的承诺对账）。
+    // 这里绝不许自己再调一次 transformPattern：那就是第二份实现，迟早对不上。
+    const shown = on ? (app.stampPattern() || p) : p
+    return `
       <button class="card ${on ? 'on' : ''}" data-pattern="${p.key}" title="${t('pattern.' + p.key + '.desc')}">
         ${miniArt(shown)}
         <span class="card-text">
@@ -35,6 +35,17 @@ export function setupLibrary(app) {
         </span>
         <i class="card-size">${shown.w}×${shown.h}</i>
       </button>`
+  }
+
+  /**
+   * 玩具盒。**按分组渲染，两个屏一个顺序**（D97 ③）：
+   * 竖条上分段显示小标题，窄屏横滑带把标题藏掉（那里没地方摆），但排序照旧 ——
+   * 同一个盒子在两个屏上是两种排法，才是真让人找不着东西。
+   */
+  function renderPatterns() {
+    patternList.innerHTML = groupedPatterns().map(({ group, items }) => {
+      if (!items.length) return ''
+      return `<h3 class="rail-group">${t('pattern.group.' + group)}</h3>` + items.map(cardHtml).join('')
     }).join('')
   }
 

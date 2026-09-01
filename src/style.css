@@ -631,7 +631,12 @@ body.mode-full [data-mode="simple"] { display: none !important; }
 /* 它是工作区的布局成员，不是浮层 —— 展开时画布变窄，绝不会被盖住 */
 .toolrail {
   flex: none;
-  width: 112px;
+  /* 两列（D97 ①）。**列数仍由容器宽度决定** —— D95 那条 auto-fill 声明一个字没改，
+     宽度给够，它自己就排成两列。宽度是算出来的，而且要留够余量：
+     卡片下限 88×2 + 列间距 5 + 内边距 14 + 边框 1 + 滚动条 12（实测，见下面那节）= 208。
+     第一版取 200，于是撞上一个**反馈环**：内容一高 → 冒出滚动条 → 可用宽度少一截 →
+     两列排不下 → 塌成一列 → 内容更高 → 滚动条更下不去。取 216 把这个环彻底断掉。 */
+  width: 216px;
   background: var(--panel);
   border-right: 1px solid var(--line);
   overflow-y: auto;
@@ -641,13 +646,26 @@ body.mode-full [data-mode="simple"] { display: none !important; }
 .toolrail .card {
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 8px 4px 7px;
+  gap: 4px;
+  padding: 6px 3px 5px;      /* 压扁一档（D97 ②）：目标每张 ≤ 90px */
   text-align: center;
 }
-.toolrail .card-art { width: 32px; height: 32px; }
-.toolrail .card-text { flex: none; width: 100%; }
-.toolrail .card-text b { font-size: 11px; line-height: 1.3; }
+.toolrail .card-art { width: 26px; height: 26px; }   /* 缩略图缩一档 */
+.toolrail .card-text { flex: none; width: 100%; min-width: 0; }
+/* 名称单行，超长截断 —— 说明本来就在 title 里，名字太长时也去那儿看 */
+.toolrail .card-text b {
+  font-size: 11px; line-height: 1.25;
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* 分组小标题（D97 ③）：横跨整行，窄屏不出现（那儿没地方摆） */
+.rail-group {
+  grid-column: 1 / -1;
+  margin: 8px 2px 1px;
+  font-size: 10px; font-weight: 600; letter-spacing: .06em;
+  color: var(--muted); text-transform: none;
+}
+.rail-group:first-child { margin-top: 0; }
 /* 工具条只放缩略图 + 名称；一句话说明走 title 悬停 */
 .toolrail .card-text em,
 .toolrail .card-size { display: none; }
@@ -655,12 +673,15 @@ body.mode-full [data-mode="simple"] { display: none !important; }
 
 /* 窄屏收窄。注意必须写在 .toolrail 基础规则之后 ——
    同等优先级下后写的赢，早先那两个 media 块在文件更前面，会被基础规则盖掉。 */
-@media (max-width: 900px) { .toolrail { width: 96px; } }
+/* 原先这里给窄一点的桌面收窄竖条。现在不收了：一收就只剩一列，
+   而"两列"正是这一轮要的东西 —— 宁可让棋盘再让出几十像素，也不要在某些屏宽下悄悄变回一列。 */
 @media (max-width: 768px) {
   .toolrail { width: 88px; }
   .toolrail .card-art { width: 26px; height: 26px; }
   .toolrail .card-text b { font-size: 10px; }
 }
+/* 窄屏横滑带不分组：标题在那里既没地方摆，也会把横滑打断（D97 ③） */
+@media (max-width: 767px) { .rail-group { display: none; } }
 
 /* ---------- 阶段 4：编年史 / 台账 / 总结卡片 ---------- */
 
@@ -1686,3 +1707,26 @@ input[type="range"] { touch-action: pan-y; }
 /* 选中一张精彩局之后，提示行换成那一局的完整说明（D95 ①）：
    它此刻说的是一件具体的事，不再是通用提示，所以颜色也跟着提一档 */
 .strip-hint.on { color: var(--fg); }
+
+/* ---------- 滚动条：全站统一成细覆盖式（D97 ④） ----------
+   起因是玩具盒竖条那条**粗竖滚动条**：13 张卡单列时它一冒出来，
+   既占宽度又抢眼 —— 一个滚动条不该比它旁边的卡片还显眼。
+   写在一处，全站一致；不给某个容器单开样式，那是下一次不一致的开始。 */
+/* 两套都写：`scrollbar-width` 是标准属性（Firefox 与新版 Chrome 认它），
+   `::-webkit-scrollbar` 给老 Safari 兜底。**Chrome 上标准属性优先**，
+   实测滚动条宽 12px（不是下面写的 8px）—— 竖条的宽度余量就是按 12px 算的。
+
+   说清楚一件事：这是**细而半透明**，不是真正的"覆盖式"。
+   真覆盖（不占布局宽度）在标准 CSS 里做不到，得自己用 JS 重写滚动 ——
+   为一条滚动条把滚动接管过来，代价远大于收益，没做。 */
+* { scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, .35) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, .28);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, .5); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }

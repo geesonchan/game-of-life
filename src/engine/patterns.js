@@ -175,10 +175,43 @@ function parseAscii(text) {
 }
 
 /**
- * 图案清单。名称与说明不在这里 —— 走 i18n 词典的 pattern.<key> / pattern.<key>.desc。
- * @type {Array<{key:string, w:number, h:number, cells:number[][]}>}
+ * 分组（D97 ③）。**登记表只此一份**：竖条的小标题、卡片的排序、守卫的核对，
+ * 三处读的都是它 —— 分组信息一旦有第二份，迟早会出现"标题说是飞船、卡片排在静物里"。
+ *
+ * 名字按"它是干什么的"分，不按"它长什么样"：
+ *   · `ship` 会走的 —— 滑翔机与轻/中/重三条飞船（滑翔机也是飞船，只是走斜线）；
+ *   · `machine` 会干活的 —— 枪、穿梭机、反射器、吞食者。**吞食者归这里而不是静物**：
+ *     它确实是静物，但反射器也是；把这两个按"长相"拆开，等于把同一件事说成两件。
+ *     D64 早就给它们起过名字叫"互动型"，这一组就是那个意思。
+ *   · `still` 不动的 —— 方块、蜂巢，它们的本事就是"待着"；
+ *   · `restless` 自己变个不停 —— 脉冲星（原地喘气）、R-五连体（乱上一千代）。
+ *     **这一组是你那四组之外补的**：脉冲星与 R-五连体不属于前三组里的任何一个，
+ *     而每张卡必须有且仅有一组（守卫钉着），所以宁可多开一组，也不硬塞。
+ *   · `original` 用户原创 —— Matt（D64 那一条界线，它自己就该单独站着）。
  */
-export const PATTERNS = Object.keys(SOURCES).map(key => ({ key, ...parseAscii(SOURCES[key]) }))
+export const PATTERN_GROUPS = Object.freeze(['ship', 'machine', 'still', 'restless', 'original'])
+
+const GROUP_OF = Object.freeze({
+  glider: 'ship', lwss: 'ship', mwss: 'ship', hwss: 'ship',
+  gun: 'machine', qbshuttle: 'machine', snark: 'machine', eater: 'machine',
+  block: 'still', beehive: 'still',
+  pulsar: 'restless', rpentomino: 'restless',
+  matt: 'original'
+})
+
+/**
+ * 图案清单。名称与说明不在这里 —— 走 i18n 词典的 pattern.<key> / pattern.<key>.desc。
+ * @type {Array<{key:string, group:string, w:number, h:number, cells:number[][]}>}
+ */
+export const PATTERNS = Object.keys(SOURCES).map(key => ({ key, group: GROUP_OF[key], ...parseAscii(SOURCES[key]) }))
+
+/**
+ * 按分组排好的清单：竖条照它分段显示，窄屏横滑带照它排序（只是不显示小标题）。
+ * **两处同一个顺序**，免得同一个盒子在两个屏上是两种排法。
+ */
+export function groupedPatterns() {
+  return PATTERN_GROUPS.map(group => ({ group, items: PATTERNS.filter(p => p.group === group) }))
+}
 
 export function getPattern(key) {
   const p = PATTERNS.find(x => x.key === key)

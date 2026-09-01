@@ -1845,12 +1845,18 @@ cases.push(
       // 「文案是否承诺了某个行为」一般来说静态查不出来，所以这里维护一张**显式清单**：
       // 每一对"承诺型词条 ↔ 兑现它的调用"都登记在案，两边的条件必须对齐。
       // 新增这类文案时要往清单里加 —— 清单本身就是这条守卫的边界，见 D70。
+      // **D107 ③ 之后这条改了口径**：承诺不再是无条件的，而是"两句话、两条路，条件必须同一个"。
+      // 从别人的链接进来时，棋盘上已经有他要看的那一局 —— 这时候再放小家伙就是把它盖掉；
+      // 于是文案换成另一句（不承诺放东西），动作也跟着不放。
+      // **要守的仍是同一件事：说的与做的用的是同一个条件。**
       const PROMISES = [
         {
           key: 'intro.act3.gift',       // 「这就给你放一个『会走路的小家伙』」
-          renderer: 'act3',             // 渲染这句话的函数
+          alt: 'intro.act3.shared',     // 从链接进来时改说这一句（不承诺放东西）
+          renderer: 'act3',             // 渲染这两句话的函数
           fulfiller: 'finish',          // 兑现它的函数
-          call: 'placeStarterGift'      // 兑现动作
+          call: 'placeStarterGift',     // 兑现动作
+          cond: 'app.shareApplied'      // 唯一允许的那个条件
         }
       ]
       const src = stripLiterals(readSrc('src/ui/intro.js'))
@@ -1864,15 +1870,22 @@ cases.push(
 
       for (const p of PROMISES) {
         t.ok(raw.indexOf(p.key) >= 0, `${p.renderer} 应当渲染 ${p.key}`)
+        t.ok(raw.indexOf(p.alt) >= 0, `${p.renderer} 也要渲染另一句 ${p.alt}`)
+        for (const lang of ['zh', 'en']) t.ok(p.alt in DICT[lang], `${lang} 缺 ${p.alt}`)
+
+        // 两句话由**同一个条件**挑：`cond ? alt : key`
+        t.ok(new RegExp(p.cond.replace('.', '\\.') + ' \\? \'' + p.alt + '\' : \'' + p.key + '\'').test(raw),
+          `${p.renderer} 里必须按 ${p.cond} 在两句话之间挑`)
 
         const fulfil = bodyOf(p.fulfiller)
         t.ok(fulfil.indexOf(p.call) >= 0, `${p.fulfiller}() 必须调用 ${p.call}`)
 
-        // 核心判据：兑现动作前面不许有 if —— 文案是无条件说的，动作就得无条件做
+        // 核心判据：兑现动作前面**只允许**那一个条件；别的 if 一律不许
         const before = fulfil.slice(0, fulfil.indexOf(p.call))
-        t.ok(!/\bif\s*\(/.test(before),
-          `${p.call} 前面出现了 if：文案 ${p.key} 是无条件承诺的，兑现却带条件 —— ` +
-          '这正是首访时那句话从未兑现的成因')
+        const ifs = before.match(/\bif\s*\([^)]*\)/g) || []
+        t.equal(ifs.length, 1, `${p.call} 前面应当只有一个条件（实际 ${ifs.length} 个）`)
+        t.ok(ifs[0] && ifs[0].indexOf(p.cond) >= 0,
+          `${p.call} 前面那个条件必须就是 ${p.cond} —— 说的与做的得用同一个条件`)
       }
     }
   },
@@ -6198,6 +6211,50 @@ cases.push(
         t.ok(('share.copy') in DICT[lang] && ('share.copied') in DICT[lang], `${lang} 缺复制链接的文案`)
         t.ok(('share.copiedNoPattern') in DICT[lang], `${lang} 缺"带不下格子"的文案`)
       }
+    }
+  },
+  {
+    name: '链接优先：带链接的首访不许被引导抹掉（D107 ③）',
+    run(t) {
+      // 这是分享功能的致命路径：新浏览器打开分享链接 → 三幕引导 →「开始玩」
+      // 执行 D76 的清盘 + 送滑翔机，把链接那一局盖掉。
+      // **任何第一次收到链接的人看到的都不是分享的局面** —— 分享因此等于没做。
+      const intro = readSrc('src/ui/intro.js')
+      const fin = /function finish\(\)[\s\S]*?\n  \}/.exec(intro)
+      t.ok(!!fin, '找得到 finish()')
+      // 收尾第一件事就是看这一局是不是链接来的；是就原样退出
+      t.ok(/if \(app\.shareApplied\) return/.test(fin[0]), '有链接时收尾直接返回，不清盘不送礼')
+      const before = fin[0].slice(0, fin[0].indexOf('placeStarterGift'))
+      t.ok(/if \(app\.shareApplied\) return/.test(before), '那句 return 排在清盘与送礼之前')
+      t.ok(before.indexOf('app.clear') < 0 || before.indexOf('if (app.shareApplied) return') < before.indexOf('app.clear'),
+        '清盘也在那句 return 之后 —— 先返回，才谈得上"没被盖掉"')
+
+      const main = readSrc('src/main.js')
+      t.ok(/app\.shareApplied = false/.test(main), '标志位有初值')
+      const apply = /app\.applyShareHash = function[\s\S]*?\n\}/.exec(stripLiterals(main))
+      t.ok(apply && /app\.shareApplied = true/.test(apply[0]), '链接生效时才置位')
+      // 解不出来的链接不许置位 —— 否则引导会以为棋盘上有东西而不送礼，两头落空
+      const failPath = apply[0].slice(0, apply[0].indexOf('app.shareApplied = true'))
+      t.ok(/if \(!r\.ok\)[\s\S]*?return false/.test(failPath), '解不出来时先返回，不置位')
+    }
+  },
+  {
+    name: '顶栏：分享钮常驻，且这一排按钮垂直居中（D107 ①②）',
+    run(t) {
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+      t.ok(/id="btn-share"/.test(html), '顶栏有分享钮')
+      t.ok(/<button class="help-btn" id="btn-share"/.test(html), '它与「?」同一类按钮（同样的尺寸与形状）')
+      t.ok(/data-i18n-title="share\.copy"/.test(html), '悬停提示走词典')
+      t.ok(/getElementById\('btn-share'\)\.addEventListener\('click', \(\) => app\.copyShareLink\(\)\)/.test(readSrc('src/main.js')),
+        '点它就复制当前这一局的链接')
+      // ② 垂直居中：原先是 flex-end（比同排矮一截，贴着底边站）
+      const helpRule = /\.help-btn \{[\s\S]*?\}/.exec(css)
+      t.ok(!!helpRule, '找得到 .help-btn')
+      t.ok(/align-self: center/.test(helpRule[0]), '这一排里垂直居中')
+      t.ok(!/align-self: flex-end/.test(helpRule[0]), '不再贴底边')
+      // 窄屏 44px：两颗都得够大（同一条规则管着）
+      t.ok(/\.help-btn \{ min-width: 44px; \}/.test(css), '窄屏下 44px 触控区')
     }
   },
   {

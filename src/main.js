@@ -665,6 +665,8 @@ app.copyShareLink = async function (opts = {}) {
  * 开机时按链接复现（D106）。**认不出就说认不出**，不拿默认值凑一局 ——
  * 那样用户以为自己打开的是别人那一局，其实不是。
  */
+app.shareApplied = false     // 这一局是不是从链接来的（D107 ③：链接优先）
+
 app.applyShareHash = function (hash) {
   const r = decodeShare(hash)
   if (!r.ok) {
@@ -688,6 +690,7 @@ app.applyShareHash = function (hash) {
   app.fitView()
   app.dirty = true
   app.updateHud()
+  app.shareApplied = true      // 引导收尾时据此**不清盘、不送滑翔机**（D107 ③）
   app.toast(t('share.opened'))
   return true
 }
@@ -770,6 +773,8 @@ app.library.render()
 app.intro = createIntro(app)
 // 点「?」总是带上第零幕，老用户也能在这里重选版本
 document.getElementById('btn-help').addEventListener('click', () => app.intro.open({ chooser: true }))
+// 顶栏分享钮（D107 ①）：编码当前这一局并复制，提示与另外两处同一套
+document.getElementById('btn-share').addEventListener('click', () => app.copyShareLink())
 app.tower = createTowerView(app)
 app.explorer = createExplorerView(app)
 app.critical = createCriticalView(app)

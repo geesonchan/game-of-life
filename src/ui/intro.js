@@ -313,7 +313,7 @@ export function createIntro(app) {
       <h3>${t('intro.act3.title')}</h3>
       <p class="lead">${t('intro.act3.body')}</p>
       <p class="caption">${t('intro.act3.caption')}</p>
-      <p class="gift">${t('intro.act3.gift')}</p>
+      <p class="gift">${t(app.shareApplied ? 'intro.act3.shared' : 'intro.act3.gift')}</p>
       ${pageList().includes('helpAge')
         ? `<button class="appendix-link" data-appendix>${t('intro.appendix.entry')}</button>`
         : ''}`
@@ -418,6 +418,10 @@ export function createIntro(app) {
    */
   function finish() {
     close()
+    // **链接优先**（D107 ③）：棋盘上这一局是别人分享来的，收尾就不能清盘、也不能送滑翔机 ——
+    // 否则任何第一次收到链接的人，走完引导看到的都不是分享的那一局。
+    // 第三幕的文案在这种情况下也换了一句（不能承诺放小家伙却不放，D70）。
+    if (app.shareApplied) return
     app.clear({ silent: true })   // 走既有的清空路径，记账与用户自己点清空完全一致
     placeStarterGift(app.engine)
     app.visual.reconcile(app.engine)

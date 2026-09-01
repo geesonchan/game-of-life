@@ -431,7 +431,10 @@ body.mode-full [data-mode="simple"] { display: none !important; }
   border-radius: 50%;
   font-size: 12px; font-weight: 700;
   color: var(--muted);
-  align-self: flex-end;
+  /* 垂直居中（D107 ②）。原先是 flex-end —— 它比同排按钮矮一截，贴着底边站，
+     于是整排看上去参差。**量出来的**：同排按钮高 27px，这颗 22px，
+     贴底就意味着中线低 2.5px。居中之后两条中线重合。 */
+  align-self: center;
 }
 .help-btn:hover { color: var(--text); border-color: var(--accent); }
 

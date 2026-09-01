@@ -1646,13 +1646,16 @@ input[type="range"] { touch-action: pan-y; }
      变的是"由谁决定列数"：从写死的方向，变成由容器宽度决定（同类同形按设备内约束）。 */
   .strip .card-list, .toolrail .card-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    /* minmax 的下限要用 min(…, 100%) 兜一层：容器比下限还窄时（玩具盒竖条一冒出
+       竖滚动条就只剩 83px，而下限写 88px），硬下限会把网格撑出横向溢出 ——
+       卡片数一多就露馅，13 张那次排查抓到的就是它。 */
+    grid-template-columns: repeat(auto-fill, minmax(min(168px, 100%), 1fr));
     gap: 8px;
     overflow-x: visible;          /* 不再横滑，滚动条随之消失 */
     padding-bottom: 0;
     scroll-snap-type: none;       /* 横滑没了，吸附也就没有意义 */
   }
-  .toolrail .card-list { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+  .toolrail .card-list { grid-template-columns: repeat(auto-fill, minmax(min(88px, 100%), 1fr)); }
   .strip .card, .strip .card.world, .strip .card.show-card {
     width: auto;                  /* 宽度交给网格，不再写死 218/200 */
     align-items: center;

@@ -530,13 +530,17 @@ cases.push(
     }
   },
   {
-    name: '图案库：7 个内置图案的尺寸与活细胞数正确',
+    name: '图案库：13 个图案的尺寸与活细胞数正确',
     run(t) {
-      t.equal(PATTERNS.length, 7, '应有 7 个内置图案')
+      t.equal(PATTERNS.length, 13, '经典 5 + 用户注册 2 + 元像素零件 6')
       const expect = {
         glider: [3, 3, 5], gun: [36, 9, 36], pulsar: [13, 13, 48], lwss: [5, 4, 9], rpentomino: [3, 3, 5],
         matt: [3, 4, 5],  // 用户注册图案，包围盒 3×4：末行那个孤立格把高度撑到 4
-        eater: [4, 4, 7]  // 社区经典 Eater 1，4×4 的 7 格静物
+        eater: [4, 4, 7], // 社区经典 Eater 1，4×4 的 7 格静物
+        // 元像素零件·第一批（D96）
+        mwss: [6, 5, 11], hwss: [7, 5, 13],
+        snark: [23, 17, 52],   // 减掉演示滑翔机之后的反射器本体，按 rot=1 转过
+        qbshuttle: [22, 7, 20], block: [2, 2, 4], beehive: [4, 3, 6]
       }
       for (const key of Object.keys(expect)) {
         const p = getPattern(key)
@@ -551,8 +555,12 @@ cases.push(
     name: '图案库：Matt 排在 R-五连体之后，是第一个用户注册图案',
     run(t) {
       const keys = PATTERNS.map(p => p.key)
-      t.equal(keys.join(','), 'glider,gun,pulsar,lwss,rpentomino,matt,eater',
-        `内置 5 个在前、注册图案按登记先后在后，实测顺序 ${keys.join(',')}`)
+      t.equal(keys.join(','), 'glider,gun,pulsar,lwss,rpentomino,matt,eater,mwss,hwss,snark,qbshuttle,block,beehive',
+        `顺序在表达来源：经典 5 → 用户注册 2 → 元像素零件 6，实测顺序 ${keys.join(',')}`)
+      // 新来的一律往后排，**不许插到 lwss 旁边** —— 飞船族确实该挨着，
+      // 但插进去会把已有卡片往后推，而取用区的位置是按着手指的记忆定的（D75 ③）
+      t.equal(keys.slice(0, 7).join(','), 'glider,gun,pulsar,lwss,rpentomino,matt,eater',
+        '原有七张卡一张都没挪位')
 
       // 名称不翻译：中英两语、两个语域都得是「Matt」本身
       t.equal(DICT.zh['pattern.matt'], 'Matt', '中文名不翻译')
@@ -4414,8 +4422,9 @@ cases.push(
     name: '动向线：方向一律实测，一个都不许手写（D88 ②）',
     run(t) {
       // 登记表只说"这个图案有没有方向、属哪一类"，向量本身永远是跑出来的。
-      t.equal(Object.keys(MOTION_KINDS).sort().join(','), 'eater,glider,gun,lwss', '四个有方向的图案')
-      for (const key of ['pulsar', 'rpentomino', 'matt']) {
+      t.equal(Object.keys(MOTION_KINDS).sort().join(','), 'eater,glider,gun,hwss,lwss,mwss,snark',
+        '有方向的七个：三条飞船 + 滑翔机 + 枪 + 吞食者 + 反射器')
+      for (const key of ['pulsar', 'rpentomino', 'matt', 'block', 'beehive', 'qbshuttle']) {
         t.ok(!MOTION_KINDS[key], `${key} 没有方向 —— 给它画箭头就是在编方向`)
         t.equal(motionOf(getPattern(key)), null, `${key} 不许量出方向来`)
       }
@@ -5231,6 +5240,14 @@ cases.push(
       t.ok(!!grid, '宽屏下有一条同时管三条带的网格声明（同类同形，按设备内约束）')
       t.ok(/display:\s*grid/.test(grid), '桌面取用区是网格')
       t.ok(/repeat\(auto-fill/.test(grid), '列数由容器宽度决定，不写死方向')
+      // 下限必须用 min(…, 100%) 兜一层：容器比下限还窄时（玩具盒竖条一冒出竖滚动条
+      // 就只剩 83px，而下限是 88px），硬下限会把网格撑出横向溢出 —— 13 张卡那次排查抓到的
+      t.ok(/minmax\(min\(\d+px, 100%\), 1fr\)/.test(grid),
+        '网格下限要用 min(…, 100%) 兜底，否则容器一窄就横向溢出')
+      // 断言要落在**那一行的值**上：拿整个 media 块去测，会被别的行里的 min() 蒙混过关（自查时抓到的）
+      const railLine = /\.toolrail \.card-list \{ grid-template-columns: ([^;]+);/.exec(css)
+      t.ok(!!railLine, '玩具盒竖条有自己的列宽声明')
+      t.ok(/minmax\(min\(\d+px, 100%\), 1fr\)/.test(railLine ? railLine[1] : ''), '玩具盒竖条同样兜底')
       t.ok(/overflow-x:\s*visible/.test(grid), '不横滑，于是也没有那条横贯的滚动条')
       // 手机那一套一字不动（D75）：窄屏块里的横滑机制原样还在
       const narrow = /@media \(max-width: 767px\) \{[\s\S]*?\n\}/g
@@ -5302,6 +5319,132 @@ cases.push(
       const mine = layoutRow({ id: 'c', name: '我的', rle: 'r', note: '我写的一句' }, tr)
       t.equal(mine.full, '我写的一句', '自存的没有短语/全文之分，用户写的那一句两处都用')
       t.equal(mine.note, '我写的一句', '而且一个字都不改写（D83）')
+    }
+  },
+  {
+    name: '元像素零件：两块静物是直柱（D96 ①）',
+    run(t) {
+      // D64 要的"实测生平"，对静物就是这一句：**它真的一动不动**。
+      // 判据是逐格比对，不是人口数 —— 人口不变而图形变了的东西多的是（振荡子就是）。
+      for (const key of ['block', 'beehive']) {
+        const p = getPattern(key)
+        const e = new LifeEngine(60, 60, { rule: lifeRule(), boundary: 'dead' })
+        placePattern(e, p, 20, 20)
+        e.stats.alive = e.countAlive()
+        const s0 = e.cur.slice()
+        let stable = true
+        for (let g = 0; g < 200; g++) { e.step(); if (String(e.cur) !== String(s0)) { stable = false; break } }
+        t.ok(stable, `${key} 跑 200 代逐格不变`)
+        t.equal(e.stats.alive, p.cells.length, `${key} 人口始终是 ${p.cells.length}`)
+      }
+    }
+  },
+  {
+    name: '元像素零件：三条飞船同速不同块头（D96 ①）',
+    run(t) {
+      // 补齐飞船族的意义就在这个数上：轻/中/重速度**一模一样**，差的只是块头。
+      for (const [key, cells] of [['lwss', 9], ['mwss', 11], ['hwss', 13]]) {
+        const m = motionNow(getPattern(key), { rot: 0, flip: false })
+        t.equal(`${m.dx},${m.dy}/${m.gens}`, '-1,0/2', `${key} 每 2 代往西走一格（c/2）`)
+        t.equal(getPattern(key).cells.length, cells, `${key} ${cells} 格`)
+      }
+      // 与盒里那架滑翔机同处一盒，方向各测各的：飞船朝西，滑翔机朝 SE
+      const g = motionNow(getPattern('glider'), { rot: 0, flip: false })
+      t.equal(`${g.dx},${g.dy}`, '1,1', '滑翔机仍朝 SE —— 三条船的方向没把它带偏')
+    }
+  },
+  {
+    name: '元像素零件：蜂后穿梭机周期 30（D96 ①）',
+    run(t) {
+      const p = getPattern('qbshuttle')
+      const e = new LifeEngine(80, 80, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e, p, 25, 35)
+      e.stats.alive = e.countAlive()
+      const s0 = e.cur.slice()
+      let period = null
+      for (let g = 1; g <= 200; g++) { e.step(); if (String(e.cur) === String(s0)) { period = g; break } }
+      t.equal(period, 30, '第 30 代逐格回到起始盘面')
+      // 两端的方块是稳定器，不是装饰：拿掉就不再是周期 30 的东西
+      const bare = { key: 'x', w: p.w, h: p.h, cells: p.cells.filter(([x]) => x > 3 && x < p.w - 4) }
+      const e2 = new LifeEngine(80, 80, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e2, bare, 25, 35)
+      e2.stats.alive = e2.countAlive()
+      const b0 = e2.cur.slice()
+      let bp = null
+      for (let g = 1; g <= 200; g++) { e2.step(); if (String(e2.cur) === String(b0)) { bp = g; break } }
+      t.ok(bp !== 30, `拿掉两端的稳定器就不是周期 30 了（实测 ${bp === null ? '两百代都没回到原样' : '周期 ' + bp}）`)
+    }
+  },
+  {
+    name: '元像素零件：反射器把滑翔机拐 90°，自己逐格复原（D96 ①，D64 互动型）',
+    run(t) {
+      const snark = getPattern('snark')
+      // 独放是静物 —— 反射器的前提就是"平时一动不动"
+      const e = new LifeEngine(70, 70, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e, snark, 23, 26)
+      e.stats.alive = e.countAlive()
+      const s0 = e.cur.slice()
+      let stable = true
+      for (let g = 0; g < 300; g++) { e.step(); if (String(e.cur) !== String(s0)) { stable = false; break } }
+      t.ok(stable, '反射器独放 300 代逐格不变')
+      t.equal(snark.cells.length, 52, '入册的是减掉演示滑翔机之后的 52 格本体')
+
+      // 反射那一局：实测摆位、实测代数、逐格复原（D64 互动型三样）
+      const m = motionNow(snark, { rot: 0, flip: false })
+      t.equal(m.kind, 'reflector', '它属反射器那一类')
+      t.equal(`${m.dx},${m.dy}`, '1,1', '默认朝向接的是从 NW 飞来、朝 SE 走的那架 —— 与盒里那架滑翔机同向（开箱即配）')
+      t.equal(`${m.outDx},${m.outDy}`, '-1,1', '出射朝 SW —— 正好拐了 90°')
+      t.equal(m.restoredAt, 29, '第 29 代反射器逐格复原')
+      t.equal(`${m.back},${m.side}`, '4,4', '摆位：沿来路退开 4 格、侧向错开 4 格（以质心为锚）')
+      // 出射必须与入射垂直：点积为零。这是"拐 90°"这句话的数值形式
+      t.equal(m.dx * m.outDx + m.dy * m.outDy, 0, '入射与出射垂直')
+
+      // 转过之后仍然成立，而且转到哪儿都还是 90°
+      for (const o of [{ rot: 1, flip: false }, { rot: 2, flip: false }, { rot: 3, flip: false }]) {
+        const r = motionNow(snark, o)
+        t.ok(!!r, `rot=${o.rot} 也量得到反射巷道`)
+        t.equal(r.dx * r.outDx + r.dy * r.outDy, 0, `rot=${o.rot} 出射仍与入射垂直`)
+        t.equal(r.restoredAt, 29, `rot=${o.rot} 同样第 29 代复原 —— 转朝向不改变这件事`)
+      }
+      // 摆位必须进文档，用户才照得出来（D64：承诺与兑现要对账）
+      // 查的是**那三个实测数字在同一段里**，不是"文档里出现过反射器三个字"——
+      // 后者在表格里也算数，把整节删掉都不会红（自查时抓到的）。
+      const doc = readSrc('docs/patterns.md')
+      const recipe = /## Snark 反射器[\s\S]{0,2500}/.exec(doc)
+      t.ok(!!recipe, 'docs/patterns.md 里要有"怎么亲手让它拐一次弯"那一节')
+      const body = recipe ? recipe[0] : ''
+      t.ok(/退开 \*\*4\*\* 格/.test(body), '文档写着沿来路退开 4 格')
+      t.ok(/错开 \*\*4\*\* 格/.test(body), '文档写着侧向错开 4 格')
+      t.ok(/第 \*\*29\*\* 代/.test(body), '文档写着第 29 代逐格复原')
+    }
+  },
+  {
+    name: '元像素零件：入册的六个都有出处与双语域（D96 ①，D64）',
+    run(t) {
+      const NEW = ['mwss', 'hwss', 'snark', 'qbshuttle', 'block', 'beehive']
+      const src = readSrc('src/engine/patterns.js')
+      for (const key of NEW) {
+        t.ok(!!getPattern(key), `${key} 在图案库里`)
+        for (const lang of ['zh', 'en']) {
+          t.ok(('pattern.' + key) in DICT[lang], `${lang} 缺 pattern.${key}`)
+          t.ok(('pattern.' + key + '.desc') in DICT[lang], `${lang} 缺 pattern.${key}.desc`)
+          t.ok(('pattern.' + key + '.simple') in DICT[lang], `${lang} 缺简洁语域名称`)
+          t.ok(('pattern.' + key + '.desc.simple') in DICT[lang], `${lang} 缺简洁语域说明`)
+        }
+      }
+      // RLE 原文照录在紧挨着的注释里（D64：ASCII 给读代码的人，RLE 才是对外的凭据）。
+      // **逐个查各自那一段**：查全文里"够不够六条"是假守卫 —— 删掉一条，
+      // 别人的那几条照样把数字凑够（自查时抓到的）。
+      for (const key of NEW) {
+        const at = src.indexOf('\n  ' + key + ': `')
+        t.ok(at > 0, `${key} 在图案表里`)
+        // 窗口必须**只覆盖这一条自己的注释**：往回取固定字数会一路取到上一条的 RLE 上，
+        // 于是删掉自己那行照样绿（自查第二次抓到的）。从上一条 ASCII 的结尾算起才准。
+        const prevEnd = src.lastIndexOf('`,', at)
+        const before = src.slice(prevEnd + 2, at)
+        t.ok(/rule = [bB]3\/[sS]23/.test(before), `${key} 紧挨着的注释里要有它自己的 RLE 原文`)
+      }
+      t.ok(/Mike Playle/.test(src) && /Bill Gosper/.test(src), '作者署名照录')
     }
   },
   {

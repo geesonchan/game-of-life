@@ -23,8 +23,11 @@ import { getPattern, placePattern, transformPattern } from './patterns.js'
 export const MOTION_KINDS = Object.freeze({
   glider: 'ship',
   lwss: 'ship',
+  mwss: 'ship',
+  hwss: 'ship',
   gun: 'gun',
-  eater: 'eater'
+  eater: 'eater',
+  snark: 'reflector'
 })
 
 /** 飞船量多少代。够长，长到把周期里的抖动摊平；够短，短到别飞出小盘。 */
@@ -42,7 +45,7 @@ export const GUN_GENS = 90
  *   · 吞食者：滑翔机最多退开 9 格，60 足够。
  * 图案一律**摆在正中**，不再摆四分之一处 —— 从正中出发，四个方向的余量才一样多。
  */
-const PROBE_SIZE = Object.freeze({ ship: 60, gun: 120, eater: 60 })
+const PROBE_SIZE = Object.freeze({ ship: 60, gun: 120, eater: 60, reflector: 70 })
 
 /** 最简分数化：把 (10,10)/40 收成 (1,1)/4，读数才像话 */
 function reduce(dx, dy, gens) {
@@ -72,6 +75,7 @@ export function measureMotion(pattern, kind) {
   if (kind === 'ship') return measureShip(pattern)
   if (kind === 'gun') return measureGun(pattern)
   if (kind === 'eater') return measureEater(pattern)
+  if (kind === 'reflector') return measureReflector(pattern)
   return null
 }
 
@@ -133,6 +137,105 @@ export function measureEater(pattern, gens = 60) {
     }
   }
   return null
+}
+
+/**
+ * 反射器（D96）：它自己不动，方向是**可接收的那条来路** —— 与吞食者同类，
+ * 差别只在判据：吞食者吃掉滑翔机（盘上只剩它自己），反射器把滑翔机**拐 90° 送走**
+ * （盘上仍有一架，方向变了）。所以三条都要，缺一条就会把别的现象当成反射：
+ *   ① 反射器**逐格复原**（不是"人口对得上"——撞坏了同时别处多出几格也能凑数）；
+ *   ② 盘上另有且仅有 5 格，且它们**在动**；
+ *   ③ 出射方向 ≠ 入射方向（否则那是"从旁边飞过去了"，不是反射）；
+ *      也不许是 0（那是被吃掉了，那是吞食者的行当）。
+ * 还有一条更朴素的：过程中人口必须偏离过（`touched`）——**没碰上就不算数**。
+ *
+ * **锚点用质心，不用包围盒左上角。** 这是被实测逼出来的：转 90° 之后包围盒的角
+ * 相对图案内部会挪好几格，同一条巷道的 (back, side) 就跟着漂，于是有些朝向搜不到 ——
+ * 而质心跟着图案一起转。改成质心之后，八个朝向量出来的都是 back=4 / side=±4，
+ * 这才是"同一条巷道"该有的样子。
+ */
+export function measureReflector(pattern, gens = 70) {
+  const n = PROBE_SIZE.reflector
+  const before = fresh(pattern, n).cur.slice()
+  const pop = pattern.cells.length
+  const anchor = centroid(fresh(pattern, n))
+  if (!anchor) return null
+  for (const o of ORIENTS) {
+    const glider = (o.rot || o.flip) ? transformPattern(getPattern('glider'), o) : getPattern('glider')
+    const ship = measureShip(glider)
+    if (!ship) continue
+    for (const side of REFLECT_SIDES) {
+      for (const back of REFLECT_BACKS) {
+        const hit = reflectOnce(pattern, before, pop, glider, ship, anchor, back, side, gens, n)
+        if (hit) {
+          return {
+            dx: ship.dx, dy: ship.dy, gens: ship.gens, kind: 'reflector',
+            restoredAt: hit.restoredAt, outDx: hit.outDx, outDy: hit.outDy, back, side
+          }
+        }
+      }
+    }
+  }
+  return null
+}
+
+/** 搜索窗口。近处优先 —— 巷道就在贴着它的那几格上，远了滑翔机根本碰不到它 */
+const REFLECT_BACKS = Object.freeze([4, 5, 6])
+const REFLECT_SIDES = Object.freeze([0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6, -6])
+
+/** 出射之后再跑这么多代来量它往哪儿走 */
+const REFLECT_OUT_GENS = 20
+
+/** 射一次：顺着来向退开 back 格、侧向错开 side 格放滑翔机，看它有没有被拐 90° 送走 */
+function reflectOnce(refl, before, pop, glider, ship, anchor, back, side, gens, n) {
+  const e = fresh(refl, n)
+  const gx = Math.round(anchor.x - ship.dx * back - ship.dy * side) - (glider.w >> 1)
+  const gy = Math.round(anchor.y - ship.dy * back + ship.dx * side) - (glider.h >> 1)
+  if (gx < 0 || gy < 0 || gx + glider.w >= n || gy + glider.h >= n) return null
+  placePattern(e, glider, gx, gy)
+  e.stats.alive = e.countAlive()
+  let touched = false
+  for (let g = 1; g <= gens; g++) {
+    if (g > REFLECT_MISS_GENS && !touched) return null    // 这么久还没碰上 = 从旁边飞过去了
+    e.step()
+    if (e.stats.alive !== pop + 5) { touched = true; continue }
+    if (!touched) continue
+    const extra = extraCells(e.cur, before)
+    if (!extra || extra.length !== 5) continue
+    const c0 = meanOf(extra, n)
+    for (let k = 0; k < REFLECT_OUT_GENS; k++) e.step()
+    const after = extraCells(e.cur, before)
+    if (!after || after.length !== 5) continue
+    const c1 = meanOf(after, n)
+    const outDx = Math.round((c1.x - c0.x) / (REFLECT_OUT_GENS / 4))
+    const outDy = Math.round((c1.y - c0.y) / (REFLECT_OUT_GENS / 4))
+    if (!outDx && !outDy) return null                     // 没了 = 被吃掉，那是吞食者的行当
+    if (outDx === ship.dx && outDy === ship.dy) return null // 方向没变 = 没拐弯
+    return { restoredAt: g, outDx, outDy }
+  }
+  return null
+}
+
+/** 多久没碰上就判定这一组是空枪 */
+const REFLECT_MISS_GENS = 40
+
+/**
+ * 盘上"不属于原图案"的那些格子。原图案的每一格都必须还在（逐格复原），
+ * 少一格就直接判失败 —— 返回 null。
+ */
+function extraCells(cur, before) {
+  const out = []
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] === 1) { if (cur[i] !== 1) return null }
+    else if (cur[i] === 1) out.push(i)
+  }
+  return out
+}
+
+function meanOf(idxs, n) {
+  let sx = 0, sy = 0
+  for (const i of idxs) { sx += i % n; sy += (i / n) | 0 }
+  return { x: sx / idxs.length, y: sy / idxs.length }
 }
 
 /** 八个朝向：四个旋转 × 两种镜像 */
@@ -226,8 +329,10 @@ export function rayEnds(kind, center, dir, bounds) {
   // 而他要判断的恰恰是"这条线会不会撞上那个东西"——那条线该有多长，由棋盘说了算。
   const away = distanceToEdge(center, ux, uy, bounds)
   const back = distanceToEdge(center, -ux, -uy, bounds)
-  if (kind === 'eater') {
-    // 来路在反方向上：图案在 to 这一端，箭头也在这一端（指向嘴）
+  if (kind === 'eater' || kind === 'reflector') {
+    // 来路在反方向上：图案在 to 这一端，箭头也在这一端（指向嘴 / 指向接口）。
+    // 反射器画的是**入射那条巷道**，不是出射的：用户要瞄的是"从哪儿射进来"，
+    // 出射往哪儿拐是它替你决定的事（出射线留给第二批那几局机关去讲）。
     return {
       from: { x: center.x - ux * back, y: center.y - uy * back },
       to: { x: center.x, y: center.y },

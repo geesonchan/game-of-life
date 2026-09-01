@@ -71,6 +71,18 @@ export function setupControls(app) {
     app.toast(t(v === 'torus' ? 'toast.boundaryTorus' : 'toast.boundaryDead'))
   })
 
+  /**
+   * 从代码里换边界（D103）：复现某些局要跟着换（整台机器要死边界）。
+   * **按钮组也要跟着变** —— 引擎换了而按钮还停在原处，就又是两份状态了。
+   * 用户自己点按钮那条路照旧，这里只是另一个入口，最终都落到同一处。
+   */
+  app.setBoundary = function (v) {
+    if (app.engine.boundary === v) return
+    app.engine.setBoundary(v)
+    el.boundary.set(v)
+    app.dirty = true
+  }
+
   el.size = setupBtnGroup('in-size', String(app.engine.w), v => {
     const n = Number(v)
     app.resizeBoard(n, n)

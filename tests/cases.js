@@ -14,6 +14,7 @@ import { DICT } from '../src/i18n/dict.js'
 import { createPrefs, PREF_KEYS, BOOKMARK_KEYS } from '../src/ui/prefs.js'
 import { BIG_LAYOUTS } from '../src/data/big-layouts.js'
 import { MACHINE_LAYOUTS } from '../src/data/machine-layouts.js'
+import { METAPIXEL_LAYOUT } from '../src/data/metapixel-layout.js'
 import { shouldCount } from '../src/analytics.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
@@ -3455,8 +3456,9 @@ cases.push(
 
       // 排序：内置在前，自存的新的在前（横条上刚存完的那一张就在开头）
       const rows = layoutRows({ layouts: [{ id: 'a', name: '甲' }, { id: 'b', name: '乙' }] }, tr)
-      const builtinCount = BUILTIN_LAYOUTS.length + BIG_LAYOUTS.length + MACHINE_LAYOUTS.length
-      t.equal(rows.length, builtinCount + 2, '内置（自家三条 + 中量级经典五条 + 六局机关）+ 两条自存')
+      const builtinCount = BUILTIN_LAYOUTS.length + BIG_LAYOUTS.length + MACHINE_LAYOUTS.length + 1
+      t.equal(rows.length, builtinCount + 2, '内置（三条小局 + 五条经典 + 六局机关 + 整台机器）+ 两条自存')
+      t.equal(rows[builtinCount - 1].id, 'builtin:otca-metapixel', '整台机器压轴，排在所有内置的最后')
       t.ok(rows.slice(0, builtinCount).every(r => r.builtin), '内置在前')
       t.equal(rows[builtinCount].name, '乙', '后存的排在前面')
     }
@@ -5923,6 +5925,62 @@ cases.push(
     }
   },
   {
+    name: '整台机器：RLE 自洽，铺下去一百代空转不死（D103 ④）',
+    run(t) {
+      // ① 身份：文件里的 x/y 与解出来的包围盒、活细胞数，与条目里声明的三个数必须一致 ——
+      //    条目声明这三个数是为了"不必先解析 161 KB 才知道摆不摆得下"，
+      //    声明与实物一旦对不上，卡片就会拿错误的尺寸去判断。
+      const text = readSrc('public/patterns/otca-metapixel.rle')
+      const p = parseRLE(text)
+      t.equal(p.w, METAPIXEL_LAYOUT.w, '宽与条目声明一致')
+      t.equal(p.h, METAPIXEL_LAYOUT.h, '高与条目声明一致')
+      t.equal(p.cells.length, METAPIXEL_LAYOUT.cells, '活细胞数与条目声明一致')
+      t.equal(`${p.w}×${p.h}`, '2058×2058', '就是 OTCA 元像素那个尺寸')
+      t.equal(compileNotation(p.rule).fingerprint, compileNotation('B3/S23').fingerprint, '标准生命游戏规则')
+      t.ok(/#O Brice Due/.test(text), '作者署名照录在文件里')
+      t.ok(METAPIXEL_LAYOUT.board >= p.w && METAPIXEL_LAYOUT.board >= p.h, '声明的档位摆得下它')
+      t.equal(METAPIXEL_LAYOUT.board, 2304, '元像素档')
+      t.equal(METAPIXEL_LAYOUT.boundary, 'dead', '默认死边界 —— 它是一台机器，不该自己绕回来撞自己')
+      t.ok(!METAPIXEL_LAYOUT.rle && !!METAPIXEL_LAYOUT.rleUrl, '格子走静态文件，不进首屏包')
+
+      // ② 铺下去真的会空转：跑 100 代，人口始终在实测区间里，且一格不少地活着
+      const n = METAPIXEL_LAYOUT.board
+      const e = new LifeEngine(n, n, { rule: lifeRule(), boundary: 'dead' })
+      const ox = (n - p.w) >> 1, oy = (n - p.h) >> 1
+      for (const [x, y] of p.cells) e.set(ox + x, oy + y, 1)
+      e.stats.alive = e.countAlive()
+      t.equal(e.stats.alive, 64691, '铺盘之后一格不差')
+      let min = e.stats.alive, max = e.stats.alive
+      for (let g = 1; g <= 100; g++) {
+        const st = e.step()
+        if (st.alive < min) min = st.alive
+        if (st.alive > max) max = st.alive
+      }
+      // 实测 100 代内 54577–65120。**下界才是要紧的那条**：它证明这台机器在空转而不是在塌
+      t.ok(min > 50000, `一百代里人口从没跌破五万（实测最低 ${min}）—— 它在空转，不是在死`)
+      t.ok(max < 70000, `也没有失控增长（实测最高 ${max}）`)
+      t.ok(e.stats.alive > 60000, `一百代之后仍有 ${e.stats.alive} 格`)
+
+      // ③ **没量到的东西不许写进生平**（D82）：跑满 35,528 代它没回到起点，
+      // 所以生平里不许出现 period —— 35,328 是这台机器的设计值，不是我们量到的周期。
+      t.ok(METAPIXEL_LAYOUT.life.end !== 'cycle', '生平不许声称是周期局')
+      t.ok(!('period' in METAPIXEL_LAYOUT.life), '生平里不许有没量到的周期')
+      for (const lang of ['zh', 'en']) {
+        const life = DICT[lang]['fav.mp.otca.life']
+        t.ok(/35,?528/.test(life), `${lang} 的生平写着实际跑了多少代`)
+        t.ok(/54,?337/.test(life) && /65,?280/.test(life), `${lang} 的生平写着实测人口区间`)
+      }
+      // ④ 说明第一句是导航，不是介绍
+      for (const lang of ['zh', 'en']) {
+        const full = DICT[lang]['fav.mp.otca.full']
+        t.ok(/看不清是正常的|unreadable/.test(full), `${lang} 的说明先讲"看不清是正常的"`)
+        t.ok(/Brice Due/.test(full), `${lang} 的说明带作者署名`)
+        t.ok(/fav\.mp\.otca\.full\.simple/.test('fav.mp.otca.full.simple') && ('fav.mp.otca.full.simple' in DICT[lang]),
+          `${lang} 有简洁语域的说明`)
+      }
+    }
+  },
+  {
     name: '六局机关：摆位与生平都是跑出来的（D102 ③）',
     run(t) {
       t.equal(MACHINE_LAYOUTS.length, 6, '六局')
@@ -5997,6 +6055,10 @@ cases.push(
       }
       t.ok(/43 代才恢复/.test(notes), '把"反射器恢复 43 代"这条教训写进去了')
       t.ok(/信号变轨/.test(notes) && /还没有稳定摆位/.test(notes), '没做出来的如实写明')
+      // 整台机器那一节（D103 ⑤）：指向那一局，并先教怎么看
+      t.ok(/## 五、整台机器/.test(notes), '笔记页有「整台机器」这一节')
+      t.ok(/整盘视图里看不清是正常的/.test(notes), '那一节先说清"看不清是正常的"')
+      t.ok(/2304² 的死边界盘/.test(notes), '写明它摆在哪种盘上')
     }
   },
   {

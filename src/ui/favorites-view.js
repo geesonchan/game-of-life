@@ -54,6 +54,9 @@ export function createFavorites(app) {
    */
   app.replayLayout = function (entry) {
     const rule = ruleOf(entry.rle)
+    // 边界也是这一局的一部分（D103）：整台机器要死边界 —— 它是一台机器，
+    // 不该让自己吐出去的东西绕回来撞自己。只有声明了的才动，其余局一概不碰用户的设置。
+    if (entry.boundary && app.engine.boundary !== entry.boundary) app.setBoundary(entry.boundary)
     // 中量级经典要更大的盘才摆得下（D94 ②）。换盘会清盘，所以顺序是"先换盘再铺"，
     // 而且这一步之前必须已经问过用户 —— 问在 openShowEntry 那里，不在这里。
     const need = boardNeededBy(entry)
@@ -189,11 +192,30 @@ export function createFavorites(app) {
    */
   const dimCache = new Map()
   function dimsOf(entry) {
+    // 声明了尺寸的直接用（整台机器那条：格子还没取回来，但卡片已经要判摆不摆得下了）
+    if (entry.w && entry.h) return { w: entry.w, h: entry.h }
     if (!dimCache.has(entry.id)) {
       try { const p = parseRLE(entry.rle); dimCache.set(entry.id, { w: p.w, h: p.h }) }
       catch (e) { dimCache.set(entry.id, null) }
     }
     return dimCache.get(entry.id)
+  }
+
+  /**
+   * 取回这一局的格子。绝大多数局的 RLE 就在条目里；
+   * 只有"整台机器"那条是 161 KB 的静态文件，等到点开才去拿（D103）。
+   * 取回来的存在内存里，同一次会话不再取第二遍。
+   */
+  const rleCache = new Map()
+  async function rleOf(entry) {
+    if (entry.rle) return entry.rle
+    if (!entry.rleUrl) return null
+    if (rleCache.has(entry.id)) return rleCache.get(entry.id)
+    const res = await fetch(entry.rleUrl)
+    if (!res.ok) throw new Error(String(res.status))
+    const text = await res.text()
+    rleCache.set(entry.id, text)
+    return text
   }
 
   /** 这一局至少要多大的盘：条目自己声明的档位优先，否则按它的包围盒算 */
@@ -243,8 +265,18 @@ export function createFavorites(app) {
       app.setStamp(p)               // 到此为止：引擎一格没动，棋盘一格没清
       return plan
     }
-    // 异规则：整盘替换。空盘时一点即开，有东西时先问一句（D82：劳动不得被静默清掉）
-    const go = () => { if (app.replayLayout(entry)) app.setRunning(true) }
+    // 异规则 / 摆不下：整盘替换。空盘时一点即开，有东西时先问一句（D82：劳动不得被静默清掉）
+    const go = () => {
+      if (!entry.rle && entry.rleUrl) {
+        // 161 KB 要走一趟网络：先说一句，别让人以为点了没反应
+        app.toast(t('fav.show.loading', { name: entry.name }))
+        rleOf(entry).then(rle => {
+          if (app.replayLayout({ ...entry, rle })) app.setRunning(true)
+        }).catch(err => app.toast(t('fav.show.loadFail', { name: entry.name, reason: String(err.message || err) })))
+        return
+      }
+      if (app.replayLayout(entry)) app.setRunning(true)
+    }
     if (plan === 'replace') { go(); return plan }
     // 换的是什么，就说什么：规则、盘、还是两样都换。
     // 三句独立成条而不是拼字符串 —— 拼出来的句子在另一种语言里往往不成话。

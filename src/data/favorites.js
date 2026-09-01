@@ -23,6 +23,7 @@ export const RECENT_SHOWN = 5
  */
 import { BIG_LAYOUTS } from './big-layouts.js'
 import { MACHINE_LAYOUTS } from './machine-layouts.js'
+import { METAPIXEL_LAYOUT } from './metapixel-layout.js'
 
 export const BUILTIN_LAYOUTS = Object.freeze([
   {
@@ -210,10 +211,16 @@ export function lifeText(life, tr) {
 export function layoutRow(entry, tr) {
   // board / scale 只有中量级经典有（D94 ②）：卡片要据此标出规模档，
   // 点它的时候也要据此判断"现在这个盘摆不摆得下"
-  const size = { board: entry.board || 0, scale: entry.scale || '' }
+  // rleUrl/w/h/boundary 只有"整台机器"那一条有（D103）：
+  // 它的格子等到点开才去取，所以尺寸得先声明出来，卡片才判得了摆不摆得下
+  const size = {
+    board: entry.board || 0, scale: entry.scale || '',
+    rleUrl: entry.rleUrl || '', w: entry.w || 0, h: entry.h || 0,
+    boundary: entry.boundary || ''
+  }
   if (entry.nameKey) {
     return {
-      id: entry.id, rle: entry.rle, builtin: true, ...size,
+      id: entry.id, rle: entry.rle || '', builtin: true, ...size,
       name: tr(entry.nameKey), note: tr(entry.nameKey + '.desc'), life: tr(entry.nameKey + '.life'),
       // 完整说明（作者/年份/机制）只有声明了 full 的条目才有 —— 没有的不查词典，
       // 因为 t() 在缺词时会把 key 原样吐出来，那就会在卡片上显示一串 'fav.builtin.x.full'
@@ -234,8 +241,9 @@ export function layoutRow(entry, tr) {
 export function layoutRows(state, tr) {
   // 顺序在表达来源：先三条自家摆的小局，再五条中量级经典，最后才是用户自存的。
   // 经典排在自存之前而不是最后 —— 它们与内置局同属"随代码发布、删不掉"的那一类。
-  // 顺序在表达来源：自家三条小局 → 中量级经典 → 元像素零件的机关 → 用户自存
-  const builtin = BUILTIN_LAYOUTS.concat(BIG_LAYOUTS, MACHINE_LAYOUTS).map(b => layoutRow(b, tr))
+  // 顺序在表达来源：自家三条小局 → 中量级经典 → 元像素零件的机关 → **整台机器压轴** → 用户自存
+  const builtin = BUILTIN_LAYOUTS.concat(BIG_LAYOUTS, MACHINE_LAYOUTS, [METAPIXEL_LAYOUT])
+    .map(b => layoutRow(b, tr))
   const mine = (state.layouts || []).slice().reverse().map(e => layoutRow(e, tr))
   return builtin.concat(mine)
 }

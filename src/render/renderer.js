@@ -282,16 +282,23 @@ export class Renderer {
     grad.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`)
     ctx.save()
     ctx.strokeStyle = grad
-    ctx.lineWidth = Math.max(1, Math.min(3, vp.scale / 4)) * (opts.ref ? 0.6 : 1)
-    ctx.setLineDash([Math.max(4, vp.scale), Math.max(3, vp.scale * 0.6)])
+    ctx.lineWidth = Math.max(1, Math.min(3, vp.scale / 4)) * (opts.ref ? 0.6 : 1) * (opts.exit ? 0.8 : 1)
+    // 两种线，两种说法（D100）：
+    //   · **入口线画实的** —— 它是"你要瞄的那条"，要看清对没对上；
+    //   · **出口线画虚的、更淡** —— 它是"东西会往哪儿去"，是预告，不该和要瞄的那条抢眼。
+    // 枪的弹道、飞船的航线都归后一种：它们说的也是"从我这儿出去的东西走哪条线"。
+    if (opts.exit) ctx.setLineDash([Math.max(3, vp.scale * 0.7), Math.max(3, vp.scale * 0.7)])
+    else ctx.setLineDash([])
+    ctx.globalAlpha = opts.exit ? 0.75 : 1
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
     ctx.setLineDash([])
+    ctx.globalAlpha = 1
     // 箭头是实的：它标的是"哪一头要紧"，不该跟着淡掉
     const tip = arrowAt === 'from' ? a : b
     const tail = arrowAt === 'from' ? b : a
     const ang = Math.atan2(tip.y - tail.y, tip.x - tail.x)
-    const size = Math.max(7, Math.min(18, vp.scale * 1.6))
-    ctx.globalAlpha = 0.85 * k
+    const size = Math.max(7, Math.min(18, vp.scale * 1.6)) * (opts.exit ? 0.85 : 1)
+    ctx.globalAlpha = 0.85 * k * (opts.exit ? 0.75 : 1)
     ctx.fillStyle = rgb(this.flat)
     ctx.beginPath()
     ctx.moveTo(tip.x, tip.y)

@@ -38,7 +38,7 @@ import { CRITICAL_SPEC, CRITICAL_CLASSIFY, EMERGENCE_MIN_GENS, REFINE_WIDTH, den
 import { createTwin, measure, diffCells, TWIN, TWIN_EXAMPLES } from '../src/data/twin.js'
 import { LOCKIN_SPEC, findLockIn, baselineStates, canFlipAt, candidateCells, runToEnd } from '../src/data/lockin.js'
 import { orientToastKey, orientLabel, shouldShowStampTip } from '../src/ui/stamp-hint.js'
-import { MOTION_KINDS, motionOf, motionNow, motionCached, motionKey, rotateVector, rayAnchor, landingDots,
+import { MOTION_KINDS, motionOf, motionNow, motionCached, motionKey, rotateVector, rayAnchor, landingDots, entryEnds, exitEnds,
   rayEnds, RAY_FALLBACK, distanceToEdge, centroid, refFromPlacement } from '../src/engine/motion.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
@@ -4796,11 +4796,12 @@ cases.push(
       const r = readSrc('src/render/renderer.js')
       t.ok(/const k = opts\.ref \? 0\.45 : 1/.test(r), '参照线整体更淡')
       t.ok(/\* \(opts\.ref \? 0\.6 : 1\)/.test(r), '线也更细')
-      t.ok(/globalAlpha = 0\.85 \* k/.test(r), '箭头跟着一起淡')
+      t.ok(/globalAlpha = 0\.85 \* k \*/.test(r), '箭头跟着一起淡')
       t.ok(/drawMotionRay\(vp, from, to, arrowAt = 'to', solidEnd = 'from', opts = \{\}\)/.test(r),
         '样式是参数，不是第二个画线函数')
       // 画在最底下：参照线先画，幽灵与它的线压在上面
-      t.ok(/app\.refRay\)[\s\S]{0,400}drawMotionRay[\s\S]{0,900}drawGhost/.test(main),
+      // 画在最底下：参照线（现在是入口 + 出口两条）先画，幽灵与它的线压在上面
+      t.ok(/app\.refRay\)[\s\S]{0,900}drawMotionRay[\s\S]{0,1600}drawGhost/.test(main),
         '参照线画在幽灵与待放线之下 —— 手上那条要压过刚才那条')
     }
   },
@@ -5698,6 +5699,136 @@ cases.push(
       const rend = stripLiterals(readSrc('src/render/renderer.js'))
       t.ok(/if \(opts\.dots && opts\.dots\.length\)/.test(rend), '渲染器要认 opts.dots')
       t.ok(/ctx\.arc\(/.test(rend), '落点画成小圈')
+    }
+  },
+  {
+    name: '动向线：出口线画的就是那架滑翔机真飞的那条（D100）',
+    run(t) {
+      // 用户要的：入口线说"从哪进"，出口线说"拐向哪去"。
+      // 守卫口径就是他给的那句：**出口线上标的方向 = 实测出射滑翔机的质心位移**。
+      // 顺带把更强的一条也验了：那架滑翔机**真的飞在那条线上**（垂距不超过半格）。
+      const N = 90
+      const ORI = [{ rot: 0, flip: false }, { rot: 1, flip: false }, { rot: 2, flip: false }, { rot: 3, flip: false },
+        { rot: 0, flip: true }, { rot: 1, flip: true }, { rot: 2, flip: true }, { rot: 3, flip: true }]
+
+      for (const o of ORI) {
+        const base = getPattern('snark')
+        const pat = (o.rot || o.flip) ? transformPattern(base, o) : base
+        const m = motionNow(base, o)
+        t.ok(!!m.exit, `rot=${o.rot} flip=${o.flip} 量到了出射航道`)
+        if (!m.exit) continue
+        t.equal(`${m.exit.dx},${m.exit.dy}`, `${m.outDx},${m.outDy}`, '出口线的方向就是实测的出射方向')
+        t.equal(m.dx * m.exit.dx + m.dy * m.exit.dy, 0, '入射与出射垂直 —— 它是个 90° 反射器')
+
+        const ox = (N - pat.w) >> 1, oy = (N - pat.h) >> 1
+        const bounds = { w: N, h: N }
+        const en = entryEnds(pat, { x: ox, y: oy }, m, bounds)
+        const ex = exitEnds(pat, { x: ox, y: oy }, m, bounds)
+        t.ok(!!en && !!ex, '反射器两条线都有')
+        t.equal(en.arrowAt, 'to', '入口线的箭头指向图案')
+        t.equal(ex.solidEnd, 'from', '出口线的浓端在图案这一头')
+        t.equal(`${ex.from.x},${ex.from.y}`, `${ex.center.x},${ex.center.y}`, '出口线从图案这儿起画')
+        const outward = (ex.to.x - ex.from.x) * m.exit.dx + (ex.to.y - ex.from.y) * m.exit.dy
+        t.ok(outward > 0, '出口线的箭头朝外')
+
+        // 真跑一遍：把滑翔机放在入口线的落点上，看出射那架走的是不是这条出口线
+        const glider = (m.via.rot || m.via.flip)
+          ? transformPattern(getPattern('glider'), m.via) : getPattern('glider')
+        const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+        placePattern(e, pat, ox, oy)
+        const before = e.cur.slice()
+        const land = m.landings[Math.min(2, m.landings.length - 1)]
+        placePattern(e, glider, ox + land.at.x, oy + land.at.y)
+        e.stats.alive = e.countAlive()
+        const pop = pat.cells.length
+        let restored = 0
+        for (let g = 1; g <= 200 && !restored; g++) {
+          e.step()
+          if (e.stats.alive !== pop + 5) continue
+          let intact = true, extra = 0
+          for (let i = 0; i < before.length; i++) {
+            if (before[i] === 1) { if (e.cur[i] !== 1) { intact = false; break } }
+            else if (e.cur[i] === 1) extra++
+          }
+          if (intact && extra === 5 && g > 20) restored = g
+        }
+        t.ok(restored > 0, `rot=${o.rot} flip=${o.flip} 这一发确实反射成功了`)
+        if (!restored) continue
+        // 量出射那架的位置：**只认离开了图案身子的那一架**。
+        // 它刚拐出来时会贴着反射器走，有几格正好压在反射器自己的格子上，
+        // "与 before 不同的格子"就数不满五个 —— 那时候量到的质心是缺角的（自查时踩到）。
+        const mean = () => {
+          const cells = []
+          for (let i = 0; i < before.length; i++) {
+            if (e.cur[i] === 1 && before[i] !== 1) cells.push(i)
+          }
+          if (cells.length !== 5) return null
+          const outside = cells.every(i => {
+            const x = i % N, y = (i / N) | 0
+            return x < ox - 1 || x >= ox + pat.w + 1 || y < oy - 1 || y >= oy + pat.h + 1
+          })
+          if (!outside) return null
+          return { x: cells.reduce((a2, i) => a2 + i % N, 0) / 5, y: cells.reduce((a2, i) => a2 + ((i / N) | 0), 0) / 5 }
+        }
+        let p0 = null
+        for (let k = 0; k < 60 && !p0; k++) { e.step(); p0 = mean() }
+        let p1 = null
+        for (let k = 0; k < 20; k++) e.step()
+        p1 = mean()
+        t.ok(!!p0 && !!p1, '出射的那架一直在盘上')
+        if (!p0 || !p1) continue
+        const vx = p1.x - p0.x, vy = p1.y - p0.y
+        // 叉积为零 = 平行。**取绝对值**：叉积算出来可能是 -0，
+        // 而 Object.is(-0, +0) 是 false —— 断言会在一个完全正确的结果上红（自查时踩到）
+        t.equal(Math.abs(Math.round(vx * m.exit.dy - vy * m.exit.dx)), 0,
+          `实测位移 (${vx.toFixed(1)},${vy.toFixed(1)}) 与出口线方向 (${m.exit.dx},${m.exit.dy}) 平行`)
+        t.ok(vx * m.exit.dx + vy * m.exit.dy > 0, '而且是同一个朝向，不是反着的')
+        const len = Math.hypot(m.exit.dx, m.exit.dy)
+        const ux = m.exit.dx / len, uy = m.exit.dy / len
+        for (const pt of [p0, p1]) {
+          const rx = pt.x - ex.center.x, ry = pt.y - ex.center.y
+          t.ok(Math.abs(rx * -uy + ry * ux) <= 0.5,
+            `出射的滑翔机就在出口线上（垂距 ${Math.abs(rx * -uy + ry * ux).toFixed(2)} 格）`)
+        }
+      }
+
+      // 吞食者没有出口 —— 进去的东西没再出来，画一条线就是在编
+      const eater = getPattern('eater')
+      const em = motionNow(eater, { rot: 0, flip: false })
+      t.ok(!em.exit, '吞食者没有出射航道')
+      t.equal(exitEnds(eater, { x: 0, y: 0 }, em, { w: 60, h: 60 }), null, '吞食者不画出口线')
+      t.ok(!!entryEnds(eater, { x: 0, y: 0 }, em, { w: 60, h: 60 }), '但入口线照旧')
+
+      // 枪与飞船：只有出口线，与反射器的出口同一个口径（同一个函数、同一种画法）
+      for (const key of ['gun', 'glider']) {
+        const p = getPattern(key)
+        const mm = motionNow(p, { rot: 0, flip: false })
+        t.equal(entryEnds(p, { x: 0, y: 0 }, mm, { w: 140, h: 140 }), null, `${key} 没有入口线`)
+        const x = exitEnds(p, { x: 0, y: 0 }, mm, { w: 140, h: 140 })
+        t.ok(!!x, `${key} 有出口线`)
+        t.equal(`${x.dx},${x.dy}`, `${mm.dx},${mm.dy}`, `${key} 的出口线就是它自己的方向`)
+      }
+
+      // 出口线画成虚的、更淡；入口线画成实的（样式是参数，不是第二个画线函数）
+      const r = readSrc('src/render/renderer.js')
+      t.ok(/if \(opts\.exit\) ctx\.setLineDash/.test(r) && /else ctx\.setLineDash\(\[\]\)/.test(r),
+        '入口实线、出口虚线')
+      t.ok(/opts\.exit \? 0\.75 : 1/.test(r), '出口线更淡')
+      const mainSrc2 = stripLiterals(readSrc('src/main.js'))
+      t.ok(/exitEnds\(gp, o, m, bounds\)/.test(mainSrc2), '待放时画出口线')
+      t.ok(/r\.exit/.test(mainSrc2), '参照线也带出口线')
+
+      // 参照线里那条出口是**真存下来了**，不是源码里提了一嘴。
+      // 冻在落子那一刻：一个点 + 一个方向，够画（D91 说过它是静态贴纸）
+      const sn = getPattern('snark')
+      const sm = motionNow(sn, { rot: 0, flip: false })
+      const ref = refFromPlacement(sn, { x: 30, y: 30 }, sm)
+      t.ok(!!ref.exit, '放下反射器之后，参照线带着出口')
+      t.equal(`${ref.exit.dx},${ref.exit.dy}`, `${sm.exit.dx},${sm.exit.dy}`, '出口方向与实测一致')
+      t.equal(`${ref.exit.center.x},${ref.exit.center.y}`,
+        `${30 + sm.exit.lane.x},${30 + sm.exit.lane.y}`, '出口线的点也换算成了棋盘坐标')
+      const eref = refFromPlacement(eater, { x: 30, y: 30 }, em)
+      t.equal(eref.exit, null, '吞食者的参照线没有出口')
     }
   },
   {

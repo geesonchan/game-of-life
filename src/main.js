@@ -15,7 +15,7 @@ import { setupCanvasInput } from './ui/input.js'
 import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
 import { watchPageZoom } from './ui/page-zoom.js'
 import { orientToastKey, orientLabel, shouldShowStampTip } from './ui/stamp-hint.js'
-import { motionCached, rayEnds, rayAnchor, landingDots, refFromPlacement } from './engine/motion.js'
+import { motionCached, rayEnds, entryEnds, exitEnds, landingDots, refFromPlacement } from './engine/motion.js'
 import { placeSelectionMenu } from './ui/io.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
@@ -782,9 +782,19 @@ function frame(now) {
     // 它与待放的那条用的是同一套几何（rayEnds），只是样式退一档。
     if (app.visualOpts.motionRay && app.refRay) {
       const r = app.refRay
-      const ends = rayEnds(r.kind, r.center, r, { w: app.engine.w, h: app.engine.h })
-      app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd,
-        { ref: true, dots: r.dots || [] })
+      const bounds = { w: app.engine.w, h: app.engine.h }
+      // 入口线（互动型才有）：刚放下的那台从哪儿接东西
+      if (r.kind === 'eater' || r.kind === 'reflector') {
+        const ends = rayEnds(r.kind, r.center, r, bounds)
+        app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd,
+          { ref: true, dots: r.dots || [] })
+      }
+      // 出口线（D100）：反射器拐出去的那条、枪的弹道、飞船的航线，同一个口径
+      if (r.exit) {
+        const ex = rayEnds('ship', r.exit.center, r.exit, bounds)
+        app.renderer.drawMotionRay(app.viewport, ex.from, ex.to, ex.arrowAt, ex.solidEnd,
+          { ref: true, exit: true })
+      }
     }
     // 方向键微调后幽灵脱离鼠标跟随（pendingStamp 非空即钉住）
     const gc = app.pendingStamp || app.hoverCell
@@ -797,13 +807,20 @@ function frame(now) {
         // 没量过的先不画，量完了叫醒下一帧（量吞食者最慢要两百多毫秒，不能卡在这一帧里）
         const m = motionCached(app.stamp, app.stampOrient, () => { app.dirty = true })
         if (m) {
-          // **线穿过实测出来的航道点，不是包围盒中心**（D98）：反射器能接收的航道
-          // 在质心侧向四格外，从中心画出去的那条线对齐了也撞不上。
-          const center = rayAnchor(gp, o, m)
-          // 线一路画到棋盘边（D89 ②），所以要把棋盘尺寸交给它
-          const ends = rayEnds(m.kind, center, m, { w: app.engine.w, h: app.engine.h })
-          app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd,
-            { dots: landingDots(o, m) })
+          // 两条线（D100）：入口"从哪儿进来"、出口"会往哪儿去"。
+          // 各自穿过**实测出来的**航道点，不是包围盒中心（D98）——
+          // 反射器能接收的航道在质心侧向四格外，从中心画出去的线对齐了也撞不上。
+          // 线一路画到棋盘边（D89 ②），所以要把棋盘尺寸交给它。
+          const bounds = { w: app.engine.w, h: app.engine.h }
+          const en = entryEnds(gp, o, m, bounds)
+          if (en) {
+            app.renderer.drawMotionRay(app.viewport, en.from, en.to, en.arrowAt, en.solidEnd,
+              { dots: landingDots(o, m) })
+          }
+          const ex = exitEnds(gp, o, m, bounds)
+          if (ex) {
+            app.renderer.drawMotionRay(app.viewport, ex.from, ex.to, ex.arrowAt, ex.solidEnd, { exit: true })
+          }
         }
       }
       app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h)

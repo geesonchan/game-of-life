@@ -195,11 +195,21 @@ function interactionWorks(pattern, before, pop, glider, gx, gy, size, kind) {
  */
 function withNormalLane(motion, pattern) {
   if (!motion || !motion.lane) return motion
-  const n = Math.hypot(motion.dx, motion.dy) || 1
-  const ux = motion.dx / n, uy = motion.dy / n
+  const out = { ...motion, lane: slideToPattern(motion.lane, motion, pattern) }
+  // 出射那条同样要滑回来：不然线从图案外十几格才起头，中间断一截（D100）
+  if (motion.exit && motion.exit.lane) {
+    out.exit = { ...motion.exit, lane: slideToPattern(motion.exit.lane, motion.exit, pattern) }
+  }
+  return out
+}
+
+/** 把线上的一点沿着这条线自己滑到离图案最近处。纯几何，不动方向也不动这条线 */
+function slideToPattern(lane, dir, pattern) {
+  const n = Math.hypot(dir.dx, dir.dy) || 1
+  const ux = dir.dx / n, uy = dir.dy / n
   const cx = (pattern.w - 1) / 2, cy = (pattern.h - 1) / 2
-  const t = (cx - motion.lane.x) * ux + (cy - motion.lane.y) * uy
-  return { ...motion, lane: { x: motion.lane.x + ux * t, y: motion.lane.y + uy * t } }
+  const t = (cx - lane.x) * ux + (cy - lane.y) * uy
+  return { x: lane.x + ux * t, y: lane.y + uy * t }
 }
 
 /** 飞船：多代质心位移 */
@@ -313,7 +323,9 @@ export function measureReflector(pattern, gens = 70) {
             dx: ship.dx, dy: ship.dy, gens: ship.gens, kind: 'reflector',
             restoredAt: hit.restoredAt, outDx: hit.outDx, outDy: hit.outDy, back, side,
             via: { rot: o.rot, flip: o.flip },
-            lane: laneOf(pattern, n, ship, side)
+            lane: laneOf(pattern, n, ship, side),
+            // 出射航道（D100）：方向与航道点都是实测的 —— 那架滑翔机往哪飞、飞在哪条线上
+            exit: { dx: hit.outDx, dy: hit.outDy, lane: localOf(hit.outAt, pattern, n) }
           }
         }
       }
@@ -354,7 +366,9 @@ function reflectOnce(refl, before, pop, glider, ship, anchor, back, side, gens, 
     const outDy = Math.round((c1.y - c0.y) / (REFLECT_OUT_GENS / 4))
     if (!outDx && !outDy) return null                     // 没了 = 被吃掉，那是吞食者的行当
     if (outDx === ship.dx && outDy === ship.dy) return null // 方向没变 = 没拐弯
-    return { restoredAt: g, outDx, outDy }
+    // 出射航道上的一点：**就是那架滑翔机自己所在的位置**（D100）。
+    // 方向与点都取自同一次推演，出口线因此画在它真正飞过的那条线上。
+    return { restoredAt: g, outDx, outDy, outAt: c0 }
   }
   return null
 }
@@ -501,6 +515,34 @@ export function landingDots(origin, motion) {
   return motion.landings.map(l => ({ x: origin.x + l.dot.x, y: origin.y + l.dot.y }))
 }
 
+/**
+ * 入口线（D100）：**从哪儿进来**。只有互动型有 —— 吞食者、反射器。
+ * 画成实线、箭头指向图案，因为它是"你要瞄的那条"。
+ * @returns {{from,to,arrowAt,solidEnd,center,dx,dy}|null}
+ */
+export function entryEnds(pattern, origin, motion, bounds) {
+  if (!motion || (motion.kind !== 'eater' && motion.kind !== 'reflector')) return null
+  const center = rayAnchor(pattern, origin, motion)
+  return { ...rayEnds(motion.kind, center, motion, bounds), center, dx: motion.dx, dy: motion.dy }
+}
+
+/**
+ * 出口线（D100）：**它会往哪儿去**。三种图案有：
+ *   · 反射器 —— 拐出去的那架滑翔机的实测轨迹；
+ *   · 枪 —— 弹道（与反射器**同一个口径**：都是"从我这儿出去的东西走哪条线"）；
+ *   · 飞船 —— 它自己的航线。
+ * 吞食者没有出口：进去的东西没再出来，画一条线就是在编（所以返回 null）。
+ * 画成虚线、更淡、箭头朝外。
+ */
+export function exitEnds(pattern, origin, motion, bounds) {
+  if (!motion) return null
+  const spec = motion.exit || (motion.kind === 'gun' || motion.kind === 'ship' ? motion : null)
+  if (!spec || !spec.lane) return null
+  const center = { x: origin.x + spec.lane.x, y: origin.y + spec.lane.y }
+  // 出口一律按"图案在起点、箭头在远端"画 —— 与飞船/枪本来的画法是同一套
+  return { ...rayEnds('ship', center, spec, bounds), center, dx: spec.dx, dy: spec.dy }
+}
+
 export function rayEnds(kind, center, dir, bounds) {
   const n = Math.hypot(dir.dx, dir.dy) || 1
   const ux = dir.dx / n, uy = dir.dy / n
@@ -555,6 +597,13 @@ export const RAY_FALLBACK = 26
  * @param {{dx:number,dy:number,kind:string}|null} motion 实测出来的动向
  * @returns {{kind:string, center:{x,y}, dx:number, dy:number}|null} 没方向就没有参照线
  */
+/** 出口线的静态形态：一个点 + 一个方向，够画了 */
+function exitSticker(pattern, origin, motion) {
+  const spec = motion.exit || (motion.kind === 'gun' || motion.kind === 'ship' ? motion : null)
+  if (!spec || !spec.lane) return null
+  return { center: { x: origin.x + spec.lane.x, y: origin.y + spec.lane.y }, dx: spec.dx, dy: spec.dy }
+}
+
 export function refFromPlacement(pattern, origin, motion) {
   if (!pattern || !origin || !motion) return null
   return {
@@ -563,7 +612,9 @@ export function refFromPlacement(pattern, origin, motion) {
     dx: motion.dx, dy: motion.dy,
     // 参照线上也标可落点：拿起下一架时，照着这些小圈放即可。
     // 落子那一刻就换算成棋盘坐标 —— 参照线是张静态贴纸（D91），不该再依赖图案对象
-    dots: landingDots(origin, motion)
+    dots: landingDots(origin, motion),
+    // 出口线同样冻在落子那一刻（D100）：它记的是"这一台当时会把东西送往哪儿"
+    exit: exitSticker(pattern, origin, motion)
   }
 }
 

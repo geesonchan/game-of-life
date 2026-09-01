@@ -109,14 +109,26 @@ Actions 那条任务点进去，`deploy` 那一格里也会直接显示这个链
 
 你的**统计地址**就是：`https://golife.goatcounter.com/count`（把 `golife` 换成你填的那个）。
 
-### 2. 告诉 GitHub 这个地址
+### 2. 地址配在哪（本仓库已经配好了）
 
-仓库 → **Settings** → 左边栏 **Secrets and variables** → **Actions** →
-切到 **Variables** 标签页（不是 Secrets）→ **New repository variable**：
+**本仓库的地址已经写在 `.github/workflows/deploy.yml` 里**（D99）：
 
-- **Name** 填 `GOATCOUNTER`
-- **Value** 填 `https://golife.goatcounter.com/count`
-- 点 Add variable
+```yaml
+VITE_GOATCOUNTER: ${{ vars.GOATCOUNTER || (github.repository == 'geesonchan/game-of-life' && 'https://geesonchan.goatcounter.com/count' || '') }}
+```
+
+读法是：
+
+1. **仓库变量 `GOATCOUNTER` 优先** —— 设了就用它。改地址、换账号、临时停掉统计，
+   都在 Settings 里改，不必动代码：
+   仓库 → **Settings** → **Secrets and variables** → **Actions** → **Variables** 标签页 →
+   **New repository variable**，Name 填 `GOATCOUNTER`，Value 填 `https://你的名字.goatcounter.com/count`。
+2. 没设变量时，**只有本仓库**回落到上面那个默认地址。
+   `github.repository ==` 那道判断是给 fork 的人留的：
+   别人 fork 去自己部署，不该把他的访问量记到原作者后台里。
+
+**为什么敢把地址写进仓库**：它本来就不是秘密 —— 最终会出现在发布出去的页面里，
+谁都能在浏览器里看到。放变量还是放这里，差别只在"改它要不要动代码"。
 
 ### 3. 让它生效
 
@@ -126,8 +138,14 @@ Actions 那条任务点进去，`deploy` 那一格里也会直接显示这个链
 ### 4. 看数字
 
 登录 <https://www.goatcounter.com/>，数字只有你看得见，页面上不显示任何计数器。
-没配这个变量的话，页面根本不会加载统计脚本——**本地开发时永远不统计**，
-`localhost` 是写死排除的（见 [`src/analytics.js`](../src/analytics.js)）。
+
+**本地开发永远不统计**，两道闸门（都有测试盯着）：
+
+1. **构建时**：本地 `npm run dev` / `npm run build` 不带 `VITE_GOATCOUNTER`，
+   于是那段代码**被整段摇掉** —— 实测本地构建产物里搜不到 `goatcounter`、
+   也搜不到 `gc.zgo.at`，一个字节都不剩，谈不上发请求。
+2. **运行时**：即便拿正式包在本地起服务，`localhost` 与 `127.0.0.1` 也是写死排除的
+   （见 [`src/analytics.js`](../src/analytics.js)）。
 
 ---
 

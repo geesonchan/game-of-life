@@ -13,6 +13,7 @@ import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_V
 import { DICT } from '../src/i18n/dict.js'
 import { createPrefs, PREF_KEYS, BOOKMARK_KEYS } from '../src/ui/prefs.js'
 import { BIG_LAYOUTS } from '../src/data/big-layouts.js'
+import { shouldCount } from '../src/analytics.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
@@ -5728,6 +5729,46 @@ cases.push(
       const rx = sx / n - anchor.x, ry = sy / n - anchor.y
       const off = Math.abs(rx * (-uy) + ry * ux)
       t.ok(off <= 1.5, `射出去的滑翔机就在线上（离线 ${off.toFixed(2)} 格）`)
+    }
+  },
+  {
+    name: '访问统计：没配地址就一律不挂，本地一律不挂（D99）',
+    run(t) {
+      // 两道闸门，缺一不可：
+      //   ① 没配地址 —— 构建里根本没有统计这回事；
+      //   ② 配了地址但跑在本地 —— 也不发。
+      // 第二道是给"用正式包在本地起服务"那种情形兜底的。
+      t.equal(shouldCount(undefined, 'example.com'), false, '没配地址就不挂')
+      t.equal(shouldCount('', 'example.com'), false, '空地址也不挂')
+      t.equal(shouldCount('https://x.goatcounter.com/count', 'localhost'), false, 'localhost 不挂')
+      t.equal(shouldCount('https://x.goatcounter.com/count', '127.0.0.1'), false, '回环地址不挂')
+      t.equal(shouldCount('https://x.goatcounter.com/count', ''), false, '拿不到域名时不挂')
+      t.equal(shouldCount('https://x.goatcounter.com/count', 'geesonchan.github.io'), true, '线上才挂')
+
+      // 源码里不许写死任何统计地址：写死了，别人 fork 去部署就会把访问量记到我们后台
+      const src = readSrc('src/analytics.js')
+      t.ok(/import\.meta\.env\.VITE_GOATCOUNTER/.test(src), '地址从构建变量来')
+      // 查的是**字符串字面量**里有没有具体地址；注释里举例说明形如 xxx.goatcounter.com 是可以的
+      const literals = src.match(/(['"`])[^'"`\n]*goatcounter\.com[^'"`\n]*\1/g) || []
+      t.equal(literals.length, 0, `源码里不许写死具体的统计地址（发现 ${literals.join(' / ')}）`)
+    }
+  },
+  {
+    name: '访问统计：构建里配在哪，一处说了算（D99）',
+    run(t) {
+      const wf = readSrc('.github/workflows/deploy.yml')
+      t.ok(/VITE_GOATCOUNTER:/.test(wf), '构建步骤把地址交给 Vite')
+      t.ok(/vars\.GOATCOUNTER/.test(wf), '仓库变量优先 —— 改地址不必动代码')
+      // 默认值只在本仓库生效：fork 出去的人不该把访问量记到原作者账号里
+      t.ok(/github\.repository == '[\w-]+\/[\w-]+'/.test(wf),
+        '默认地址必须用 github.repository 圈住，只在本仓库回落')
+      const fallback = /'(https:\/\/[\w-]+\.goatcounter\.com\/count)'/.exec(wf)
+      t.ok(!!fallback, '默认地址写成完整的 …/count 形式')
+      t.ok(/\/count$/.test(fallback ? fallback[1] : ''), '统计端点是站点地址加 /count')
+      // 文档要说清楚它现在配在哪 —— 否则下一个人会去 Settings 里找一个不存在的变量
+      const doc = readSrc('docs/deploy.md')
+      t.ok(/deploy\.yml/.test(doc), 'deploy.md 里写明默认地址落在 workflow 里')
+      t.ok(/vars\.GOATCOUNTER|仓库变量/.test(doc), 'deploy.md 里写明仓库变量仍然优先')
     }
   },
   {

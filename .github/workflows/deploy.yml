@@ -32,9 +32,15 @@ jobs:
       - run: npm test
       - run: npm run build
         env:
-          # 在仓库 Settings → Secrets and variables → Actions → Variables
-          # 里加一个名为 GOATCOUNTER 的变量；没加就是不挂统计，构建照常。
-          VITE_GOATCOUNTER: ${{ vars.GOATCOUNTER }}
+          # 访问统计的地址（D99）。取值顺序：
+          #   1. 仓库变量 GOATCOUNTER（Settings → Secrets and variables → Actions → Variables）——
+          #      设了就用它，随时能改、能清空，不必动代码；
+          #   2. 没设的话，**只有本仓库**回落到下面这个默认值。
+          # 为什么要带 `github.repository ==` 这道判断：别人 fork 去自己部署时，
+          # 不该把他的访问量记到原作者的后台里（这条理由本来就写在 src/analytics.js 的文件头）。
+          # 地址本身不是秘密 —— 它最终会出现在发布出去的页面里，所以放变量还是放这里都无所谓，
+          # 差别只在"改它要不要动代码"。
+          VITE_GOATCOUNTER: ${{ vars.GOATCOUNTER || (github.repository == 'geesonchan/game-of-life' && 'https://geesonchan.goatcounter.com/count' || '') }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

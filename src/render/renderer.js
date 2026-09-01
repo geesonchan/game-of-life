@@ -298,6 +298,18 @@ export class Renderer {
     ctx.lineTo(tip.x - size * Math.cos(ang - 0.4), tip.y - size * Math.sin(ang - 0.4))
     ctx.lineTo(tip.x - size * Math.cos(ang + 0.4), tip.y - size * Math.sin(ang + 0.4))
     ctx.closePath(); ctx.fill()
+    // 可落点（D98 ②）：线对上了还不够，还得落在这些点上。
+    // 画成小圈而不是实点 —— 它标的是"可以放在这儿"，是个位置，不是个东西。
+    if (opts.dots && opts.dots.length) {
+      const r = Math.max(2, Math.min(5, vp.scale * 0.28))
+      ctx.globalAlpha = 0.7 * k
+      ctx.lineWidth = Math.max(1, vp.scale / 8)
+      ctx.strokeStyle = rgb(this.flat)
+      for (const d of opts.dots) {
+        const q = p(d.x + 0.5, d.y + 0.5)
+        ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, Math.PI * 2); ctx.stroke()
+      }
+    }
     ctx.restore()
   }
 

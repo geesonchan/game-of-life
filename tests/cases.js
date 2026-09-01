@@ -7,7 +7,7 @@ import { normalizeSeed } from '../src/engine/prng.js'
 import { validateRule, validateClauses } from '../src/engine/validate.js'
 import { presetRule, PRESETS } from '../src/engine/presets.js'
 import { exportRule, importRule } from '../src/engine/rule-io.js'
-import { PATTERNS, PATTERN_GROUPS, groupedPatterns, getPattern, placePattern, centerOrigin, transformPattern } from '../src/engine/patterns.js'
+import { PATTERNS, PATTERN_GROUPS, groupedPatterns, getPattern, centerOrigin, placePattern, transformPattern } from '../src/engine/patterns.js'
 import { parseRLE, toRLE, boardToRLE } from '../src/engine/rle.js'
 import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_VERSION } from '../src/engine/save.js'
 import { DICT } from '../src/i18n/dict.js'
@@ -37,7 +37,7 @@ import { CRITICAL_SPEC, CRITICAL_CLASSIFY, EMERGENCE_MIN_GENS, REFINE_WIDTH, den
 import { createTwin, measure, diffCells, TWIN, TWIN_EXAMPLES } from '../src/data/twin.js'
 import { LOCKIN_SPEC, findLockIn, baselineStates, canFlipAt, candidateCells, runToEnd } from '../src/data/lockin.js'
 import { orientToastKey, orientLabel, shouldShowStampTip } from '../src/ui/stamp-hint.js'
-import { MOTION_KINDS, motionOf, motionNow, motionCached, motionKey, rotateVector,
+import { MOTION_KINDS, motionOf, motionNow, motionCached, motionKey, rotateVector, rayAnchor, landingDots,
   rayEnds, RAY_FALLBACK, distanceToEdge, centroid, refFromPlacement } from '../src/engine/motion.js'
 import { Tower, buildTower, packTower, unpackTower, TOWER_DEFAULT_HEIGHT, TOWER_MAX_HEIGHT } from '../src/data/tower.js'
 import { classifyRun, probeRule, exploreRule, majorityOutcome, sortResults, sampleBSRules,
@@ -539,7 +539,7 @@ cases.push(
         eater: [4, 4, 7], // 社区经典 Eater 1，4×4 的 7 格静物
         // 元像素零件·第一批（D96）
         mwss: [6, 5, 11], hwss: [7, 5, 13],
-        snark: [23, 17, 52],   // 减掉演示滑翔机之后的反射器本体，按 rot=1 转过
+        snark: [17, 23, 52],   // 反射器本体（减掉演示滑翔机）；朝向按"对应滑翔机 = 盒里默认那架"挑（D98）
         qbshuttle: [22, 7, 20], block: [2, 2, 4], beehive: [4, 3, 6]
       }
       for (const key of Object.keys(expect)) {
@@ -4740,7 +4740,12 @@ cases.push(
       const m = motionNow(p, { rot: 0, flip: false })
       const ref = refFromPlacement(p, { x: 20, y: 30 }, m)
       t.equal(ref.kind, 'ship', '类型跟着动向走')
-      t.equal(`${ref.center.x},${ref.center.y}`, '21,31', '中心 = 落点 + 半个图案')
+      // 锚点 = 落点 + **实测航道点**（D98），不再是"落点 + 半个图案"——
+      // 那条线要穿过它真正走的航道，而不是它包围盒的正中
+      const anchor = rayAnchor(p, { x: 20, y: 30 }, m)
+      t.equal(`${ref.center.x},${ref.center.y}`, `${anchor.x},${anchor.y}`, '参照线与待放线用同一个锚点')
+      t.ok(Math.abs(ref.center.x - 21) < 1.5 && Math.abs(ref.center.y - 31) < 1.5,
+        '滑翔机的航道就在它自己身上，锚点与包围盒中心相差不到一格')
       t.equal(`${ref.dx},${ref.dy}`, `${m.dx},${m.dy}`, '方向就是那一刻实测的方向')
       // 没方向的图案不留参照线（脉冲星没有"对着哪儿"这回事）
       t.equal(refFromPlacement(getPattern('pulsar'), { x: 0, y: 0 }, null), null, '没方向就没有参照线')
@@ -4748,9 +4753,12 @@ cases.push(
 
       // 与待放线共用同一套几何：参照线也要能一路画到棋盘边
       const ends = rayEnds(ref.kind, ref.center, ref, { w: 200, h: 200 })
-      // 从 (21,31) 朝 SE 走，先撞到的是下边界（y=200），此时 x=190 —— 撞哪条边由哪条先到说了算
+      // 从锚点朝 SE 走，先撞到的是下边界（y=200）—— 撞哪条边由哪条先到说了算。
+      // x 的落点跟着锚点走（锚点是实测航道点，不再正好是整数），所以断言写成关系式而不是死数
       t.ok(ends.to.x === 200 || ends.to.y === 200, `参照线同样画到棋盘边：${ends.to.x},${ends.to.y}`)
-      t.equal(`${ends.to.x},${ends.to.y}`, '190,200', '先撞下边界，x 停在 190')
+      t.equal(ends.to.y, 200, '先撞下边界')
+      t.equal(Math.round(ends.to.x), Math.round(ref.center.x + (200 - ref.center.y)),
+        '沿 45° 走到下边界时，x 正好走过同样多的格数')
       t.equal(ends.solidEnd, 'from', '浓端仍在图案那一头')
 
       // 生命周期：落子时留、播放/清空时清、画笔落子时换掉，只留最近一条
@@ -5392,10 +5400,12 @@ cases.push(
       // 反射那一局：实测摆位、实测代数、逐格复原（D64 互动型三样）
       const m = motionNow(snark, { rot: 0, flip: false })
       t.equal(m.kind, 'reflector', '它属反射器那一类')
-      t.equal(`${m.dx},${m.dy}`, '1,1', '默认朝向接的是从 NW 飞来、朝 SE 走的那架 —— 与盒里那架滑翔机同向（开箱即配）')
-      t.equal(`${m.outDx},${m.outDy}`, '-1,1', '出射朝 SW —— 正好拐了 90°')
+      t.equal(`${m.dx},${m.dy}`, '1,1', '默认朝向接的是从 NW 飞来、朝 SE 走的那架')
+      t.equal(`${m.outDx},${m.outDy}`, '1,-1', '出射朝 NE —— 正好拐了 90°')
       t.equal(m.restoredAt, 29, '第 29 代反射器逐格复原')
-      t.equal(`${m.back},${m.side}`, '4,4', '摆位：沿来路退开 4 格、侧向错开 4 格（以质心为锚）')
+      // **真正的"开箱即配"是这一条**：要拿的就是盒里那架滑翔机，原样，不转不翻（D98）。
+      // 光对方向不够 —— 同一个方向上有两种手性，反射器只接其中一种。
+      t.equal(`${m.via.rot},${m.via.flip}`, '0,false', '对应滑翔机 = 盒里默认那架，原样拖出来即可')
       // 出射必须与入射垂直：点积为零。这是"拐 90°"这句话的数值形式
       t.equal(m.dx * m.outDx + m.dy * m.outDy, 0, '入射与出射垂直')
 
@@ -5403,6 +5413,7 @@ cases.push(
       for (const o of [{ rot: 1, flip: false }, { rot: 2, flip: false }, { rot: 3, flip: false }]) {
         const r = motionNow(snark, o)
         t.ok(!!r, `rot=${o.rot} 也量得到反射巷道`)
+        t.ok(!!r.via, `rot=${o.rot} 记下了该拿哪一架滑翔机`)
         t.equal(r.dx * r.outDx + r.dy * r.outDy, 0, `rot=${o.rot} 出射仍与入射垂直`)
         t.equal(r.restoredAt, 29, `rot=${o.rot} 同样第 29 代复原 —— 转朝向不改变这件事`)
       }
@@ -5413,9 +5424,12 @@ cases.push(
       const recipe = /## Snark 反射器[\s\S]{0,2500}/.exec(doc)
       t.ok(!!recipe, 'docs/patterns.md 里要有"怎么亲手让它拐一次弯"那一节')
       const body = recipe ? recipe[0] : ''
-      t.ok(/退开 \*\*4\*\* 格/.test(body), '文档写着沿来路退开 4 格')
-      t.ok(/错开 \*\*4\*\* 格/.test(body), '文档写着侧向错开 4 格')
+      // 文档现在教的是"照着线和圈放"，不再让人数格子 —— 那两个数字（退 4、错 4）
+      // 是内部搜索的中间量，写给用户只会让他去数格子，而数格子正是这次栽跟头的地方（D98）
+      t.ok(/小圈/.test(body), '文档教的是照着线上的小圈放')
+      t.ok(/不必转也不必翻/.test(body), '文档写明滑翔机原样拖出来即可（手性已经由朝向挑好了）')
       t.ok(/第 \*\*29\*\* 代/.test(body), '文档写着第 29 代逐格复原')
+      t.ok(/4\.2 格/.test(body), '文档记着第一版那条线偏了多远')
     }
   },
   {
@@ -5534,6 +5548,186 @@ cases.push(
       t.equal(offenders.length, 0, `不许给单个容器另写滚动条样式（发现 ${offenders.join(' / ')}）`)
       // 说清楚它不是真"覆盖式"：注释里要写明白，别让下一个人以为做到了
       t.ok(/真正的"覆盖式"|不占布局宽度/.test(css), '注释里说明这是细而半透明，不是真覆盖式')
+    }
+  },
+  {
+    name: '动向线：线上标出来的每个落点，放下去必然发生（D98 ③）',
+    run(t) {
+      // 这一条是这一轮的核心：**线本身要过喂食测试**。
+      // 以前测的是"量出来的方向对不对"，线画在哪儿没人管 —— 于是反射器的线
+      // 从包围盒中心画出去，与真正能接收的航道差了四格，用户把两条线对齐了照样撞爆。
+      //
+      // 现在测的是这么一句：**画出来的小圈，每一个放下去都得成**。
+      // 用的是渲染器实际用的那两个出口（rayAnchor / landingDots），不另算一份几何。
+      const N = 70
+      const ORI = [{ rot: 0, flip: false }, { rot: 1, flip: false }, { rot: 2, flip: false }, { rot: 3, flip: false },
+        { rot: 0, flip: true }, { rot: 1, flip: true }, { rot: 2, flip: true }, { rot: 3, flip: true }]
+
+      for (const key of ['eater', 'snark']) {
+        for (const o of ORI) {
+          const base = getPattern(key)
+          const pat = (o.rot || o.flip) ? transformPattern(base, o) : base
+          const m = motionNow(base, o)
+          t.ok(!!m, `${key} rot=${o.rot} flip=${o.flip} 量得到动向`)
+          if (!m) continue
+          // 互动型必须报"该拿哪一架来对"：同一个方向上有两种手性的滑翔机，只有一种对得上
+          t.ok(!!m.via, `${key} 记下了对应图案的朝向`)
+          t.ok(m.landings && m.landings.length >= 5,
+            `${key} rot=${o.rot} flip=${o.flip} 线上至少标出五个落点（实际 ${m.landings ? m.landings.length : 0}）`)
+
+          const ox = (N - pat.w) >> 1, oy = (N - pat.h) >> 1
+          const anchor = rayAnchor(pat, { x: ox, y: oy }, m)
+          const ends = rayEnds(m.kind, anchor, m, { w: N, h: N })
+          t.equal(ends.arrowAt, 'to', `${key} 的线箭头指向图案`)
+          t.equal(`${ends.to.x},${ends.to.y}`, `${anchor.x},${anchor.y}`, `${key} 的线末端就是锚点`)
+
+          // 小圈必须落在线上：到直线的垂距不超过半格（画在别处等于骗人）
+          const len = Math.hypot(m.dx, m.dy) || 1
+          const ux = m.dx / len, uy = m.dy / len
+          const dots = landingDots({ x: ox, y: oy }, m)
+          t.equal(dots.length, m.landings.length, '每个落点画一个小圈')
+          let offMax = 0
+          for (const d of dots) {
+            const rx = d.x - anchor.x, ry = d.y - anchor.y
+            offMax = Math.max(offMax, Math.abs(rx * -uy + ry * ux))
+          }
+          t.ok(offMax <= 0.5, `${key} rot=${o.rot} 的小圈都在线上（最远 ${offMax.toFixed(2)} 格）`)
+
+          // 逐个放下去跑一遍：**全都得成**
+          const glider = (m.via.rot || m.via.flip)
+            ? transformPattern(getPattern('glider'), m.via) : getPattern('glider')
+          const mk = () => {
+            const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+            placePattern(e, pat, ox, oy)
+            e.stats.alive = e.countAlive()
+            return e
+          }
+          const before = mk().cur.slice()
+          const pop = pat.cells.length
+          let ok = 0
+          for (const l of m.landings) {
+            const e = mk()
+            placePattern(e, glider, ox + l.at.x, oy + l.at.y)
+            e.stats.alive = e.countAlive()
+            if (e.stats.alive !== pop + 5) continue        // 与图案重叠 = 这个点本就不该标出来
+            let hit = false
+            for (let g = 1; g <= 160 && !hit; g++) {
+              e.step()
+              if (key === 'eater') {
+                if (e.stats.alive !== pop) continue
+                let same = true
+                for (let i = 0; i < before.length; i++) if (e.cur[i] !== before[i]) { same = false; break }
+                if (same && g > 3) hit = true
+              } else {
+                if (e.stats.alive !== pop + 5) continue
+                let intact = true, extra = 0
+                for (let i = 0; i < before.length; i++) {
+                  if (before[i] === 1) { if (e.cur[i] !== 1) { intact = false; break } }
+                  else if (e.cur[i] === 1) extra++
+                }
+                if (intact && extra === 5 && g > 20) hit = true
+              }
+            }
+            if (hit) ok++
+          }
+          t.equal(ok, m.landings.length,
+            `${key} rot=${o.rot} flip=${o.flip}：标出来的 ${m.landings.length} 个落点全都成功（实际 ${ok}）——` +
+            '画的和能发生的必须是一回事')
+
+          // 再走一遍**用户真正的那条路**：他不会去算 at，他只会
+          // "把图案点在小圈所在的那一格上"。所以照 centerOrigin（落子用的同一个函数）再验一次。
+          let byClick = 0
+          for (const d of dots) {
+            const gc = { x: Math.round(d.x), y: Math.round(d.y) }
+            const go = centerOrigin(glider, gc.x, gc.y)
+            const e = mk()
+            placePattern(e, glider, go.x, go.y)
+            e.stats.alive = e.countAlive()
+            if (e.stats.alive !== pop + 5) continue
+            let hit = false
+            for (let g = 1; g <= 160 && !hit; g++) {
+              e.step()
+              if (key === 'eater') {
+                if (e.stats.alive !== pop) continue
+                let same = true
+                for (let i = 0; i < before.length; i++) if (e.cur[i] !== before[i]) { same = false; break }
+                if (same && g > 3) hit = true
+              } else {
+                if (e.stats.alive !== pop + 5) continue
+                let intact = true, extra = 0
+                for (let i = 0; i < before.length; i++) {
+                  if (before[i] === 1) { if (e.cur[i] !== 1) { intact = false; break } }
+                  else if (e.cur[i] === 1) extra++
+                }
+                if (intact && extra === 5 && g > 20) hit = true
+              }
+            }
+            if (hit) byClick++
+          }
+          t.equal(byClick, dots.length,
+            `${key} rot=${o.rot} flip=${o.flip}：**点在小圈那一格**上同样全都成功（实际 ${byClick}/${dots.length}）`)
+        }
+      }
+    }
+  },
+  {
+    name: '动向线：落点是跑出来的、参照线上也有、渲染真的画（D98 ②）',
+    run(t) {
+      // 上一条测的是"标出来的点都成"。但**光靠几何筛选也可能碰巧全对** ——
+      // 自查时把"跑一遍"换成"一律通过"，那条测试居然没红。
+      // 所以这里补三条各管一段的：真的跑过、参照线也带、渲染真的画。
+      const src = stripLiterals(readSrc('src/engine/motion.js'))
+      t.ok(/if \(interactionWorks\(pattern, before, pop, glider, gx, gy, size, motion\.kind\)\)/.test(src),
+        '落点必须**逐个跑一遍**才留下 —— 只按几何筛出来的点，遇到死点就会骗人')
+      t.ok(/for \(let g = 1; g <= 160; g\+\+\)/.test(src), 'interactionWorks 真的在推演，不是查表')
+
+      // 参照线：放下之后那条线也要带着落点，拿起下一架时照着放
+      const eater = getPattern('eater')
+      const m = motionNow(eater, { rot: 0, flip: false })
+      const origin = { x: 40, y: 40 }
+      const ref = refFromPlacement(eater, origin, m)
+      const dots = landingDots(origin, m)
+      t.ok(ref.dots && ref.dots.length === dots.length && dots.length > 0,
+        `参照线带着 ${dots.length} 个落点（实际 ${ref.dots ? ref.dots.length : 0}）`)
+      t.equal(`${ref.dots[0].x},${ref.dots[0].y}`, `${dots[0].x},${dots[0].y}`, '与待放那条线上的是同一批点')
+      // 落子那一刻就换算成棋盘坐标：参照线是静态贴纸（D91），不该再回头依赖图案对象
+      t.ok(ref.dots.every(d => Number.isFinite(d.x) && Number.isFinite(d.y)), '存的是棋盘坐标')
+
+      // 渲染：小圈真的画
+      const rend = stripLiterals(readSrc('src/render/renderer.js'))
+      t.ok(/if \(opts\.dots && opts\.dots\.length\)/.test(rend), '渲染器要认 opts.dots')
+      t.ok(/ctx\.arc\(/.test(rend), '落点画成小圈')
+    }
+  },
+  {
+    name: '动向线：枪的线就画在弹道上（D98 ①）',
+    run(t) {
+      // 枪一并复核：子弹从枪口出来，不从枪身正中出来。
+      // 判据是**射出去那架滑翔机离线有多远**，不是"方向对不对"。
+      const N = 120
+      const gun = getPattern('gun')
+      const m = motionNow(gun, { rot: 0, flip: false })
+      const ox = (N - gun.w) >> 1, oy = (N - gun.h) >> 1
+      const anchor = rayAnchor(gun, { x: ox, y: oy }, m)
+      const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+      placePattern(e, gun, ox, oy)
+      e.stats.alive = e.countAlive()
+      for (let g = 0; g < 90; g++) e.step()
+      // 枪身之外那团东西的质心 = 射出去的那架
+      let sx = 0, sy = 0, n = 0
+      for (let i = 0; i < e.cur.length; i++) {
+        if (e.cur[i] !== 1) continue
+        const x = i % N, y = (i / N) | 0
+        if (x >= ox - 2 && x < ox + gun.w + 2 && y >= oy - 2 && y < oy + gun.h + 2) continue
+        sx += x; sy += y; n++
+      }
+      t.ok(n >= 5, `第 90 代枪外确实有东西（${n} 格）`)
+      const len = Math.hypot(m.dx, m.dy) || 1
+      const ux = m.dx / len, uy = m.dy / len
+      // 点到直线的距离：把相对锚点的位移投影到法线上
+      const rx = sx / n - anchor.x, ry = sy / n - anchor.y
+      const off = Math.abs(rx * (-uy) + ry * ux)
+      t.ok(off <= 1.5, `射出去的滑翔机就在线上（离线 ${off.toFixed(2)} 格）`)
     }
   },
   {

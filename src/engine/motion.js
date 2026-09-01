@@ -12,6 +12,12 @@
 //     取 D81 实测验证过的喂食几何：吞食者朝 SE 时，吃的是从 NW 方向飞来的滑翔机。
 //
 // 登记表只写"这个图案有没有方向、是哪一类"，**向量本身永远是算出来的**。
+//
+// **除了方向，还得量"线画在哪儿"（D98）。** 真机对线失败暴露了这一条：
+// 线从图案的包围盒中心画出去，而反射器真正能接收的航道在质心侧向 4 格外 ——
+// 两条线对齐了，滑翔机却撞在别处。吞食者一直没暴露，只因为它的质心恰好落在包围盒中心上。
+// 所以每一类的量测都返回一个 `lane`：**这条线必须穿过的那个点，写在图案自己的坐标系里**
+// （相对左上角），画的时候加上落点原点即可 —— 锚点歧义就此消失。
 import { LifeEngine } from './board.js'
 import { lifeRule } from './rules.js'
 import { getPattern, placePattern, transformPattern } from './patterns.js'
@@ -72,23 +78,148 @@ export function centroid(engine) {
  * @returns {{dx:number, dy:number, gens:number, kind:string}|null} 单位向量方向 + 走完它要几代
  */
 export function measureMotion(pattern, kind) {
-  if (kind === 'ship') return measureShip(pattern)
-  if (kind === 'gun') return measureGun(pattern)
-  if (kind === 'eater') return measureEater(pattern)
-  if (kind === 'reflector') return measureReflector(pattern)
+  if (kind === 'ship') return withNormalLane(measureShip(pattern), pattern)
+  if (kind === 'gun') return withNormalLane(measureGun(pattern), pattern)
+  if (kind === 'eater') return withLandings(withNormalLane(measureEater(pattern), pattern), pattern)
+  if (kind === 'reflector') return withLandings(withNormalLane(measureReflector(pattern), pattern), pattern)
   return null
+}
+
+/**
+ * 可落点（D98 ②）。**线对上了还不够**：航道上并不是每一格都能放。
+ * 实测两件事逼出了这一条：
+ *   · 落点只能落在格子上，而图案自己的航道点带小数 ——
+ *     于是沿线可用的位置是一串**间隔一格、但起点带零头**的点，不是"整数格"；
+ *   · 就算落在线上，也有死点：反射器实测在上游 7.1 格处放下会撞爆它，而 6.4 与 8.5 都好。
+ *
+ * 所以这些点不是算出来的，是**一个一个试出来的**：沿线取候选，逐个跑一遍，
+ * 成的才留下。守卫再反过来断言"标出来的点全都成"—— 画的和能发生的必须是一回事。
+ */
+function withLandings(motion, pattern) {
+  if (!motion || !motion.lane || !motion.via) return motion
+  const size = motion.kind === 'reflector' ? PROBE_SIZE.reflector : PROBE_SIZE.eater
+  return { ...motion, landings: findLandings(pattern, motion, size) }
+}
+
+/** 沿线的候选点里，真能成的那些（返回"上游多少格"，可为小数） */
+export function findLandings(pattern, motion, size, range = LANDING_RANGE) {
+  const glider = orientedGlider(motion.via)
+  const ux = motion.dx / Math.hypot(motion.dx, motion.dy)
+  const uy = motion.dy / Math.hypot(motion.dx, motion.dy)
+  const gLane = laneOfGlider(motion.via)
+  if (!gLane) return []
+  const ox = originOf(size, pattern.w), oy = originOf(size, pattern.h)
+  const A = { x: ox + motion.lane.x, y: oy + motion.lane.y }
+  const before = fresh(pattern, size).cur.slice()
+  const pop = pattern.cells.length
+  const out = []
+  const seen = new Set()
+  // 候选：沿线往上游走，每步一格；**取那一步附近的九个格子逐个看**，而不是只取四舍五入
+  // 的那一个 —— 两个图案各自的航道点都带零头，最贴线的格子常常是邻居而不是它。
+  // （吞食者身上实测过：只取四舍五入那个，最近的也差 0.57 格，于是一个落点都找不出来。）
+  for (let step = range.from; step <= range.to; step++) {
+    const bx = Math.round(A.x - motion.dx * step - gLane.x)
+    const by = Math.round(A.y - motion.dy * step - gLane.y)
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      const gx = bx + dx, gy = by + dy
+      const tag = gx + ',' + gy
+      if (seen.has(tag)) continue
+      const ax = gx + gLane.x, ay = gy + gLane.y
+      const rx = ax - A.x, ry = ay - A.y
+      if (Math.abs(rx * -uy + ry * ux) > 0.5) continue      // 没落在线上就不算候选
+      const along = -(rx * ux + ry * uy)
+      if (along < range.from || along > range.to + 6) continue
+      seen.add(tag)
+      if (interactionWorks(pattern, before, pop, glider, gx, gy, size, motion.kind)) {
+        // 两个都写在**图案自己的坐标系**里（相对它的左上角）：
+        //   · `dot` 是那架滑翔机的航道点 —— 画出来的小圈就在这儿；
+        //   · `at`  是它左上角该落的格 —— 守卫照这个放，跑一遍必须成。
+        // 两者相差的是滑翔机自己那点零头，所以**画的位置与试的位置是同一处**。
+        out.push({
+          along: Math.round(along * 100) / 100,
+          dot: { x: ax - ox, y: ay - oy },
+          at: { x: gx - ox, y: gy - oy }
+        })
+      }
+    }
+  }
+  return out.sort((a, b) => a.along - b.along)
+}
+
+/** 沿线试多远。近处会撞进图案自己身上，远处只是白跑 */
+const LANDING_RANGE = Object.freeze({ from: 5, to: 14 })
+
+/** 按记下来的朝向取那架对应的滑翔机 */
+function orientedGlider(via) {
+  const g = getPattern('glider')
+  return (via.rot || via.flip) ? transformPattern(g, via) : g
+}
+
+/** 那架滑翔机自己的航道点（相对它的左上角） */
+function laneOfGlider(via) {
+  const m = measureShip(orientedGlider(via))
+  if (!m) return null
+  return withNormalLane(m, orientedGlider(via)).lane
+}
+
+/** 放上去跑一遍，成没成。判据与各自的量测完全一致，不另写一套 */
+function interactionWorks(pattern, before, pop, glider, gx, gy, size, kind) {
+  if (gx < 0 || gy < 0 || gx + glider.w >= size || gy + glider.h >= size) return false
+  const e = fresh(pattern, size)
+  placePattern(e, glider, gx, gy)
+  e.stats.alive = e.countAlive()
+  if (e.stats.alive !== pop + 5) return false        // 与图案重叠了，不算落点
+  for (let g = 1; g <= 160; g++) {
+    e.step()
+    if (kind === 'eater') {
+      if (e.stats.alive !== pop) continue
+      if (g > 3 && sameBoard(e.cur, before)) return true
+    } else {
+      if (e.stats.alive !== pop + 5) continue
+      const extra = extraCells(e.cur, before)
+      if (g > 20 && extra && extra.length === 5) return true
+    }
+  }
+  return false
+}
+
+/**
+ * 把航道点**沿着航道自己滑到离图案最近处**。
+ *
+ * 一条直线由"一个点 + 方向"定住，点在线上滑动不改变这条线 ——
+ * 所以这一步不动几何，只挑一个好看的代表点。为什么要挑：
+ * 枪量出来的航道点在枪口外十几格（那是弹道上的一点，没错，但线从那儿起画就凌空了），
+ * 而滑到离枪身最近处，线仍在同一条弹道上，起点却贴着枪。
+ *
+ * 这一步是纯几何，不重新实测 —— 实测的是"哪条线"，这里只决定"从线上哪一点开始画"。
+ */
+function withNormalLane(motion, pattern) {
+  if (!motion || !motion.lane) return motion
+  const n = Math.hypot(motion.dx, motion.dy) || 1
+  const ux = motion.dx / n, uy = motion.dy / n
+  const cx = (pattern.w - 1) / 2, cy = (pattern.h - 1) / 2
+  const t = (cx - motion.lane.x) * ux + (cy - motion.lane.y) * uy
+  return { ...motion, lane: { x: motion.lane.x + ux * t, y: motion.lane.y + uy * t } }
 }
 
 /** 飞船：多代质心位移 */
 export function measureShip(pattern, gens = SHIP_GENS) {
-  const e = fresh(pattern, PROBE_SIZE.ship)
+  const n = PROBE_SIZE.ship
+  const e = fresh(pattern, n)
   const a = centroid(e)
   e.run(gens)
   const b = centroid(e)
   if (!a || !b) return null
   const dx = Math.round(b.x - a.x), dy = Math.round(b.y - a.y)
   if (dx === 0 && dy === 0) return null          // 没走 = 不是飞船，别编方向
-  return { ...reduce(dx, dy, gens), kind: 'ship' }
+  // 航道：飞船自己走的那条线，穿过它的质心。用质心而不是包围盒中心 ——
+  // 稀疏图案的包围盒中心可能根本不在它的航道上（D98）
+  return { ...reduce(dx, dy, gens), kind: 'ship', lane: localOf(a, pattern, n) }
+}
+
+/** 把探针盘上的一个点换算成图案自己的坐标（相对左上角） */
+function localOf(pt, pattern, size) {
+  return { x: pt.x - originOf(size, pattern.w), y: pt.y - originOf(size, pattern.h) }
 }
 
 /**
@@ -110,7 +241,9 @@ export function measureGun(pattern, gens = GUN_GENS) {
   // 那团东西的质心速度不是任何一架滑翔机的速度。报一个算得出、但意思不对的数，
   // 比不报更糟 —— 弹道要的本来也只是方向。
   const g = gcd(Math.abs(dx), Math.abs(dy)) || 1
-  return { dx: dx / g, dy: dy / g, gens: null, kind: 'gun' }
+  // 航道：弹道本身。取**射出去那团东西**第二次采样时的位置 —— 它就在弹道上；
+  // 枪身的包围盒中心不在（子弹从枪口出来，不从枪的正中出来，D98）
+  return { dx: dx / g, dy: dy / g, gens: null, kind: 'gun', lane: localOf(b, pattern, n) }
 }
 
 /**
@@ -132,7 +265,15 @@ export function measureEater(pattern, gens = 60) {
     for (const back of [4, 5, 6, 7, 8, 9]) {
       for (const side of [0, 1, -1, 2, -2]) {
         const hit = feedOnce(pattern, glider, ship, back, side, gens)
-        if (hit) return { dx: ship.dx, dy: ship.dy, gens: ship.gens, kind: 'eater', eatenAt: hit }
+        if (hit) {
+          // **对应图案的朝向也要记下来**（D98）：光有方向不够 —— 同一个方向上有两种手性的
+          // 滑翔机，吞食者只吃其中一种。只报方向，等于让用户在两者之间猜。
+          return {
+            dx: ship.dx, dy: ship.dy, gens: ship.gens, kind: 'eater', eatenAt: hit, side,
+            via: { rot: o.rot, flip: o.flip },
+            lane: laneOf(pattern, PROBE_SIZE.eater, ship, side)
+          }
+        }
       }
     }
   }
@@ -170,7 +311,9 @@ export function measureReflector(pattern, gens = 70) {
         if (hit) {
           return {
             dx: ship.dx, dy: ship.dy, gens: ship.gens, kind: 'reflector',
-            restoredAt: hit.restoredAt, outDx: hit.outDx, outDy: hit.outDy, back, side
+            restoredAt: hit.restoredAt, outDx: hit.outDx, outDy: hit.outDy, back, side,
+            via: { rot: o.rot, flip: o.flip },
+            lane: laneOf(pattern, n, ship, side)
           }
         }
       }
@@ -245,6 +388,20 @@ const ORIENTS = Object.freeze([
 ])
 
 /**
+ * 可接收航道穿过的那个点，写在图案自己的坐标系里（相对左上角）。
+ *
+ * 摆位是"从锚点沿来路退 back 格、再侧向错开 side 格"，锚点是**质心**。
+ * 于是航道就是"过 `质心 + 垂线 × side`、方向为来路"的那条直线 ——
+ * 退多远只决定站在线上的哪一点，不影响是哪条线（实测 back 4..14 全可行，见 D98）。
+ * 垂线取 (-dy, dx)，与摆位算式里用的是同一个：两处若不同，量出来的线就不是试出来的线。
+ */
+function laneOf(pattern, size, ship, side) {
+  const c = centroid(fresh(pattern, size))
+  if (!c) return null
+  return localOf({ x: c.x - ship.dy * side, y: c.y + ship.dx * side }, pattern, size)
+}
+
+/**
  * 喂一次：顺着来向退开 back 格放滑翔机，跑 gens 代。
  * **判据是"吞食者逐格复原"**，不是"活细胞数对得上"（D64 互动型标准里的那一条）——
  * 只看数目的话，吞食者被撞坏、同时别处多出几格，也会凑出同一个数。
@@ -256,10 +413,13 @@ function feedOnce(eater, glider, ship, back, side, gens) {
   const n = PROBE_SIZE.eater
   const before = fresh(eater, n).cur.slice()     // 只有吞食者的那盘，逐格比对的基准
   const e = fresh(eater, n)
-  const ox = originOf(n, eater.w), oy = originOf(n, eater.h)
+  // 锚点用**质心**，与反射器、与 laneOf 同一个（D98）：原先用包围盒左上角，
+  // 吞食者身上碰巧差不多，反射器身上就差了四格 —— 于是"试出来的摆位"与"画出来的线"不是同一条。
+  const c = centroid(fresh(eater, n))
+  if (!c) return 0
   // 来路方向的垂直方向：(dx,dy) 转 90° 就是 (-dy,dx)
-  const gx = ox - ship.dx * back - ship.dy * side
-  const gy = oy - ship.dy * back + ship.dx * side
+  const gx = Math.round(c.x - ship.dx * back - ship.dy * side) - (glider.w >> 1)
+  const gy = Math.round(c.y - ship.dy * back + ship.dx * side) - (glider.h >> 1)
   if (gx < 0 || gy < 0 || gx + glider.w >= n || gy + glider.h >= n) return 0
   placePattern(e, glider, gx, gy)
   e.stats.alive = e.countAlive()
@@ -322,6 +482,25 @@ export function motionOf(pattern) {
  * `solidEnd` 说的是"图案在哪一端" —— 渐变的浓端要落在那里（D89 ②）。
  * @returns {{from:{x,y}, to:{x,y}, arrowAt:'to'|'from', solidEnd:'to'|'from'}}
  */
+/**
+ * 这条线该穿过哪个点（棋盘坐标）。**唯一出口** —— 待放线、参照线、守卫复核都走它，
+ * 免得"画出来的"与"试出来的"各算一份（D98）。
+ */
+export function rayAnchor(pattern, origin, motion) {
+  if (motion && motion.lane) return { x: origin.x + motion.lane.x, y: origin.y + motion.lane.y }
+  // 没量到航道点的退回包围盒中心，至少画得出一条线
+  return { x: origin.x + (pattern.w - 1) / 2, y: origin.y + (pattern.h - 1) / 2 }
+}
+
+/**
+ * 可落点在棋盘上的位置（D98 ②）：从锚点沿来路退开实测出来的那几段距离。
+ * 只有互动型才有 —— 飞船与枪不需要"放在哪一点"。
+ */
+export function landingDots(origin, motion) {
+  if (!motion || !motion.landings || !motion.landings.length) return []
+  return motion.landings.map(l => ({ x: origin.x + l.dot.x, y: origin.y + l.dot.y }))
+}
+
 export function rayEnds(kind, center, dir, bounds) {
   const n = Math.hypot(dir.dx, dir.dy) || 1
   const ux = dir.dx / n, uy = dir.dy / n
@@ -380,8 +559,11 @@ export function refFromPlacement(pattern, origin, motion) {
   if (!pattern || !origin || !motion) return null
   return {
     kind: motion.kind,
-    center: { x: origin.x + (pattern.w - 1) / 2, y: origin.y + (pattern.h - 1) / 2 },
-    dx: motion.dx, dy: motion.dy
+    center: rayAnchor(pattern, origin, motion),   // 与待放那条同一个锚点（D98）
+    dx: motion.dx, dy: motion.dy,
+    // 参照线上也标可落点：拿起下一架时，照着这些小圈放即可。
+    // 落子那一刻就换算成棋盘坐标 —— 参照线是张静态贴纸（D91），不该再依赖图案对象
+    dots: landingDots(origin, motion)
   }
 }
 

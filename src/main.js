@@ -15,7 +15,7 @@ import { setupCanvasInput } from './ui/input.js'
 import { setupZoomBar, zoomLabel } from './ui/zoom-bar.js'
 import { watchPageZoom } from './ui/page-zoom.js'
 import { orientToastKey, orientLabel, shouldShowStampTip } from './ui/stamp-hint.js'
-import { motionCached, rayEnds, refFromPlacement } from './engine/motion.js'
+import { motionCached, rayEnds, rayAnchor, landingDots, refFromPlacement } from './engine/motion.js'
 import { placeSelectionMenu } from './ui/io.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
@@ -783,7 +783,8 @@ function frame(now) {
     if (app.visualOpts.motionRay && app.refRay) {
       const r = app.refRay
       const ends = rayEnds(r.kind, r.center, r, { w: app.engine.w, h: app.engine.h })
-      app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd, { ref: true })
+      app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd,
+        { ref: true, dots: r.dots || [] })
     }
     // 方向键微调后幽灵脱离鼠标跟随（pendingStamp 非空即钉住）
     const gc = app.pendingStamp || app.hoverCell
@@ -796,10 +797,13 @@ function frame(now) {
         // 没量过的先不画，量完了叫醒下一帧（量吞食者最慢要两百多毫秒，不能卡在这一帧里）
         const m = motionCached(app.stamp, app.stampOrient, () => { app.dirty = true })
         if (m) {
-          const center = { x: o.x + (gp.w - 1) / 2, y: o.y + (gp.h - 1) / 2 }
+          // **线穿过实测出来的航道点，不是包围盒中心**（D98）：反射器能接收的航道
+          // 在质心侧向四格外，从中心画出去的那条线对齐了也撞不上。
+          const center = rayAnchor(gp, o, m)
           // 线一路画到棋盘边（D89 ②），所以要把棋盘尺寸交给它
           const ends = rayEnds(m.kind, center, m, { w: app.engine.w, h: app.engine.h })
-          app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd)
+          app.renderer.drawMotionRay(app.viewport, ends.from, ends.to, ends.arrowAt, ends.solidEnd,
+            { dots: landingDots(o, m) })
         }
       }
       app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h)

@@ -112,6 +112,7 @@ export function createFavorites(app) {
         <div class="row">
           <button data-fav-play="${esc(r.id)}">${t('fav.replay')}</button>
           <button data-fav-fill="${esc(r.id)}">${t('fav.fill')}</button>
+          <button data-fav-link="${esc(r.id)}">${t('share.copy')}</button>
           ${r.builtin ? '' : `<button class="danger" data-fav-del="${esc(r.id)}">${t('fav.del')}</button>`}
         </div>
       </div>`).join('')
@@ -353,9 +354,19 @@ export function createFavorites(app) {
     const play = e.target.closest('[data-fav-play]')
     const fill = e.target.closest('[data-fav-fill]')
     const del = e.target.closest('[data-fav-del]')
+    const link = e.target.closest('[data-fav-link]')
     const useRule = e.target.closest('[data-fav-rule]')
     const delRule = e.target.closest('[data-fav-rule-del]')
-    if (play) { const r = find(play.dataset.favPlay); if (r) app.replayLayout(r) }
+    if (link) {
+      // 复制这一条的链接：**带上它自己的环境**（边界与盘），不是当前棋盘的 ——
+      // 别人打开时该看到的是这一局该在的世界（D104 / D106）
+      const r = find(link.dataset.favLink)
+      if (r) {
+        rleOf(r).then(rle => app.copyShareLink({
+          rle, rule: ruleOf(rle), boundary: r.boundary || app.engine.boundary, board: r.board || app.engine.w
+        })).catch(() => app.toast(t('fav.show.loadFail', { name: r.name, reason: '' })))
+      }
+    } else if (play) { const r = find(play.dataset.favPlay); if (r) app.replayLayout(r) }
     else if (fill) { const r = find(fill.dataset.favFill); if (r) app.fillRleBox(r.rle) }
     else if (del) {
       state.layouts = state.layouts.filter(x => x.id !== del.dataset.favDel)

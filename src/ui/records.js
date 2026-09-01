@@ -36,7 +36,8 @@ export function setupRecords(app) {
     genLimit: $('in-gen-limit'),
     modal: $('summary-modal'), kicker: $('summary-kicker'), title: $('summary-title'),
     line: $('summary-line'), grid: $('summary-grid'), note: $('summary-note'), saved: $('summary-saved'),
-    again: $('summary-again'), cont: $('summary-continue'), close: $('summary-close')
+    again: $('summary-again'), cont: $('summary-continue'), close: $('summary-close'),
+    link: $('summary-link')
   }
   const boxes = {
     extinction: $('det-extinction'), still: $('det-still'), cycle: $('det-cycle'), capped: $('det-capped')
@@ -151,6 +152,7 @@ export function setupRecords(app) {
     el.note.value = ''
     el.saved.textContent = t('sum.saved')
     el.again.textContent = t('sum.newRun')
+    el.link.textContent = t('share.copy')
     el.close.textContent = t('sum.close')
     el.cont.textContent = t('sum.continue')
     el.cont.title = t('sum.continue.tip')   // 括号里的说明挪到悬停提示（D77 ③）
@@ -249,6 +251,8 @@ export function setupRecords(app) {
   el.close.addEventListener('click', closeSummary)
   $('summary-backdrop').addEventListener('click', closeSummary)
   el.again.addEventListener('click', () => { closeSummary(); app.randomize() })
+  // 复制链接：**不关卡片**（他多半还想看着那几个数字），复制完弹一句就够了（D106）
+  el.link.addEventListener('click', () => { app.copyShareLink() })
   el.cont.addEventListener('click', () => {
     // 关掉刚触发的那一条，否则一恢复就会立刻再次命中
     if (lastEnd && boxes[lastEnd.type]) {

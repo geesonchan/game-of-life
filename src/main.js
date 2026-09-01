@@ -5,6 +5,7 @@ import { lifeRule, compileNotation } from './engine/rules.js'
 import { createFavorites } from './ui/favorites-view.js'
 import { createConfirm } from './ui/confirm.js'
 import { visualFor, isBigBoard } from './data/board-sizes.js'
+import { encodeShare, decodeShare } from './data/share.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
 import { VisualState } from './render/visual-state.js'
@@ -615,6 +616,82 @@ app.effectiveSpeed = function () {
   return Math.max(1, Math.min(app.speed, 1000 / app.stepMsEma))
 }
 
+/**
+ * 可分享链接（D106）。
+ *
+ * `shareState()` 把"这一局在什么世界里跑"取出来：规则、边界、盘、种子/密度，
+ * 以及棋盘上的格子（RLE）。**格子带不下就不带**，并且要说出来 ——
+ * 塞一条打不开或者打开是另一局的链接，比不给链接更糟。
+ */
+app.shareState = function (opts = {}) {
+  const e = app.engine
+  const state = {
+    rule: e.rule.notation || 'B3/S23',
+    boundary: e.boundary,
+    board: e.w,
+    seed: e.seed,
+    density: app.density
+  }
+  if (opts.rle !== undefined) state.rle = opts.rle
+  else if (e.stats.alive > 0) state.rle = app.currentLayoutRle() || undefined
+  // 收藏里那一条要带**它自己的**环境，不是当前棋盘的（D106）
+  if (opts.rule) state.rule = opts.rule
+  if (opts.boundary) state.boundary = opts.boundary
+  if (opts.board) state.board = opts.board
+  return state
+}
+
+/** 生成整条链接（页面地址 + hash）。上层拿去复制 */
+app.shareLink = function (opts = {}) {
+  const base = location.origin + location.pathname
+  const { hash, droppedPattern } = encodeShare(app.shareState(opts), base.length)
+  return { url: base + hash, droppedPattern }
+}
+
+/** 复制到剪贴板；剪贴板用不了时把链接摆出来让用户自己复制 */
+app.copyShareLink = async function (opts = {}) {
+  const { url, droppedPattern } = app.shareLink(opts)
+  try {
+    await navigator.clipboard.writeText(url)
+    app.toast(droppedPattern ? t('share.copiedNoPattern') : t('share.copied'))
+  } catch (err) {
+    // 剪贴板可能被浏览器拒（非安全上下文、没有用户手势）——那就退回"选中让他自己复制"
+    window.prompt(t('share.manual'), url)
+  }
+  return url
+}
+
+/**
+ * 开机时按链接复现（D106）。**认不出就说认不出**，不拿默认值凑一局 ——
+ * 那样用户以为自己打开的是别人那一局，其实不是。
+ */
+app.applyShareHash = function (hash) {
+  const r = decodeShare(hash)
+  if (!r.ok) {
+    if (r.reason !== 'empty') app.toast(t('share.bad.' + r.reason) || t('share.bad.other'))
+    return false
+  }
+  const st = r.state
+  if (st.board !== app.engine.w) app.resizeBoard(st.board, st.board, { silent: true })
+  if (st.boundary !== app.engine.boundary) app.setBoundary(st.boundary)
+  app.applyNotation(st.rule)
+  if (st.rle) {
+    app.engine.clear()
+    app.visual.sync(app.engine)
+    app.importRleText(st.rle, { center: true })
+  } else if (Number.isFinite(st.seed)) {
+    app.density = Number.isFinite(st.density) ? st.density : app.density
+    app.engine.randomize(st.seed, app.density)
+    app.visual.sync(app.engine)
+  }
+  app.records.startRun()
+  app.fitView()
+  app.dirty = true
+  app.updateHud()
+  app.toast(t('share.opened'))
+  return true
+}
+
 let toastTimer = 0
 app.toast = function (msg) {
   const t = document.getElementById('toast')
@@ -767,6 +844,17 @@ app.records.startRun()
 // 开机这局的种子在编年史的「开局」一条里有记录，不会丢。
 app.fitView()
 app.setRunning(false)
+
+// **链接优先于开局状态**（D106）：别人发来的那一局，打开就该是那一局，
+// 而不是先闪一下"导演场"再被盖掉。放在这里 —— 控件都接好了，切盘换边界才有人跟着变。
+if (location.hash) app.applyShareHash(location.hash)
+
+// 页面已经开着时把链接粘进地址栏，浏览器**不会重新加载**（只换了 hash）——
+// 不听这个事件，那种情形下就是"粘了没反应"。本机就是这么发现的：
+// 用工具换 hash 没重载，于是只看到上一次的状态。
+window.addEventListener('hashchange', () => {
+  if (location.hash) app.applyShareHash(location.hash)
+})
 
 new ResizeObserver(() => app.handleResize()).observe(canvas)
 

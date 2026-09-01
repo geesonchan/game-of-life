@@ -16,6 +16,7 @@ import { BIG_LAYOUTS } from '../src/data/big-layouts.js'
 import { MACHINE_LAYOUTS } from '../src/data/machine-layouts.js'
 import { METAPIXEL_LAYOUT } from '../src/data/metapixel-layout.js'
 import { shouldCount } from '../src/analytics.js'
+import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MAX_URL } from '../src/data/share.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
@@ -6143,6 +6144,88 @@ cases.push(
       t.ok(/## 五、整台机器/.test(notes), '笔记页有「整台机器」这一节')
       t.ok(/整盘视图里看不清是正常的/.test(notes), '那一节先说清"看不清是正常的"')
       t.ok(/2304² 的死边界盘/.test(notes), '写明它摆在哪种盘上')
+    }
+  },
+  {
+    name: '可分享链接：编得出、解得回、坏的认得出来（D106）',
+    run(t) {
+      // base64url 自己实现，先钉住它自己：中英文、换行、$ 与 ! 都要能原样回来
+      for (const text of ['x = 3, y = 3, rule = B3/S23\nbo$2bo$3o!', '中文与符号 —— ok', '']) {
+        t.equal(fromBase64url(toBase64url(text)), text, `base64url 往返：${JSON.stringify(text.slice(0, 20))}`)
+      }
+      t.ok(!/[+/=]/.test(toBase64url('any text here')), '用的是 url 安全字母表，没有 + / =')
+
+      const rle = 'x = 3, y = 3, rule = B3/S23\nbo$2bo$3o!'
+      const enc = encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 300, seed: 4271, density: 0.35, rle }, 40)
+      t.ok(enc.hash.startsWith('#v=' + SHARE_VERSION), '第一段就是版本位')
+      t.ok(!enc.droppedPattern, '这么小的图案带得下')
+      const dec = decodeShare(enc.hash)
+      t.ok(dec.ok, '解得回来')
+      t.equal(dec.state.board, 300, '盘')
+      t.equal(dec.state.boundary, 'dead', '边界')
+      t.equal(dec.state.rule, 'B3/S23', '规则')
+      t.equal(dec.state.seed, 4271, '种子')
+      t.equal(dec.state.density, 0.35, '密度')
+      t.equal(dec.state.rle, rle, '图案逐字回来')
+
+      // 上限：带不下就**不带**，而且要说出来 —— 塞一条打不开的链接比不给更糟
+      const big = encodeShare({ rule: 'B3/S23', boundary: 'torus', board: 200, rle: 'o'.repeat(4000) }, 40)
+      t.ok(big.droppedPattern, '超限时明确报"没带上"')
+      t.ok(!/[&?]p=/.test(big.hash), '超限时链接里确实没有图案那一段')
+      t.ok(big.hash.length + 40 <= MAX_URL, `剩下的环境仍在上限内（${big.hash.length + 40} ≤ ${MAX_URL}）`)
+      t.ok(decodeShare(big.hash).ok && !decodeShare(big.hash).state.rle, '解出来只有环境，没有格子')
+
+      // **坏输入一律认出来，不拿默认值凑一局**
+      const bad = {
+        '': 'empty',
+        '#n=200': 'noVersion',
+        ['#v=' + (SHARE_VERSION + 1) + '&n=200']: 'newer',
+        '#v=1&n=3': 'board',
+        '#v=1&n=999999': 'board',
+        '#v=1&n=200&s=abc': 'seed',
+        '#v=1&n=200&d=5': 'density'
+      }
+      for (const [hash, reason] of Object.entries(bad)) {
+        const r = decodeShare(hash)
+        t.ok(!r.ok, `${JSON.stringify(hash)} 应当被拒`)
+        t.equal(r.reason, reason, `${JSON.stringify(hash)} 的理由是 ${reason}`)
+      }
+      // 每一种理由都得有话说（否则用户看到的是一句空提示）
+      for (const lang of ['zh', 'en']) {
+        for (const reason of ['noVersion', 'newer', 'board', 'seed', 'density', 'pattern', 'other']) {
+          t.ok(('share.bad.' + reason) in DICT[lang], `${lang} 缺 share.bad.${reason}`)
+        }
+        t.ok(('share.copy') in DICT[lang] && ('share.copied') in DICT[lang], `${lang} 缺复制链接的文案`)
+        t.ok(('share.copiedNoPattern') in DICT[lang], `${lang} 缺"带不下格子"的文案`)
+      }
+    }
+  },
+  {
+    name: '可分享链接：接线（开机读、粘贴也读、两处能复制）（D106）',
+    run(t) {
+      const src = stripLiterals(readSrc('src/main.js'))
+      // **两处都要有**：开机一次，hashchange 一次。只查一次的话，删掉开机那句照样绿 ——
+      // 因为监听器体内是同一行（自查时抓到的）。
+      t.equal((src.match(/if \(location\.hash\) app\.applyShareHash\(location\.hash\)/g) || []).length, 2,
+        '开机读一次、hashchange 再读一次')
+      // 页面开着时粘链接只换 hash，浏览器不会重载 —— 不听这个事件就是"粘了没反应"
+      // 查"必须出现某字符串"要用**原文**：stripLiterals 会把 'hashchange' 剥成空串（D88 §3）
+      t.ok(/addEventListener\('hashchange'/.test(readSrc('src/main.js')), '也听 hashchange')
+      const apply = /app\.applyShareHash = function[\s\S]*?\n\}/.exec(src)
+      t.ok(!!apply, '找得到 applyShareHash')
+      t.ok(/if \(!r\.ok\)/.test(apply[0]), '解不出来就不动棋盘')
+      t.ok(/resizeBoard|setBoundary|applyNotation/.test(apply[0]), '盘、边界、规则都按链接来')
+      // 两处能复制
+      // 查的是**按钮本身**：只查 data-fav-link 的话，点击处理器里那句 closest 会替它顶上（自查时抓到的）
+      t.ok(/<button data-fav-link=/.test(readSrc('src/ui/favorites-view.js')), '收藏行有复制链接那颗按钮')
+      t.ok(/summary-link/.test(readSrc('index.html')), '总结卡片有复制链接')
+      // 同上：事件名是字符串，得查原文
+      t.ok(/el\.link\.addEventListener\('click', \(\) => \{ app\.copyShareLink\(\) \}\)/
+        .test(readSrc('src/ui/records.js')), '总结卡片那颗接上了')
+      // 剪贴板可能被拒：要有退路，而不是静默失败
+      // 又一次：查字符串要用原文（这一轮连着栽了三处，都是同一个原因）
+      t.ok(/window\.prompt\(t\('share\.manual'\), url\)/.test(readSrc('src/main.js')),
+        '剪贴板用不了时把链接摆出来让他自己复制')
     }
   },
   {

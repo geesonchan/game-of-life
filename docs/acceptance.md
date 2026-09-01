@@ -1230,7 +1230,8 @@ Actions 变绿只说明构建成功，不说明页面可用 —— 两者之间�
       未设时**只有本仓库**回落到 `https://geesonchan.goatcounter.com/count`
 - [x] `github.repository ==` 那道判断圈住默认值（fork 出去不会记到原作者账号，守卫钉住）
 - [x] deploy.md §2 改写：写清地址现在落在哪、变量仍然优先、以及为什么敢写进仓库
-- [x] 本地零请求（构建时）：不带变量的构建产物里 `goatcounter` / `gc.zgo.at` / `createElement("script")` **各 0 次**
+- [x] 本地零请求（构建时）：不带变量时 `shouldCount` 被编译成 `function ov(n,e){return !1}`（恒假），
+      加载脚本那几行是**不可达的死代码**（初稿写成"产物里 0 次"是量错了，已更正）
 - [x] 本地零请求（运行时）：`shouldCount` 六种情形逐个断言（无地址 / 空地址 / localhost / 127.0.0.1 / 空域名 / 线上）
 - [x] 源码里禁止写死统计地址（查字符串字面量，不是全文 —— 注释里举例是正当的）
 - [x] 五条守卫逐条红/绿自查

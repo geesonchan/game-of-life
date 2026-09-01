@@ -142,8 +142,8 @@ VITE_GOATCOUNTER: ${{ vars.GOATCOUNTER || (github.repository == 'geesonchan/game
 **本地开发永远不统计**，两道闸门（都有测试盯着）：
 
 1. **构建时**：本地 `npm run dev` / `npm run build` 不带 `VITE_GOATCOUNTER`，
-   于是那段代码**被整段摇掉** —— 实测本地构建产物里搜不到 `goatcounter`、
-   也搜不到 `gc.zgo.at`，一个字节都不剩，谈不上发请求。
+   于是那个判断被折成常量 —— 产物里那个函数直接编译成"永远返回否"，
+   加载统计脚本的那几行**永远走不到**。
 2. **运行时**：即便拿正式包在本地起服务，`localhost` 与 `127.0.0.1` 也是写死排除的
    （见 [`src/analytics.js`](../src/analytics.js)）。
 

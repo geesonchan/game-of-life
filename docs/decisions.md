@@ -3433,8 +3433,15 @@ VITE_GOATCOUNTER: ${{ vars.GOATCOUNTER || (github.repository == 'geesonchan/game
 ### 二、"本地零请求"是两道闸门，不是一句承诺
 
 1. **构建时**：本地 `npm run dev` / `npm run build` 不带 `VITE_GOATCOUNTER`，
-   于是 Vite 把那段代码**整段摇掉**。实测本地构建产物里 `goatcounter` 与 `gc.zgo.at`
-   **各出现 0 次**，`createElement("script")` 也是 0 次 —— 不是"不发请求"，是**那段代码不存在**。
+   于是 Vite 把判断折成常量 —— 实测产物里 `shouldCount` 被编译成
+   **`function ov(n,e){return !1}`**（恒假），而 `setupAnalytics` 的第一行就是 `if(!ov()) return`。
+   加载脚本那几行还留在文件里，但**永远走不到**。
+
+   > **更正一句**：我第一版在这里写的是"那段代码被整段摇掉，产物里 0 次"。
+   > 那是量错了（`rm -rf dist` 之前搜的是上一次带变量的产物）。重量一遍：
+   > `goatcounter` / `gc.zgo.at` / `createElement("script")` **各出现 1 次**，是那段**不可达**的死代码。
+   > 结论（零请求）不变，但**理由不一样** —— "代码不存在"和"代码存在但恒不执行"是两件事，
+   > 前者更强。既然实际是后者，就照后者写。
 2. **运行时**：即便拿正式包在本地起服务，`localhost` 与 `127.0.0.1` 也是写死排除的。
 
 两道都有测试：`shouldCount` 六种情形逐个断言，源码里禁止出现写死的统计地址

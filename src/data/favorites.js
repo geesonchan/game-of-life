@@ -81,6 +81,15 @@ export function showEntryPlan({ sameRule, boardEmpty, running, fits = true, same
   // 环境（盘的尺寸与边界）与规则是同一类东西：它们定义的是"这一局在什么世界里跑"（D104 ①）。
   // 一局的生平是在它自带的环境里量出来的 —— 摆到别的环境里，卡片上那行数字就没了出处。
   if (sameRule && fits && sameEnv) return 'stamp'
+
+  // **环境不同：空盘也要问**（D105）。
+  // "空盘一点即开"那条捷径（D93 ③）当初的理由是"没有劳动可毁"——
+  // 但它只看了棋盘上的格子。**用户手设的边界与速度也是他的劳动**：
+  // 他刚把边界调成环形、速度调到 42，点一张卡就被悄悄改掉，那正是 D82 要防的那件事。
+  // 真机上报回来的就是这一条：盘是空的，于是没问就换了。
+  if (!sameEnv) return 'confirm'
+
+  // 规则不同 / 摆不下：盘上没东西、也没在播，才照旧一点即开
   return (boardEmpty && !running) ? 'replace' : 'confirm'
 }
 

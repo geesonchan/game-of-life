@@ -59,7 +59,9 @@ export function setupControls(app) {
   el.speed.addEventListener('input', () => {
     app.speed = Number(el.speed.value)
     el.lblSpeed.textContent = app.speed
-    app.showEnv = null   // 你自己动了手，就不必我再替你还原（D104）
+    // 你自己动了手：**只把这一项的还原目标改成你刚选的**，别的照旧还给你（D105）。
+    // 原先是整份快照丢掉 —— 那样你只改了速度，边界也跟着不还了。
+    if (app.showEnv) app.showEnv.speed = app.speed
   })
 
   el.density.addEventListener('input', () => {
@@ -69,7 +71,7 @@ export function setupControls(app) {
 
   el.boundary = setupBtnGroup('in-boundary', app.engine.boundary, v => {
     app.engine.setBoundary(v)
-    app.showEnv = null   // 同上：手动改过边界，就别再拿旧快照盖回去
+    if (app.showEnv) app.showEnv.boundary = v   // 同上：只改这一项的还原目标（D105）
     app.toast(t(v === 'torus' ? 'toast.boundaryTorus' : 'toast.boundaryDead'))
   })
 

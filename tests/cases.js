@@ -5233,6 +5233,15 @@ cases.push(
         '同规则但摆不下 —— 得换盘，而换盘就是清盘，所以要问')
       t.equal(showEntryPlan({ sameRule: true, fits: true, sameEnv: false, boardEmpty: false, running: false }), 'confirm',
         '摆得下、同规则，但**环境不是它要的那个** —— 也要问（D104 ①）')
+      // **真机报回来的那条**（D105）：盘是空的，于是走了"一点即开"的捷径，环境被悄悄换掉。
+      // 空盘只说明"棋盘上没有劳动"，而用户手设的边界与速度**也是劳动**。
+      t.equal(showEntryPlan({ sameRule: true, fits: true, sameEnv: false, boardEmpty: true, running: false }), 'confirm',
+        '环境不同时，**空盘也要问** —— 手设的边界与速度也是用户的劳动')
+      t.equal(showEntryPlan({ sameRule: false, fits: true, sameEnv: false, boardEmpty: true, running: false }), 'confirm',
+        '规则也不同、盘也空：照样要问')
+      // 环境对得上时，"空盘一点即开"那条捷径照旧
+      t.equal(showEntryPlan({ sameRule: false, fits: true, sameEnv: true, boardEmpty: true, running: false }), 'replace',
+        '只有规则不同、环境一致、盘又是空的，才一点即开')
       t.equal(showEntryPlan({ sameRule: true, fits: true, sameEnv: true, boardEmpty: false, running: false }), 'stamp',
         '三样都对上，才拿在手上')
       t.equal(showEntryPlan({ sameRule: true, fits: false, boardEmpty: true, running: false }), 'replace',
@@ -5969,9 +5978,18 @@ cases.push(
       t.ok(/keepShowEnv: true/.test(view), '铺局时那次清空不算退出')
       // 换局不该把"用户自己的设置"覆盖成上一局的
       t.ok(/if \(!app\.showEnv\)/.test(src), '存的是用户自己的那一份，换局不覆盖')
-      // 用户自己动手改过，就不再替他还原
+      // 用户自己动手改过：**只改这一项的还原目标**，别的照旧还给他（D105）
       const ctrl = stripLiterals(readSrc('src/ui/controls.js'))
-      t.equal((ctrl.match(/app\.showEnv = null/g) || []).length, 2, '手动改速度或边界都取消还原')
+      t.ok(/if \(app\.showEnv\) app\.showEnv\.speed = app\.speed/.test(ctrl), '手动改速度 → 只改速度那一项')
+      t.ok(/if \(app\.showEnv\) app\.showEnv\.boundary = v/.test(ctrl), '手动改边界 → 只改边界那一项')
+      t.ok(!/app\.showEnv = null/.test(ctrl),
+        '不许整份快照丢掉 —— 那样他只改了速度，边界也跟着不还了')
+
+      // **调用方必须把 sameEnv 传进去**（D105）：纯函数判得再对，调用方不传也是白搭。
+      // 真机上报回来的那条就是这一类：判据在，但那条路没走到。
+      t.ok(/sameEnv: sameEnvAsBoard\(entry\)|const sameEnv = sameEnvAsBoard\(entry\)/.test(view),
+        'openShowEntry 算了 sameEnv')
+      t.ok(/showEntryPlan\(\{[\s\S]{0,120}sameEnv/.test(view), '并且把它交给了 showEntryPlan')
     }
   },
   {

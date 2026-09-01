@@ -13,6 +13,7 @@ import { buildSave, parseSave, restoreInitial, saveToText, boardBaseline, SAVE_V
 import { DICT } from '../src/i18n/dict.js'
 import { createPrefs, PREF_KEYS, BOOKMARK_KEYS } from '../src/ui/prefs.js'
 import { BIG_LAYOUTS } from '../src/data/big-layouts.js'
+import { MACHINE_LAYOUTS } from '../src/data/machine-layouts.js'
 import { shouldCount } from '../src/analytics.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
@@ -3454,8 +3455,8 @@ cases.push(
 
       // 排序：内置在前，自存的新的在前（横条上刚存完的那一张就在开头）
       const rows = layoutRows({ layouts: [{ id: 'a', name: '甲' }, { id: 'b', name: '乙' }] }, tr)
-      const builtinCount = BUILTIN_LAYOUTS.length + BIG_LAYOUTS.length
-      t.equal(rows.length, builtinCount + 2, '内置（自家三条 + 中量级经典五条）+ 两条自存')
+      const builtinCount = BUILTIN_LAYOUTS.length + BIG_LAYOUTS.length + MACHINE_LAYOUTS.length
+      t.equal(rows.length, builtinCount + 2, '内置（自家三条 + 中量级经典五条 + 六局机关）+ 两条自存')
       t.ok(rows.slice(0, builtinCount).every(r => r.builtin), '内置在前')
       t.equal(rows[builtinCount].name, '乙', '后存的排在前面')
     }
@@ -5900,6 +5901,102 @@ cases.push(
       const doc = readSrc('docs/deploy.md')
       t.ok(/deploy\.yml/.test(doc), 'deploy.md 里写明默认地址落在 workflow 里')
       t.ok(/vars\.GOATCOUNTER|仓库变量/.test(doc), 'deploy.md 里写明仓库变量仍然优先')
+    }
+  },
+  {
+    name: '渲染：缩到每格不足一像素时，缓冲按画布像素分配（D102 ②）',
+    run(t) {
+      // 原来的做法是"一像素一格"，缓冲按**可见格数**分配 —— 缩得越小反而越大：
+      // 4096² 适配整盘那块 ImageData 有 64 MB，而屏幕上只有三百万像素装得下它。
+      // 实测改成按像素分配 + 逐像素采样之后：那一遍从 38.3ms 降到 7.7ms，缓冲降到 10.6MB。
+      const src = stripLiterals(readSrc('src/render/renderer.js'))
+      t.ok(/const coarse = vp\.scale < 1/.test(src), '按"每格不足一像素"分路')
+      t.ok(/this\.paintPixels\(engine, visual, x0, y0, bw, bh, vp\.scale/.test(src), '细路走 paintPixels')
+      t.ok(/this\.paintCells\(engine, visual, x0, y0, x1, y1/.test(src), '放大时仍走原来那条（一像素一格，放大才清爽）')
+      t.ok(/createImageData\(bw, bh\)/.test(src), '缓冲按画布像素数分配')
+      t.ok(!/drawImage\(this\.buf, 0, 0, vw, vh/.test(src), 'drawImage 的源尺寸也得跟着缓冲走，不能还按格数')
+      t.ok((src.match(/drawImage\(this\.buf, 0, 0, bw, bh/g) || []).length === 2,
+        '两条画法（拖尾层与主层）都用同一套尺寸')
+      // 代价要写在代码里：最近邻采样会漏格，别让下一个人以为它无损
+      const raw = readSrc('src/render/renderer.js')
+      t.ok(/最近邻采样，会漏格/.test(raw), '注释里写明这是有损的：会漏格')
+    }
+  },
+  {
+    name: '六局机关：摆位与生平都是跑出来的（D102 ③）',
+    run(t) {
+      t.equal(MACHINE_LAYOUTS.length, 6, '六局')
+      const lifeFp = compileNotation('B3/S23').fingerprint
+      const byId = {}
+      for (const e of MACHINE_LAYOUTS) {
+        const p = parseRLE(e.rle)
+        byId[e.id] = p
+        let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1
+        for (const [x, y] of p.cells) {
+          if (x < x0) x0 = x; if (y < y0) y0 = y
+          if (x > x1) x1 = x; if (y > y1) y1 = y
+        }
+        t.equal(`${p.w}×${p.h}`, `${x1 - x0 + 1}×${y1 - y0 + 1}`, `${e.id} 头行尺寸与包围盒一致`)
+        t.equal(compileNotation(p.rule).fingerprint, lifeFp, `${e.id} 是标准生命游戏规则`)
+        t.ok(p.w <= 200 && p.h <= 200, `${e.id} 摆得进默认的 200 盘`)
+        for (const lang of ['zh', 'en']) {
+          for (const suffix of ['', '.desc', '.full', '.life']) {
+            t.ok((e.nameKey + suffix) in DICT[lang], `${lang} 缺 ${e.nameKey}${suffix}`)
+            t.ok((e.nameKey + suffix + '.simple') in DICT[lang], `${lang} 缺 ${e.nameKey}${suffix}.simple`)
+          }
+        }
+      }
+
+      // **开门 / 关门只差一格**：两局里除吞食者外一模一样，吞食者整体右移一格。
+      // 这一条是这一批的招牌，必须钉死 —— 差的若不止一格，那句"一格之差两种命运"就是空话。
+      const shut = byId['builtin:mp-door-shut'], open = byId['builtin:mp-door-open']
+      const key = c => c[0] + ',' + c[1]
+      // 按位置把两块分开：枪在左上（前 9 行），吞食者在右下。
+      // **不能用集合差**去比 —— 挪一格之后两个位置有重叠格，差集算出来的不是那 7 格（自查时踩到）。
+      const split = q => {
+        const gun = [], eater = []
+        for (const c of q.cells) (c[1] < 20 ? gun : eater).push(c)
+        return { gun, eater }
+      }
+      const S = split(shut), O = split(open)
+      t.equal(S.gun.map(key).sort().join(' '), O.gun.map(key).sort().join(' '), '两局的枪一模一样')
+      t.equal(S.eater.length, 7, '关门那局的吞食者是 7 格')
+      t.equal(O.eater.length, 7, '开门那局的吞食者也是 7 格')
+      t.equal(S.eater.map(c => [c[0] + 1, c[1]]).map(key).sort().join(' '),
+        O.eater.map(key).sort().join(' '), '差异正好是"吞食者整体右移一格"，不是别的改动')
+
+      // 生平钉两个便宜的检查点：湮灭跑到全空、造物跑到定型
+      const run = (rle, gens) => {
+        const q = parseRLE(rle)
+        const n = 200
+        const e = new LifeEngine(n, n, { rule: lifeRule(), boundary: 'torus' })
+        const ox = (n - q.w) >> 1, oy = (n - q.h) >> 1
+        for (const [x, y] of q.cells) e.set(ox + x, oy + y, 1)
+        e.stats.alive = e.countAlive()
+        let settled = 0
+        for (let g = 1; g <= gens; g++) {
+          const h = e.hash()
+          const st = e.step()
+          if (st.alive === 0) return { empty: g, alive: 0 }
+          if (e.hash() === h) { settled = g; break }
+        }
+        return { settled, alive: e.stats.alive }
+      }
+      const a = run(byId['builtin:mp-annihilate'] && MACHINE_LAYOUTS[0].rle, 120)
+      t.equal(a.empty, 60, '互相抵消：第 60 代全空')
+      const c = run(MACHINE_LAYOUTS[1].rle, 120)
+      t.equal(c.settled, 39, '撞出新东西：第 39 代定型')
+      t.equal(c.alive, 4, '留下的正好是一块 4 格方块')
+
+      // 观察笔记页：三条原始观察各占一节，且每节都指向对应的那一局（D102 ④）
+      const notes = readSrc('docs/metapixel-notes.md')
+      t.ok(/Leo & Matt/.test(notes), '署名在页首')
+      for (const [title,局] of [['互相抵消', '互相抵消'], ['撞出新东西', '撞出新东西'], ['开门与关门', '关门']]) {
+        t.ok(new RegExp('## [一二三四]、' + title).test(notes), `笔记页有「${title}」这一节`)
+        t.ok(notes.includes(局), `「${title}」那一节指向对应的局`)
+      }
+      t.ok(/43 代才恢复/.test(notes), '把"反射器恢复 43 代"这条教训写进去了')
+      t.ok(/信号变轨/.test(notes) && /还没有稳定摆位/.test(notes), '没做出来的如实写明')
     }
   },
   {

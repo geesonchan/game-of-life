@@ -125,7 +125,21 @@ export class Renderer {
       return
     }
 
-    this.paintCells(engine, visual, x0, y0, x1, y1, ageColoring, glow)
+    // **缩到每格不足一像素时，改按画布像素分配缓冲、逐像素采样**（D102 ②）。
+    // 原来的做法是"一像素一格"：缓冲按**可见格数**分配 —— 缩得越小反而越大，
+    // 4096² 适配整盘时那块 ImageData 有 64 MB，而屏幕上只有三百万像素装得下它。
+    // 现在缓冲按真正要画的像素数分配，遍历也按像素来。
+    const coarse = vp.scale < 1
+    let bw, bh
+    if (coarse) {
+      bw = Math.max(1, Math.min(cw, Math.ceil(vw * vp.scale)))
+      bh = Math.max(1, Math.min(ch, Math.ceil(vh * vp.scale)))
+      this.paintPixels(engine, visual, x0, y0, bw, bh, vp.scale, ageColoring, glow)
+    } else {
+      bw = vw
+      bh = vh
+      this.paintCells(engine, visual, x0, y0, x1, y1, ageColoring, glow)
+    }
 
     const dx = (x0 - vp.originX) * vp.scale
     const dy = (y0 - vp.originY) * vp.scale
@@ -144,14 +158,14 @@ export class Renderer {
       }
       tc.fillRect(rx, ry, rw, rh)
       tc.imageSmoothingEnabled = false
-      tc.drawImage(this.buf, 0, 0, vw, vh, dx, dy, dw, dh)
+      tc.drawImage(this.buf, 0, 0, bw, bh, dx, dy, dw, dh)
       ctx.imageSmoothingEnabled = false
       ctx.drawImage(this.trailCanvas, 0, 0)
     } else {
       ctx.fillStyle = rgb(COLORS.boardDead)
       ctx.fillRect(rx, ry, rw, rh)
       ctx.imageSmoothingEnabled = false
-      ctx.drawImage(this.buf, 0, 0, vw, vh, dx, dy, dw, dh)
+      ctx.drawImage(this.buf, 0, 0, bw, bh, dx, dy, dw, dh)
     }
     this._trailActive = trails
 
@@ -172,6 +186,53 @@ export class Renderer {
     }
 
     this.strokeBorder(ctx, rx, ry, rw, rh)
+  }
+
+  /**
+   * 缩到每格不足一像素时的画法（D102 ②）：**缓冲按画布像素分配，逐像素采样**。
+   *
+   * 代价与收益都要说清楚：
+   *   · 收益 —— 遍历从"可见格数"降到"要画的像素数"（4096² 适配：1680 万 → 320 万），
+   *     缓冲从 64 MB 降到 13 MB 上下；
+   *   · 代价 —— 这是**最近邻采样，会漏格**：每格 0.4 像素时，大约六格里只有一格被采到，
+   *     孤零零一架滑翔机在整盘视图下可能看不见。
+   * 要不漏，就得让 step 顺路维护一张粗粒度占用表（D101 §4 的 a 案），那是另一回事。
+   */
+  paintPixels(engine, visual, x0, y0, bw, bh, scale, ageColoring, glow) {
+    if (!this.imageData || this.imageData.width !== bw || this.imageData.height !== bh) {
+      this.buf.width = bw
+      this.buf.height = bh
+      this.imageData = this.bufCtx.createImageData(bw, bh)
+    }
+    const data = this.imageData.data
+    const cur = engine.cur
+    const ew = engine.w, eh = engine.h
+    const flat = this.flat
+    const f0 = flat[0], f1 = flat[1], f2 = flat[2]
+    const agingLUT = this.agingLUT
+    const inv = 1 / scale
+    let p = 0
+    for (let py = 0; py < bh; py++) {
+      const cy = y0 + ((py * inv) | 0)
+      const row = cy < eh ? cy * ew : -1
+      for (let px = 0; px < bw; px++) {
+        const cx = x0 + ((px * inv) | 0)
+        const s = (row < 0 || cx >= ew) ? 0 : cur[row + cx]
+        if (s === 1) {
+          data[p] = f0; data[p + 1] = f1; data[p + 2] = f2; data[p + 3] = 255
+        } else if (s > 1) {
+          const k = s * 3
+          if (k + 2 < agingLUT.length) {
+            data[p] = agingLUT[k]; data[p + 1] = agingLUT[k + 1]; data[p + 2] = agingLUT[k + 2]
+            data[p + 3] = 255
+          } else data[p + 3] = 0
+        } else {
+          data[p + 3] = 0
+        }
+        p += 4
+      }
+    }
+    this.bufCtx.putImageData(this.imageData, 0, 0)
   }
 
   /** 把可见区域按"活细胞年龄 / 死亡余晖"填进 1 像素 1 格的 ImageData */

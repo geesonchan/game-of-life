@@ -22,6 +22,7 @@ export const RECENT_SHOWN = 5
  * `nameKey` 走词典（含简洁语域）；`life` 是实测数字，测试会钉住。
  */
 import { BIG_LAYOUTS } from './big-layouts.js'
+import { MACHINE_LAYOUTS } from './machine-layouts.js'
 
 export const BUILTIN_LAYOUTS = Object.freeze([
   {
@@ -233,7 +234,8 @@ export function layoutRow(entry, tr) {
 export function layoutRows(state, tr) {
   // 顺序在表达来源：先三条自家摆的小局，再五条中量级经典，最后才是用户自存的。
   // 经典排在自存之前而不是最后 —— 它们与内置局同属"随代码发布、删不掉"的那一类。
-  const builtin = BUILTIN_LAYOUTS.concat(BIG_LAYOUTS).map(b => layoutRow(b, tr))
+  // 顺序在表达来源：自家三条小局 → 中量级经典 → 元像素零件的机关 → 用户自存
+  const builtin = BUILTIN_LAYOUTS.concat(BIG_LAYOUTS, MACHINE_LAYOUTS).map(b => layoutRow(b, tr))
   const mine = (state.layouts || []).slice().reverse().map(e => layoutRow(e, tr))
   return builtin.concat(mine)
 }

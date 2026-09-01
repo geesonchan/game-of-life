@@ -132,6 +132,9 @@
              位置跟着幽灵走（D90 ③，与 D47 的框选菜单同一套定位逻辑）——
              操作要跟着对象走，不该固定在屏幕某个角上。 -->
         <button class="stamp-confirm confirm" id="btn-drop" hidden data-i18n="stamp.drop">放这</button>
+        <!-- 小地图（D109）：只在"看不全整盘"时出现 —— 看得全的时候它就是块多余的遮挡。
+             画的是整盘 + 当前视野框，点/拖可以跳过去。贴附层（D79 z-index 5）。 -->
+        <canvas class="minimap" id="minimap" hidden aria-hidden="true"></canvas>
         <div class="sel-menu" id="sel-menu" hidden>
           <span class="sel-size" id="sel-size"></span>
           <button id="sel-export" data-i18n="sel.export">导出 RLE</button>

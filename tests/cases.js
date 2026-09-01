@@ -17,6 +17,7 @@ import { MACHINE_LAYOUTS } from '../src/data/machine-layouts.js'
 import { METAPIXEL_LAYOUT } from '../src/data/metapixel-layout.js'
 import { shouldCount } from '../src/analytics.js'
 import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MAX_URL } from '../src/data/share.js'
+import { shouldShow, viewBox, pickCenter, REDRAW_MS } from '../src/ui/minimap.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
@@ -6255,6 +6256,87 @@ cases.push(
       t.ok(!/align-self: flex-end/.test(helpRule[0]), '不再贴底边')
       // 窄屏 44px：两颗都得够大（同一条规则管着）
       t.ok(/\.help-btn \{ min-width: 44px; \}/.test(css), '窄屏下 44px 触控区')
+    }
+  },
+  {
+    name: '链接带取景与速度，但不带收链接那人的偏好（D108）',
+    run(t) {
+      const base = 'https://example.com/x/'
+      const st = { rule: 'B3/S23', boundary: 'dead', board: 200, view: { cx: 100.4, cy: 100.6, span: 56.2 }, speed: 42 }
+      const enc = encodeShare(st, base.length)
+      const dec = decodeShare(enc.hash)
+      t.ok(dec.ok, '带取景的链接解得回来')
+      t.equal(`${dec.state.view.cx},${dec.state.view.cy},${dec.state.view.span}`, '100,101,56', '取景：看哪儿 + 看多宽')
+      t.equal(dec.state.speed, 42, '速度也带')
+      // **编的是跨度不是倍率**：倍率是屏幕的属性，照抄到另一块屏上框住的是另一片东西
+      t.ok(!/[&#]z=|scale/.test(enc.hash), '链接里不许出现倍率')
+
+      // **收链接那人的东西不许带**：色带、语言、简洁/完整、年龄着色、余晖、拖尾
+      for (const k of ['palette', 'lang', 'mode', 'ageColoring', 'glow', 'trails']) {
+        t.ok(enc.hash.indexOf(k) < 0, `链接里不许出现 ${k}`)
+      }
+      const shareSrc = readSrc('src/data/share.js')
+      for (const k of ['palette', 'ageColoring', 'trails', 'setLang', 'setMode']) {
+        t.ok(shareSrc.indexOf(k) < 0, `share.js 里不该碰 ${k} —— 那是收链接那人的事（D108）`)
+      }
+
+      // **老链接必须照旧能开**：没有这几个字段 = 没指定，照旧自动适配
+      const old = decodeShare('#v=1&r=B3%2FS23&b=t&n=200&s=99&d=0.20')
+      t.ok(old.ok, '老链接仍然解得开')
+      t.ok(!old.state.view, '老链接没有取景 → 当作没指定')
+      t.ok(!('speed' in old.state), '老链接没有速度 → 当作没指定')
+      // 加可选字段不升版本位（两个方向都退化得干净）
+      t.equal(SHARE_VERSION, 1, '版本位没动 —— 加可选字段不算不兼容改动')
+
+      // 三个取景字段要么齐、要么当没给；坏值一律拒
+      for (const bad of ['#v=1&n=200&cx=10', '#v=1&n=200&cx=1&cy=2&w=0', '#v=1&n=200&cx=1&cy=2&w=abc']) {
+        const r = decodeShare(bad)
+        t.ok(!r.ok && r.reason === 'view', `${bad} 应当以 view 为由被拒`)
+      }
+      t.ok(!decodeShare('#v=1&n=200&sp=0').ok, '速度 0 不合法')
+      t.ok(!decodeShare('#v=1&n=200&sp=99').ok, '速度超上限不合法')
+      for (const lang of ['zh', 'en']) {
+        t.ok('share.bad.view' in DICT[lang] && 'share.bad.speed' in DICT[lang], `${lang} 缺这两条理由`)
+      }
+
+      // 收的人按自己的屏算倍率
+      const main = stripLiterals(readSrc('src/main.js'))
+      const apply = /app\.applySharedView = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!apply, '有 applySharedView')
+      t.ok(/Math\.min\(cw, ch\) \/ Math\.max\(1, view\.span\)/.test(apply[0]), '倍率由"我这块屏 ÷ 要看多宽"算出来')
+      t.ok(/vp\.minScale|vp\.maxScale/.test(apply[0]), '再夹到自己这边的缩放上下限里')
+      t.ok(/if \(st\.view\) app\.applySharedView\(st\.view\)\s*\n\s*else app\.fitView\(\)/.test(main),
+        '给了取景就照它，没给才自动适配（老链接走后一条）')
+    }
+  },
+  {
+    name: '小地图：看不全整盘时才出现，点它就跳过去（D109）',
+    run(t) {
+      const board = { w: 2048, h: 2048 }
+      const canvas = { width: 1880, height: 1700 }
+      t.ok(!shouldShow(board, { scale: 0.4 }, canvas), '整盘看得全时不出现 —— 那时它只是块遮挡')
+      t.ok(shouldShow(board, { scale: 4 }, canvas), '放大到看不全时才出现')
+      t.ok(shouldShow({ w: 200, h: 200 }, { scale: 40 }, canvas), '小盘放到很大同样会迷路')
+
+      const box = viewBox(board, { originX: 900, originY: 900, scale: 4 }, canvas)
+      t.ok(box.x > 0.43 && box.x < 0.45, '视野框位置按比例算')
+      t.ok(box.w > 0.22 && box.w < 0.24, '视野框宽度按比例算')
+
+      const c = pickCenter(board, 0.25, 0.75)
+      t.equal(`${c.x},${c.y}`, '512,1536', '点四分之一处就跳到四分之一处')
+      t.equal(pickCenter(board, -1, 2).x, 0, '越界夹住，不跳到盘外')
+      t.equal(pickCenter(board, 2, -1).x, board.w, '另一头也夹住')
+
+      const src = readSrc('src/ui/minimap.js')
+      t.ok(REDRAW_MS >= 100, `不每帧重画（每 ${REDRAW_MS}ms 一次）—— 概览慢半拍不影响判断`)
+      t.ok(/if \(sig === lastSig\) return/.test(stripLiterals(src)), '而且只在真变了时才画')
+      t.ok(src.indexOf('engine.cur') > 0 && !/engine\.(set|step|clear)\(/.test(src),
+        '只读引擎，不改引擎 —— 与渲染层同一条规矩')
+      const css = readSrc('src/style.css')
+      t.ok(/\.minimap \{[\s\S]*?z-index: 5/.test(css), '贴附层（D79）')
+      t.ok(/\.minimap \{[\s\S]*?touch-action: none/.test(css), '拖它是平移，不是滚页面（D85 ②a）')
+      t.ok(/@media \(max-width: 767px\) \{[\s\S]*?\.minimap \{[^}]*left: 10px/.test(css),
+        '窄屏挪到左下角 —— 右下被主控排与缩放条占着')
     }
   },
   {

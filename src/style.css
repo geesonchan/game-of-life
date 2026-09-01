@@ -1741,3 +1741,24 @@ input[type="range"] { touch-action: pan-y; }
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, .5); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
+
+/* ---------- 小地图（D109） ---------- */
+/* 只在看不全整盘时出现（由 JS 决定），画的是整盘 + 当前视野框。
+   放右下角：右缘中部是缩放条、右上角是朝向按钮、左上是 HUD —— 右下是这块画布上剩下的那个角。 */
+.minimap {
+  position: absolute;
+  right: 10px; bottom: 10px;
+  z-index: 5;                      /* 贴附层（D79） */
+  width: 132px; height: 132px;
+  background: rgba(12, 14, 19, .78);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: crosshair;
+  touch-action: none;              /* 拖它是平移，不是滚页面（D85 ②a） */
+}
+.minimap[hidden] { display: none; }
+
+@media (max-width: 767px) {
+  /* 窄屏挪到左下角：右下被主控排与缩放条占着；尺寸也收一档 */
+  .minimap { width: 96px; height: 96px; right: auto; left: 10px; bottom: 10px; }
+}

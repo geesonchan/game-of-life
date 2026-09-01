@@ -21,6 +21,7 @@ import { placeSelectionMenu } from './ui/io.js'
 import { createRuleEditor } from './ui/rule-editor.js'
 import { setupLibrary } from './ui/library.js'
 import { createIntro } from './ui/intro.js'
+import { createMinimap } from './ui/minimap.js'
 import { setupRecords } from './ui/records.js'
 import { setupIO } from './ui/io.js'
 import { createTowerView } from './ui/tower-view.js'
@@ -632,6 +633,17 @@ app.shareState = function (opts = {}) {
     seed: e.seed,
     density: app.density
   }
+  // **视图与速度也是这一局的一部分**（D108）：发的人在 33.5× 上框住了三架滑翔机，
+  // 收的人若落在 6× 上，看到的是一片什么都分不出的灰。
+  // 编的是"看哪儿 + 看多宽"，不是倍率 —— 倍率是屏幕的属性，不是这一局的。
+  const vp = app.viewport
+  const cw = app.canvas.width, ch = app.canvas.height
+  state.view = {
+    cx: vp.originX + cw / (2 * vp.scale),
+    cy: vp.originY + ch / (2 * vp.scale),
+    span: Math.min(cw, ch) / vp.scale        // 短边看得见多少格
+  }
+  state.speed = app.speed
   if (opts.rle !== undefined) state.rle = opts.rle
   else if (e.stats.alive > 0) state.rle = app.currentLayoutRle() || undefined
   // 收藏里那一条要带**它自己的**环境，不是当前棋盘的（D106）
@@ -646,6 +658,22 @@ app.shareLink = function (opts = {}) {
   const base = location.origin + location.pathname
   const { hash, droppedPattern } = encodeShare(app.shareState(opts), base.length)
   return { url: base + hash, droppedPattern }
+}
+
+/**
+ * 按链接给的"看哪儿 + 看多宽"取景（D108）。
+ * **倍率是自己算的**：收的人屏幕多大、能缩到多少，都由他这边说了算 ——
+ * 照抄发件人的倍率，在另一块屏上框住的就是另一片东西。
+ */
+app.applySharedView = function (view) {
+  const vp = app.viewport
+  const cw = app.canvas.width, ch = app.canvas.height
+  const wanted = Math.min(cw, ch) / Math.max(1, view.span)
+  vp.scale = Math.max(vp.minScale, Math.min(vp.maxScale, wanted))
+  vp.originX = view.cx - cw / (2 * vp.scale)
+  vp.originY = view.cy - ch / (2 * vp.scale)
+  app.needsFit = false
+  app.dirty = true
 }
 
 /** 复制到剪贴板；剪贴板用不了时把链接摆出来让用户自己复制 */
@@ -687,7 +715,10 @@ app.applyShareHash = function (hash) {
     app.visual.sync(app.engine)
   }
   app.records.startRun()
-  app.fitView()
+  // 视图：链接里给了就照它取景，没给才自动适配（老链接就是没给的那一种）
+  if (st.view) app.applySharedView(st.view)
+  else app.fitView()
+  if (Number.isFinite(st.speed)) app.setSpeed(st.speed)
   app.dirty = true
   app.updateHud()
   app.shareApplied = true      // 引导收尾时据此**不清盘、不送滑翔机**（D107 ③）
@@ -771,6 +802,7 @@ app.favorites = createFavorites(app)
 app.library = setupLibrary(app)
 app.library.render()
 app.intro = createIntro(app)
+app.minimap = createMinimap(app)   // 小地图（D109）：放大之后不至于迷路
 // 点「?」总是带上第零幕，老用户也能在这里重选版本
 document.getElementById('btn-help').addEventListener('click', () => app.intro.open({ chooser: true }))
 // 顶栏分享钮（D107 ①）：编码当前这一局并复制，提示与另外两处同一套
@@ -905,6 +937,9 @@ function frame(now) {
       app.gensInWindow = 0
     }
   }
+
+  // 小地图：每帧问一次，真正重画由它自己节流（250ms，且只在真变了时画）
+  app.minimap.tick(now)
 
   // 帧率统计（无论是否在跑都记，方便观察渲染负载）
   app.framesInWindow++

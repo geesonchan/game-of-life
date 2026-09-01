@@ -73,6 +73,15 @@ function utf8String(bytes) {
 /**
  * 编码一局。字段刻意短，但**不缩写到看不懂** —— 链接是给人看也给人改的。
  *   v 版本 · r 规则记法 · b 边界(t/d) · n 盘边长 · s 种子 · d 密度 · p 图案（base64url 的 RLE）
+ *   cx cy 看的是哪儿（视野中心的格坐标）· w 看多宽（视野短边跨过多少格）· sp 播放速度
+ *
+ * **视图为什么编成"中心 + 跨度"而不是"缩放倍率"**（D108）：倍率是屏幕的属性，不是这一局的。
+ * 发的人 33.5×（在他那块屏上正好框住三架滑翔机），收的人屏幕不一样，照抄那个数就框不住同一片东西。
+ * 编"看哪儿、看多宽"，让收的人自己算出他那块屏上对应的倍率 —— 传过去的才是**取景**，不是数字。
+ *
+ * **加字段不升版本位**：老链接没有这几个字段 → 当作"没指定"，照旧自动适配视图；
+ * 新链接给老版本打开 → 多出来的字段被忽略，仍然打得开。**两个方向都退化得干净，就不必升版本。**
+ * 版本位留给"改变已有字段的含义 / 去掉字段"那种真正不兼容的改动。
  * @param {{rule:string, boundary:string, board:number, seed?:number, density?:number, rle?:string}} state
  * @param {number} [budget] 除 hash 之外这条链接还占多少字符（页面地址本身）
  * @returns {{hash:string, droppedPattern:boolean}}
@@ -86,6 +95,12 @@ export function encodeShare(state, budget = 0) {
   ]
   if (Number.isFinite(state.seed)) parts.push('s=' + (state.seed >>> 0))
   if (Number.isFinite(state.density)) parts.push('d=' + Number(state.density).toFixed(2))
+  if (state.view && Number.isFinite(state.view.cx)) {
+    parts.push('cx=' + Math.round(state.view.cx))
+    parts.push('cy=' + Math.round(state.view.cy))
+    parts.push('w=' + Math.max(1, Math.round(state.view.span)))
+  }
+  if (Number.isFinite(state.speed)) parts.push('sp=' + Math.max(1, Math.min(60, Math.round(state.speed))))
   let droppedPattern = false
   if (state.rle) {
     const p = 'p=' + toBase64url(state.rle)
@@ -128,6 +143,17 @@ export function decodeShare(hash) {
     const den = Number(q.d)
     if (!Number.isFinite(den) || den < 0 || den > 1) return { ok: false, reason: 'density' }
     state.density = den
+  }
+  if (q.cx !== undefined || q.cy !== undefined || q.w !== undefined) {
+    const cx = Number(q.cx), cy = Number(q.cy), span = Number(q.w)
+    // 三个一起才算数：缺一个就说不清"看哪儿、看多宽"，宁可当没给（照旧自动适配）
+    if (![cx, cy, span].every(Number.isFinite) || span <= 0 || span > 65536) return { ok: false, reason: 'view' }
+    state.view = { cx, cy, span }
+  }
+  if (q.sp !== undefined) {
+    const sp = Number(q.sp)
+    if (!Number.isFinite(sp) || sp < 1 || sp > 60) return { ok: false, reason: 'speed' }
+    state.speed = Math.round(sp)
   }
   if (q.p !== undefined) {
     const rle = fromBase64url(q.p)

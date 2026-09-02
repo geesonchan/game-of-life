@@ -76,9 +76,6 @@
         <button id="btn-tower" data-i18n="tower.open" data-i18n-title="tower.legend">观塔</button>
         <button id="btn-explorer" data-i18n="exp.open" data-i18n-title="exp.hint">勘探</button>
         <button id="btn-critical" data-i18n="crit.open" data-i18n-title="crit.hint">临界</button>
-        <!-- 看展：手动进入是"用户自己的动作"，排在启动优先级表最后一行（D110 §14）。
-             自动进入不在这儿 —— 它由空闲触发，且有链接时根本不启动 -->
-        <button id="btn-show" data-i18n="show.open" data-i18n-title="show.hint">看展</button>
         <!-- 分享钮常驻顶栏（D107 ①）：想分享的念头产生在"正看着一个好局"的时候，
              不该只藏在总结卡片和收藏行里 -->
         <button class="help-btn" id="btn-share" data-i18n-title="share.copy">⤴</button>
@@ -138,19 +135,10 @@
         <!-- 小地图（D109）：只在"看不全整盘"时出现 —— 看得全的时候它就是块多余的遮挡。
              画的是整盘 + 当前视野框，点/拖可以跳过去。贴附层（D79 z-index 5）。 -->
         <canvas class="minimap" id="minimap" hidden aria-hidden="true"></canvas>
-        <!-- 看展横幅：**明说不记账**（D110 §14）。放的是别人的局，
-             记进用户的编年史与台账就是把不属于他的东西塞进他的记录里 -->
         <!-- 链接重放（D110 §20）：不冻结、看得见、随时可停 -->
         <div class="replay-note" id="replay-note" hidden>
           <span>—</span>
           <div class="replay-track"><i id="replay-bar"></i></div>
-        </div>
-        <div class="show-bar" id="show-bar" hidden>
-          <span class="show-dot" aria-hidden="true"></span>
-          <span class="show-what"><b id="show-name">—</b><span class="show-note" id="show-note" data-i18n="show.noRecord">看展中 · 不记账</span></span>
-          <button id="show-next" data-i18n="show.next">下一局</button>
-          <button id="show-never" data-i18n="show.never" hidden>别自动开演</button>
-          <button id="show-exit" class="danger" data-i18n="show.exit">退出看展</button>
         </div>
         <div class="sel-menu" id="sel-menu" hidden>
           <span class="sel-size" id="sel-size"></span>

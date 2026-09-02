@@ -22,7 +22,6 @@ import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup
 import { SESSION_WRITERS, resizePlan, captureSession, pasteCells, cellBounds } from '../src/data/session.js'
 import { QUANTITY_PROMISES, unregisteredEstimates, ESTIMATE_MARKS } from '../src/data/promises.js'
 import { runReplay, etaSeconds } from '../src/ui/replay-driver.js'
-import { showPlaylist, nextShowIndex, shouldAutoStart, exitPlan, visibleInDwell, DWELL_MS, IDLE_MS, SHOW_MAX_BOARD, VISIBLE_GENS } from '../src/data/show.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
@@ -1170,11 +1169,10 @@ cases.push(
       // 白名单挡的是**游戏数据**，不是键的数量。新加一个要同时满足三条（D84 ③）：
       // 是界面偏好而非实验数据、丢了不损失用户劳动、只影响这台设备的这个浏览器。
       // zoomBar（缩放滑条开关）是照这三条收进来的第四个。
-      // autoShow（自动看展开关）是照这三条收进来的第五个：
-      // 它只说"别自动开演"，丢了最多是某天空闲时多放了一次片，用户碰一下就退（D110 §14）。
-      t.equal(PREF_KEYS.length, 7, '白名单里只有这几个')
+      // autoShow 随看展一起撤了（v1.19.0）——白名单退回六个
+      t.equal(PREF_KEYS.length, 6, '白名单里只有这几个')
       t.equal(PREF_KEYS.slice().sort().join(','),
-        'autoShow,introSeen,lang,mode,motionRay,stampTipSeen,zoomBar', '逐个点名')
+        'introSeen,lang,mode,motionRay,stampTipSeen,zoomBar', '逐个点名')
       // 反面照旧：游戏数据一个都不许进（下面那条用真存储撞过一遍）
       for (const k of ['board', 'save', 'ledger', 'snapshots'])
         t.ok(!PREF_KEYS.includes(k), `${k} 不许进白名单`)
@@ -6476,6 +6474,24 @@ cases.push(
     }
   },
   {
+    name: '时钟不许混用：rAF 时间戳与纪元毫秒不能相减（D110 §26）',
+    run(t) {
+      // 看展的自动开演曾经因为这个在生产里从来没跑过，而界面上看不出任何异常
+      // （§14 已撤销，但这条判据与它无关，留着扫全站）。
+      // 主循环喂给各个 tick 的是 rAF 时间戳；谁拿纪元毫秒去跟它比，谁就恒为负。
+      const main = stripComments(readSrc('src/main.js'))
+      t.ok(/function frame\(now\)/.test(main), '主循环的时间戳叫 now')
+      for (const f of ['src/ui/minimap.js']) {
+        const code = stripComments(readSrc(f))
+        if (code.indexOf('tick') < 0) continue
+        t.ok(code.indexOf('Date.now()') < 0, `${f} 收 rAF 时间戳，里面不许再用 Date.now()`)
+      }
+      // 存档、编年史那类"要给人看的绝对时刻"当然用纪元时间 —— 那不是拿来相减的
+      t.ok(/new Date\(\)\.toISOString\(\)/.test(readSrc('src/ui/records.js')),
+        '记录里的时刻仍用真实时间（那是给人读的，不参与相减）')
+    }
+  },
+  {
     name: '大盘那句报的是**这台机器**量出来的（D110 §16）',
     run(t) {
       // 用别人机器的数字加一句免责声明是缓解不是解法 —— 而本机标定本来就在手上：
@@ -6499,159 +6515,6 @@ cases.push(
         t.ok(!!DICT[lang]['board.bigNoteMeasured'], `${lang} 缺实测那句`)
         t.ok(/你这台|your machine/i.test(DICT[lang]['board.bigNoteMeasured']), `${lang} 要说清是"你这台"`)
       }
-    }
-  },
-  {
-    name: '看展：切到后台不算闲着（D110 §17 · 时序冷）',
-    run(t) {
-      // 手机切走五分钟回来，正撞在自动开演中途，第一反应是"我的局呢" ——
-      // 而横幅那颗〔别自动开演〕解释的是怎么停，不解释它什么时候开始的。
-      const ui = readSrc('src/ui/show.js')
-      const vis = /document\.addEventListener\('visibilitychange'[\s\S]*?\n  \}\)/.exec(ui)
-      t.ok(!!vis, '听 visibilitychange')
-      t.ok(/if \(document\.hidden\) \{ if \(on\) pause\(\); return \}/.test(vis[0]), '切走就暂停')
-      t.ok(/noteActivity\(\)/.test(vis[0]), '回来重新计时')
-      // "重新计时"不是"接着算"：noteActivity 把起点推到现在
-      t.ok(/function noteActivity\(\) \{ lastActivity = performance\.now\(\) \}/.test(ui), '重新计时 = 起点推到现在')
-      // **时钟必须与 tick 收到的那个是同一个**（D110 §26）。混用纪元毫秒与 rAF 时间戳，
-      // idleMs 恒为巨大的负数 —— 自动开演永远不会发生，而界面上看不出任何异常。
-      // 上一轮我"验过"它：手动喂了纪元时间，喂的不是 app 喂的那个数。
-      const code = stripComments(ui)
-      t.ok(code.indexOf('Date.now()') < 0, '看展里不许出现 Date.now() —— tick 拿的是 rAF 时间戳')
-      t.ok(/dueAt = performance\.now\(\) \+ cur\.dwellMs/.test(code), '换局的到期时刻也用同一个时钟')
-      t.ok(/const idleMs = now - lastActivity/.test(code), '闲了多久 = 同一时钟的两个读数相减')
-    }
-  },
-  {
-    name: '看展：自动进入只问意图，绝不自己读 hash（D110 §14）',
-    run(t) {
-      // **硬要求**（用户定）：抑制判断必须问 resolver 要意图。自己读 hash 的话，
-      // 压缩落地后 decodeShare 变异步，这一处会悄悄错，而且没人会红。
-      // 注释里提 decodeShare 是正常的（那儿记着为什么不能自己解）——
-      // 要问的是**代码**里有没有，所以先剥注释（自查时抓到的）
-      const data = stripComments(readSrc('src/data/show.js')), ui = stripComments(readSrc('src/ui/show.js'))
-      for (const bad of ['location.hash', 'location.search', 'decodeShare', 'window.location']) {
-        t.ok(data.indexOf(bad) < 0, `判据里不许出现 ${bad}`)
-        t.ok(ui.indexOf(bad) < 0, `运行时里也不许出现 ${bad}`)
-      }
-      t.ok(/shouldAutoStart\(app\.initialIntent,/.test(ui), '问的是开机那次裁决出来的意图')
-      // 有链接：**不启动**，不是"启动了再被盖过"（周期性写盘靠不启动，D110 §1）
-      t.equal(shouldAutoStart({ autoShowcase: false }, { enabled: true, idleMs: 1e9 }), false, '有链接不开演')
-      t.equal(shouldAutoStart({ autoShowcase: true }, { enabled: true, idleMs: 1e9 }), true, '没链接、闲够了才开演')
-      t.equal(shouldAutoStart({ autoShowcase: true }, { enabled: true, idleMs: 1000 }), false, '没闲够不开演')
-      t.equal(shouldAutoStart({ autoShowcase: true }, { enabled: true, idleMs: 1e9, running: true }), false,
-        '人家自己的局在跑，不许插进去')
-      t.equal(shouldAutoStart({ autoShowcase: true }, { enabled: true, idleMs: 1e9, boardTouched: true }), false,
-        '盘上有他自己的东西，不许开演')
-      t.equal(shouldAutoStart(null, { enabled: true, idleMs: 1e9 }), false, '没有意图就不开演')
-      // 开机那一句：autoShowcaseEnabled 从偏好来，交给裁决而不是让看展自己去查
-      t.ok(/autoShowcaseEnabled: prefs\.get\('autoShow'\) !== '0'/.test(readSrc('src/main.js')),
-        '开关在裁决那一步就定下来')
-    }
-  },
-  {
-    name: '看展：明说不记账，而且真的不记（D110 §14）',
-    run(t) {
-      // 横幅上那句是**承诺**，records.setShowing(true) 是**兑现** —— 同一个开关（D70/D110 §12）。
-      const rec = readSrc('src/ui/records.js')
-      t.ok(/function setShowing\(on\) \{ showing = !!on \}/.test(rec), '有这个开关')
-      t.ok(/function startRun\(\) \{\s*\n\s*if \(showing\) return/.test(rec), '看展不开新的一局')
-      t.ok(/function onGeneration\(stats\) \{\s*\n\s*if \(showing\) return null/.test(rec), '一代都不记')
-      t.ok(/setShowing, isShowing,/.test(rec), '外面问得到')
-      // 这与 replaying 不是一回事：那个只是不做终止判定，账照记
-      t.ok(/replaying[\s\S]{0,80}照常记账/.test(rec), 'replaying 的语义没被改掉')
-      const ui = readSrc('src/ui/show.js')
-      t.ok(/app\.records\.setShowing\(true\)/.test(ui) && /app\.records\.setShowing\(false\)/.test(ui),
-        '进出各拨一次')
-      // 界面上那句话必须真的存在，中英都有
-      for (const lang of ['zh', 'en']) {
-        t.ok(/不记账|not recorded/i.test(DICT[lang]['show.noRecord']), `${lang} 横幅那句要写明不记账`)
-      }
-      t.ok(/data-i18n="show\.noRecord"/.test(readSrc('index.html')), '横幅上挂着那句')
-    }
-  },
-  {
-    name: '看展：退出只有一种退法 —— 还原进入前那一刻（D110 §11/§14）',
-    run(t) {
-      // 不是退回空盘，也不是退回链接那一局。用户没动过时那一刻恰好就是链接那一局，
-      // 那是这条规则的**特例**，不是规则本身。
-      t.equal(exitPlan(null).restore, false, '没存快照就没得还')
-      t.equal(exitPlan({ w: 1 }).restore, true, '存了就还')
-      const ui = readSrc('src/ui/show.js')
-      t.ok(/snapshot = captureSession\(app\.engine, \{/.test(ui), '进来先存整份快照')
-      t.ok(/running: app\.running/.test(ui), '"那一刻"包含它在不在跑')
-      t.ok(/app\.restoreSession\(plan\.snapshot\)/.test(ui), '退出还原的是那一份')
-      t.equal((ui.match(/app\.restoreSession\(/g) || []).length, 1, '只有一处还原 —— 没有第二种退法')
-      const main = readSrc('src/main.js')
-      const rs = /app\.restoreSession = function[\s\S]*?\n\}/.exec(main)
-      t.ok(!!rs, '找得到 restoreSession')
-      for (const bit of ['engine.cur.set(snap.cells)', 'setBoundary(snap.boundary)', 'setSpeed(snap.speed)',
-        'applyViewIntent(snap.view', 'setRunning(!!snap.running)']) {
-        t.ok(rs[0].indexOf(bit) > 0, `还原要包含 ${bit}`)
-      }
-      // 用户在看展期间自己动手：**先把他那一局还回来**，动作再落在自己的局上
-      t.ok(/if \(app\.show && app\.show\.isOn\(\) && !app\.show\.isLoading\(\)\) app\.show\.yieldToUser\(\)/.test(main),
-        '写盘入口先让位给用户自己的局')
-      t.ok(/function yieldToUser\(\)[\s\S]{0,220}?stop\('silent'\)/.test(ui), '让位就是退出并还原')
-    }
-  },
-  {
-    name: '看展：排片的闸问的是能不能看见，不是盘多大（D110 §14/§22）',
-    run(t) {
-      // **闸从"盘有多大"改成"这一档时间里看得见东西吗"**（D110 §22）：
-      // 原来的理由（大盘慢）是对的，但量错了对象 —— 真正的约束是
-      // "看出它在干什么要多少代" ÷ "这台机器每秒多少代"。
-      const rows = [{ id: 'a', rle: 'x', board: 200 }, { id: 'meta', rle: 'x', board: 2304, showGens: 35328 },
-        { id: 'c', rle: 'x' }, { id: 'd' }, { id: 'big', rle: 'x', board: 2048 }]
-      const list = showPlaylist(rows, { gensPerSecFor: r => (r.board || 200) >= 2048 ? 30 : 1600 })
-      t.equal(list.map(x => x.id).join(','), 'a,c,big', '跑得动的大盘可以进；没图案的还是不放')
-      t.ok(list.map(x => x.id).indexOf('meta') < 0, '元像素进不来 —— 一个元代 35,328 代，12 秒里是一张静止的图')
-      t.equal(list[0].dwellMs, DWELL_MS, '每局停留有默认值')
-      t.equal(visibleInDwell({ showGens: 35328 }, 30, 12000), false, '要 35,328 代、只跑得出 360 代 → 看不见')
-      t.equal(visibleInDwell({ showGens: 35328 }, 30, 12000 * 200), true, '给足时间就看得见（判据是时间不是尺寸）')
-      t.equal(visibleInDwell({}, 30, 12000), true, `没声明的按 ${VISIBLE_GENS} 代估`)
-      t.ok(SHOW_MAX_BOARD >= 2048, '硬上限只挡"连一帧都画不动"的，不再拿尺寸当理由')
-      // 元像素自己声明了那个数，卡片行要带得过来
-      t.equal(METAPIXEL_LAYOUT.showGens, 35328, '元像素声明了它要跑多少代才看得出在干什么')
-      t.ok(/showGens: Number\.isFinite\(entry\.showGens\)/.test(readSrc('src/data/favorites.js')),
-        '卡片行把 showGens 带过来')
-      t.equal(nextShowIndex(2, 3), 0, '转一圈回到头')
-      t.equal(nextShowIndex(-1, 3), 0, '第一次从头开始')
-      t.ok(IDLE_MS >= 60000, '空闲阈值不能太短，否则像故障')
-      t.ok(/rowsForShow: \(\) => rowsNow\(\)\.filter\(r => r\.builtin\)/.test(readSrc('src/ui/favorites-view.js')),
-        '排片走收藏那同一个出口 —— 手抄名单迟早与卡片分叉')
-      t.ok(/showPlaylist\(app\.favorites \? app\.favorites\.rowsForShow\(\) : \[\], \{/.test(readSrc('src/ui/show.js')),
-        '看展从那个出口取行')
-      t.ok(/gensPerSecFor: row =>/.test(readSrc('src/ui/show.js')), '闸用的是速度，不是尺寸')
-      t.ok(/app\.measuredStepMs\(\)/.test(readSrc('src/ui/show.js')), '速度优先用本机实测（D110 §16）')
-      // 自动开演要能在**发生的那一刻**关掉，而不是让人去设置里翻
-      const html = readSrc('index.html')
-      t.ok(/id="show-never"/.test(html), '横幅上有"别自动开演"')
-      t.ok(/prefs\.set\('autoShow', '0'\)/.test(readSrc('src/ui/show.js')), '按了就记住')
-      t.ok(PREF_KEYS.indexOf('autoShow') >= 0, '这个开关在白名单里')
-      // 44px：老账不留例外（D74 ③）
-      const css = readSrc('src/style.css')
-      const bar = /\.show-bar button \{([^}]*)\}/.exec(css)
-      t.ok(!!bar && /min-width: 44px/.test(bar[1]) && /min-height: 44px/.test(bar[1]),
-        '横幅上的按钮 44×44，桌面也不缩水')
-      t.ok(/\.show-bar \{[^}]*z-index: 5/.test(css), '横幅在附着层（D79）')
-      // **按可用宽度收，不按屏幕宽度**（D110 §25）：半屏窗口时屏幕还宽、画布已经很窄，
-      // 横幅那时会顶出去压住右边的参数栏（用户实测）。所以判据是容器查询。
-      t.ok(/\.stage \{[^}]*container-type: inline-size/.test(css), '画布那块地方要成为查询容器')
-      t.ok(/@container stage \(max-width: 720px\) \{[\s\S]*?\.show-bar \{[^}]*bottom: 10px/.test(css),
-        '地方一窄就挪到下沿 —— 上面是 HUD 的地方')
-      t.ok(/@container stage \(max-width: 720px\) \{[\s\S]*?white-space: nowrap/.test(css),
-        '不许换行 —— 竖着挤成四行比没有还难认')
-      // 再窄就收成小条：一个绿点 + 两个图标（要传达的只有三件事）
-      t.ok(/@container stage \(max-width: 420px\) \{[\s\S]*?\.show-what \{ display: none/.test(css),
-        '很窄时收掉文字')
-      t.ok(/#show-next::after \{ content: '⏭' \}/.test(css) && /#show-exit::after \{ content: '✕' \}/.test(css),
-        '收成图标之后仍看得出哪颗是下一局、哪颗是退出')
-      t.ok(/@container stage \(max-width: 420px\)[\s\S]*?min-width: 44px/.test(css),
-        '收成小条也不许破 44px（D74 ③ 那条老账不留例外）')
-      // 老引擎兜底：做的是同一件事，判据粗一点
-      t.ok(/@supports not \(container-type: inline-size\)[\s\S]*?@media \(max-width: 767px\)/.test(css),
-        '不支持容器查询的退回屏幕宽度规则')
     }
   },
   {
@@ -7028,20 +6891,21 @@ cases.push(
     }
   },
   {
-    name: '周期性写盘靠"不启动"，不靠排序（D110 §1）',
+    name: '周期性写盘那一类：判据留着，使用者已撤（D110 §1 / §14 已撤销）',
     run(t) {
-      // 排序只管得住第一帧：轮播第二帧照样盖掉链接那一局。
-      // 所以有链接时自动看展**根本不启动**，而不是"先启动再被盖过一次"。
-      const withLink = resolveInitialBoard({
-        share: { board: 200, boundary: 'dead', rule: 'B3/S23', view: { cx: 1, cy: 1, span: 40 } },
-        firstVisit: true, density: 0.3, autoShowcaseEnabled: true
-      })
-      t.equal(withLink.autoShowcase, false, '有链接时自动看展不启动')
-      t.equal(withLink.starterGift, false, '有链接时引导也不送小家伙')
-      const noLink = resolveInitialBoard({ share: null, firstVisit: true, density: 0.3, autoShowcaseEnabled: true })
-      t.equal(noLink.autoShowcase, true, '没链接时该开还是开 —— 守卫不许把功能锁死')
-      t.equal(SOURCES.find(x => x.name === 'autoShowcase').kind, 'periodic', '自动看展登记为周期性')
-      t.equal(SOURCES.find(x => x.name === 'resize').kind, 'responsive', '尺寸变化登记为响应式')
+      // 看展（唯一的周期性写盘者）在 v1.19.0 撤了。**判据本身仍然成立**：
+      // 排序救不了周期性写盘（排在链接前只管得住第一帧，第二帧照样盖掉），只能靠不启动。
+      // 所以那一行留在表里当样板，并标了 retired —— 下一个周期性写盘的功能照它办。
+      const row = SOURCES.find(x => x.name === 'autoShowcase')
+      t.ok(!!row, '样板行还在')
+      t.equal(row.kind, 'periodic', '它代表的是"周期性"这一类')
+      t.equal(row.retired, true, '并且明标已撤销 —— 不许让人以为还有这个功能')
+      t.ok(/已撤销|retired|样板/.test(readSrc('src/data/startup.js')), '源码里写清楚为什么留着')
+      // 撤干净：意图里不该再有那个字段，也不该再有人去读偏好
+      const intent = resolveInitialBoard({ share: null, firstVisit: false, density: 0.3 })
+      t.equal('autoShowcase' in intent, false, '意图里不留没人用的字段')
+      t.ok(readSrc('src/main.js').indexOf('autoShowcaseEnabled') < 0, '开机不再问那个偏好')
+      t.ok(readSrc('src/data/startup.js').indexOf('autoShowcaseEnabled') < 0, '裁决也不再收它')
     }
   },
   {

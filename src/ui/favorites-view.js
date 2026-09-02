@@ -52,7 +52,7 @@ export function createFavorites(app) {
    * 复现一条布局：清盘 → 按 RLE 头行切规则 → 居中铺上。
    * 顺序不能反：先切规则再铺格子，否则新规则的可达性钳制会把刚铺的格子削掉（见 board.setRule）。
    */
-  app.replayLayout = function (entry, opts = {}) {
+  app.replayLayout = function (entry) {
     const rule = ruleOf(entry.rle)
     // **这一局自带的环境**（D104）：边界、速度先切过去，用户原来的设置替他存着，
     // 清空 / 读档 / 换局时再还回去。这些局的生平都是在各自的环境里量出来的 ——
@@ -70,8 +70,7 @@ export function createFavorites(app) {
     // 记下"现在盘上是哪一局" —— 分享时按名字走（D110 §19）。
     // 用户一动手（画、清、随机、读档）就作废，那时盘上已经不是这一局了。
     app.currentShowId = ok ? (entry.id || null) : null
-    // 看展换局时不弹这句：横幅上已经写着现在放的是哪一局，再弹一次是噪音
-    if (ok && !opts.silent) app.toast(t('fav.replayed', { name: entry.name || t(entry.nameKey) }))
+    if (ok) app.toast(t('fav.replayed', { name: entry.name || t(entry.nameKey) }))
     return ok
   }
 
@@ -447,8 +446,6 @@ export function createFavorites(app) {
   pump()      // 上次没跑完的、导入进来的，开机顺手补上
   return {
     render,
-    // 看展的排片从**这同一个出口**取行 —— 手抄一张名单迟早与卡片分叉（D83 §1）
-    rowsForShow: () => rowsNow().filter(r => r.builtin),
     // `id=builtin:` 那条路要的两样：认不认得这个名字、这个名字的格子在哪儿（D110 §19）
     knownId: id => rowsNow().some(r => r.builtin && r.id === id),
     byId: id => rowsNow().find(r => r.builtin && r.id === id) || null,

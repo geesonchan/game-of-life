@@ -8,7 +8,6 @@ import { visualFor, isBigBoard } from './data/board-sizes.js'
 import { encodeShare, decodeShare, shareVerdict } from './data/share.js'
 import { resolveInitialBoard } from './data/startup.js'
 import { resizePlan, captureSession, pasteCells, cellBounds } from './data/session.js'
-import { createShow } from './ui/show.js'
 import { runReplay, etaSeconds } from './ui/replay-driver.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
@@ -201,9 +200,6 @@ app.assertBoardUnlocked = function (who) {
   if (app.bootLocked) {
     throw new Error(`启动意图还没裁决完，${who} 不许写盘（D110 §13）`)
   }
-  // 看展期间用户自己动了手：**先把他那一局还回来**，他的动作再落在自己的局上（D110 §14）。
-  // 直接接管的话，他进看展之前摆的东西就没了 —— 那正是这条规矩要防的。
-  if (app.show && app.show.isOn() && !app.show.isLoading()) app.show.yieldToUser()
 }
 
 app.clear = function (opts = {}) {
@@ -1019,31 +1015,6 @@ function replayTo(gen) {
  * 从前那三处各写各的，谁在前谁在后靠读代码才知道；D107 那张表也就只是一句约定。
  */
 /**
- * 把一份会话快照原样还回去：**格子 + 环境 + 取景**（D110 §11）。
- * 退看展走它；将来"撤销一次大动作"要是要做，也走它 —— 不做第二套。
- */
-app.restoreSession = function (snap) {
-  if (!snap) return false
-  if (app.engine.w !== snap.w || app.engine.h !== snap.h) {
-    app.resizeBoard(snap.w, snap.h, { silent: true, carry: false })
-  }
-  if (app.engine.boundary !== snap.boundary) app.setBoundary(snap.boundary)
-  app.applyNotation(snap.rule)
-  app.engine.cur.set(snap.cells)
-  app.engine.generation = snap.generation
-  app.engine.stats.alive = app.engine.countAlive()
-  app.visual.sync(app.engine)
-  app.runDirty = !!snap.runDirty
-  if (Number.isFinite(snap.speed)) app.setSpeed(snap.speed)
-  if (snap.view) app.applyViewIntent(snap.view, 'exact')
-  app.setRunning(!!snap.running)
-  app.records.startRun()
-  app.dirty = true
-  app.updateHud()
-  return true
-}
-
-/**
  * 启动兜底（D110 §15）：裁决或落盘抛了，退到一张安全的空盘。
  *
  * 闸没开就抛，那句抛是**给代码看的** —— 线上真抛了而没人接，就是白屏，
@@ -1161,9 +1132,6 @@ app.library = setupLibrary(app)
 app.library.render()
 app.intro = createIntro(app)
 app.minimap = createMinimap(app)   // 小地图（D109）：放大之后不至于迷路
-// 看展（D110 §14）：手动进入是用户的动作（排最后），自动进入被链接抑制（排链接之前）。
-// 建在 favorites 之后 —— 排片从收藏那同一个出口取行。
-app.show = createShow(app)
 // 点「?」总是带上第零幕，老用户也能在这里重选版本
 document.getElementById('btn-help').addEventListener('click', () => app.intro.open({ chooser: true }))
 // 顶栏分享钮（D107 ①）：编码当前这一局并复制，提示与另外两处同一套
@@ -1223,7 +1191,6 @@ onLangChange(() => {
   app.favorites.relocalize()
   app.critical.relocalize()
   app.zoomBar.relocalize()
-  app.show.relocalize()
   app.refreshTabHint()
 })
 function trailLabelOf(v) {
@@ -1257,9 +1224,6 @@ try {
   share: bootShare.ok ? bootShare.state : null,
   firstVisit,
   density: app.density,
-  // 自动看展开着没，在**裁决**里就定下来（D110 §14）：看展自己不许去读 hash，
-  // 它只问意图。压缩落地那天 decodeShare 变异步，这条也不会悄悄错。
-  autoShowcaseEnabled: prefs.get('autoShow') !== '0',
   brokenLink: linkBroken
   }))
 } catch (err) {
@@ -1335,7 +1299,6 @@ function frame(now) {
 
   // 小地图：每帧问一次，真正重画由它自己节流（250ms，且只在真变了时画）
   app.minimap.tick(now)
-  app.show.tick(now)         // 看展：该换下一局了吗；没在看展时它数空闲时间
 
   // 帧率统计（无论是否在跑都记，方便观察渲染负载）
   app.framesInWindow++

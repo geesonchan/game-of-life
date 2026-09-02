@@ -230,9 +230,7 @@ export function layoutRow(entry, tr) {
   const size = {
     board: entry.board || 0, scale: entry.scale || '',
     rleUrl: entry.rleUrl || '', w: entry.w || 0, h: entry.h || 0,
-    boundary: entry.boundary || '', speed: entry.speed || 0,
-    // 看展的闸要用它：这一局跑多少代才看得出在干什么（没声明就按默认估，D110 §22）
-    showGens: Number.isFinite(entry.showGens) ? entry.showGens : 0
+    boundary: entry.boundary || '', speed: entry.speed || 0
   }
   if (entry.nameKey) {
     return {

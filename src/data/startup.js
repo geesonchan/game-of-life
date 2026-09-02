@@ -19,7 +19,11 @@ export const SOURCES = Object.freeze([
   { name: 'chooser', rank: 1, kind: 'once', writes: 'view', desc: '首屏儿童版/标准版选择页：不写格子，但收工具条会改画布尺寸' },
   { name: 'firstVisitDemo', rank: 2, kind: 'once', writes: 'cells+view', desc: '首访导演场（随机盘）' },
   { name: 'link', rank: 3, kind: 'once', writes: 'cells+view', desc: '分享链接（取景是它内部最后一步）' },
-  { name: 'autoShowcase', rank: 3.5, kind: 'periodic', writes: 'cells+view', desc: '自动看展轮播：有链接时不启动' },
+  // **已撤销（v1.19.0）**：看展这个功能撤了，所以这一行现在没有使用者。
+  // 留着是因为它是"周期性写盘"这一类的**唯一样板** —— 判据（顺序救不了周期性写盘，
+  // 只能靠不启动）仍然成立，下一个周期性写盘的功能进来时照它办。
+  { name: 'autoShowcase', rank: 3.5, kind: 'periodic', writes: 'cells+view', retired: true,
+    desc: '自动轮播这一类：有链接时不启动（看展已撤销，此行留作样板）' },
   { name: 'introFinish', rank: 4, kind: 'once', writes: 'cells+view', desc: '引导收尾：有链接时不碰' },
   { name: 'resize', rank: 4.5, kind: 'responsive', writes: 'view', desc: '窗口/画布尺寸变化：只能从已有意图重算' },
   { name: 'user', rank: 5, kind: 'once', writes: 'cells+view', desc: '用户自己的动作：读档/清空/复现/手动看展' }
@@ -28,7 +32,7 @@ export const SOURCES = Object.freeze([
 /**
  * 裁决"这次启动棋盘从哪儿来"。**纯函数**：不碰引擎、不碰 DOM，只回一个意图。
  *
- * @param {{share: object|null, firstVisit: boolean, density: number, autoShowcaseEnabled?: boolean}} ctx
+ * @param {{share: object|null, firstVisit: boolean, density: number, brokenLink?: string}} ctx
  *   `share` 是 decodeShare 成功后的 state（失败或没有就传 null）
  * @returns {{source:string, board?:number, boundary?:string, rule?:string, seed?:number,
  *            density?:number, rle?:string, view?:object, speed?:number,
@@ -43,8 +47,6 @@ export function resolveInitialBoard(ctx) {
       // 因为漏掉的字段静默变成"没给"。展开写就不会漏，新字段也不必再改这里。
       ...share,
       source: 'link',
-      // 有链接就不许自动看展开播 —— 周期性写盘者靠"不启动"治，不靠排序（D110 §1）
-      autoShowcase: false,
       // 引导收尾也不送小家伙：棋盘上已经有他要看的那一局（D107 ③）
       starterGift: false
     }
@@ -58,7 +60,6 @@ export function resolveInitialBoard(ctx) {
       source: 'firstVisitDemo',
       seed: 4271,
       density: ctx.density,
-      autoShowcase: !!(ctx && ctx.autoShowcaseEnabled),
       // 链接坏了也**不送小家伙**：这个人是为那条链接来的，
       // 给他一个滑翔机等于把失败盖掉（D110 §23）
       starterGift: !broken,
@@ -67,7 +68,6 @@ export function resolveInitialBoard(ctx) {
   }
   return {
     source: 'empty',
-    autoShowcase: !!(ctx && ctx.autoShowcaseEnabled),
     starterGift: !broken,
     ...broken
   }

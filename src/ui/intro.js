@@ -182,6 +182,10 @@ export function createIntro(app) {
     document.body.classList.remove('modal-open')
     // 看过就记住 —— 无论是看完、跳过还是按 Esc 关掉
     prefs.set('introSeen', '1')
+    // 引导**彻底关掉之后**，才轮到"必须被读到"的那件事（D110 §31）。
+    // 推迟一帧：两个弹层叠在一起谁也读不清，而这句话必须被读到。
+    // 这里只发一个"我关了"的事件 —— 呈现由那个唯一的渲染者决定（不在这儿判断）。
+    if (app.presentNotice) requestAnimationFrame(() => app.presentNotice())
   }
 
   function stopStage() {
@@ -319,39 +323,25 @@ export function createIntro(app) {
   function act3Notice() {
     if (app.shareApplied) return { cls: 'gift', key: 'intro.act3.shared' }
     const intent = app.initialIntent || {}
-    if (intent.brokenLink) {
-      // 队里那件事由**第三幕或挡路框二选一**呈现（D110 §24 修订）：
-      // 取到了就由我说，取不到说明别处已经说了。
-      if (app.takeNotice) app.takeNotice()
-      // **两个渲染者的文案取自同一处**（D110 §29，作者定）：这里与挡路框用的是
-      // 同一对词条 —— 标题 `share.failed.title` + 理由 `share.bad.<reason>`。
-      // 各写各的话，措辞与分量迟早分叉，而分叉正是"谁都以为对方说了"的病根换了个位置。
-      // 这也顺带去掉了"同一件事说两遍"：引导原先那句自有文案与理由重复。
-      return { cls: 'mishap', key: 'share.failed.title', reasonKey: 'share.bad.' + intent.brokenLink }
-    }
+    // **链接坏了这件事，引导一个字都不说**（D110 §31，作者定：B 案）。
+    // 走引导的人正处在"了解这是什么"的状态，不是"处理一个坏消息"的状态；
+    // 两件事挤在同一屏，无论怎么排版都会有一件被当成另一件的背景。
+    // 换颜色、换排版、换位置都只是在**段落**这个层级做文章 —— 提级的解法是让它离开这一幕。
+    // 这里只保留"不承诺送礼"这一半：返回 null = 这一幕不作任何承诺。
+    if (intent.brokenLink) return null
     if (intent.starterGift === false) return { cls: 'gift', key: 'intro.act3.shared' }
     return { cls: 'gift', key: 'intro.act3.gift' }
   }
 
   function act3() {
     const n = act3Notice()
-    // 具体理由只决定**说什么**，不决定走哪条路（D110 §23 修订）
-    // **坏消息要连原因一起说**（D110 §27）：原因不是附注，是这句话的后半。
-    // 它当过"第二行小字"（12px、更暗的颜色）—— 作者在手机上的反馈是"没看到理由"。
-    // 一个更小更暗的第二行，在坏消息里读起来像装饰，而它恰恰是唯一有用的那部分。
-    const why = n.reasonKey ? ' ' + (t(n.reasonKey) || t('share.bad.other')) : ''
-    const block = n.cls === 'mishap'
-      ? `<p class="mishap"><b>${t(n.key)}</b>${why}</p>`
-      : `<p class="${n.cls}">${t(n.key)}</p>`
-    // **坏消息排在解说之前**（D110 §28）：矮视口上（横屏手机实测 667×375）正文区会滚，
-    // 排在末尾的那一块正好落在折线以下 —— 于是又变成"在屏幕上但没被读到"。
-    // 礼物那一句相反：它是收尾的奖励，排在最后才对。
+    // n 为 null = 这一幕不作任何承诺（链接坏了那条路，D110 §31）
+    const block = n ? `<p class="${n.cls}">${t(n.key)}</p>` : ''
     bodyEl.innerHTML = `
       <h3>${t('intro.act3.title')}</h3>
-      ${n.cls === 'mishap' ? block : ''}
       <p class="lead">${t('intro.act3.body')}</p>
       <p class="caption">${t('intro.act3.caption')}</p>
-      ${n.cls === 'mishap' ? '' : block}
+      ${block}
       ${pageList().includes('helpAge')
         ? `<button class="appendix-link" data-appendix>${t('intro.appendix.entry')}</button>`
         : ''}`

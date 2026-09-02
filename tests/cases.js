@@ -1942,38 +1942,33 @@ cases.push(
       const picker = rawBodyOf('act3Notice')
       for (const key of LINE_KEYS) t.ok(picker.indexOf(key) >= 0, `giftLineKey 里要挑得到 ${key}`)
       t.ok(/const n = act3Notice\(\)/.test(raw), '第三幕那一块就是它挑出来的')
-      // **失败不许穿礼物的衣服**：坏消息与礼物不能共用 .gift 那个绿框
-      t.ok(/cls: 'mishap'/.test(picker) && /cls: 'gift'/.test(picker), '两种消息两种样子')
-      // **坏消息要连原因一起说；只说"出事了"不算说了**（D110 §27，作者定）。
-      // 原因当过"第二行小字"，作者在手机上的反馈是"只看到块，没看到理由" ——
-      // 更小更暗的第二行在坏消息里读起来像装饰，而它恰恰是唯一有用的那部分。
-      const act3src = rawBodyOf('act3')
-      t.ok(/reasonKey \? ' ' \+ \(t\(n\.reasonKey\)/.test(act3src),
-        '原因接在同一句话里，不是另起一个小字块')
-      t.ok(/<p class="mishap"><b>\$\{t\(n\.key\)\}<\/b>\$\{why\}<\/p>/.test(act3src),
-        '引子加粗，原因紧随其后 —— 同一段')
-      t.ok(!/mishap-why/.test(readSrc('src/style.css')), '不许再有"更小更暗的第二行"那条样式')
-      t.ok(!/mishap-why/.test(act3src), '模板里也不许再有')
-      // 兜底：认不出的理由也要说得出话
-      t.ok(!!DICT.zh['share.bad.other'] && !!DICT.en['share.bad.other'], '没有对应词条时有兜底那句')
-      t.ok(/\.intro-body \.mishap \{/.test(readSrc('src/style.css')), 'mishap 有自己的样式')
-      // **两个渲染者的文案取自同一处**（D110 §29，作者定）：引导第三幕与挡路框
-      // 用的必须是同一对词条，不许各写各的 —— 各写各的，措辞与分量迟早分叉。
-      t.ok(/key: 'share\.failed\.title'/.test(picker), '引导用的是挡路框那句标题')
-      t.ok(/reasonKey: 'share\.bad\.' \+ intent\.brokenLink/.test(picker), '理由也来自同一族词条')
-      t.ok(!('intro.act3.badLink' in DICT.zh) && !('intro.act3.badLink' in DICT.en),
-        '引导不许再有自己那份坏消息文案')
-      const mainSrc = readSrc('src/main.js')
-      t.ok(/title: t\('share\.failed\.title'\)/.test(mainSrc), '挡路框用的也是它')
-      t.ok(/body: t\(key\) \|\| t\('share\.bad\.other'\)/.test(mainSrc), '挡路框的正文同样来自 share.bad.*')
-      // 队列：拒绝一发生就入队，第三幕与挡路框**二选一**消费（D110 §24 修订）
-      t.ok(/if \(app\.takeNotice\) app\.takeNotice\(\)/.test(picker), '第三幕说了就把那件事取走')
+      // **这条通知只有一个渲染者**（D110 §31，作者定：B 案）。
+      // 比"文案同源"更强：分叉不是被守卫拦住，而是**不存在**。
       const main = readSrc('src/main.js')
+      const introSrc = readSrc('src/ui/intro.js')
+      t.ok(/if \(intent\.brokenLink\) return null/.test(picker),
+        '链接坏了那条路，引导一个字都不说（只保留"不承诺送礼"这一半）')
+      t.ok(!/mishap/.test(introSrc), '引导里不许再有那个渲染者')
+      t.ok(!/mishap/.test(readSrc('src/style.css')), '它的样式也撤掉 —— 没有使用者的样式就是死代码')
+      t.ok(!/takeNotice/.test(introSrc), '引导不许再取走那件事')
+      t.equal((main.match(/app\.reportLinkFailure\(/g) || []).length, 1,
+        '呈现坏消息的地方只有一处 —— 多出第二个渲染者就红')
+      const present = locate(main, /app\.presentNotice = function[\s\S]*?\n\}/g, 'presentNotice 的定位')[0]
+      t.ok(/const n = app\.takeNotice\(\)/.test(present), '它负责取')
+      t.ok(/app\.reportLinkFailure\(n\.reason\)/.test(present), '它负责呈现')
+      t.equal((main.match(/app\.takeNotice\(\)/g) || []).length, 1, '取也只有一处')
       t.ok(/if \(linkBroken\) app\.queueNotice\(\{ kind: 'linkFailed', reason: linkBroken \}\)/.test(main),
         '拒绝一发生就入队')
-      t.ok(/const n = app\.takeNotice\(\)\s*\n\s*if \(n && n\.kind === 'linkFailed'\) app\.reportLinkFailure/.test(main),
-        '没有引导时由挡路框取走呈现')
-      t.equal((main.match(/app\.takeNotice\(\)/g) || []).length, 1, '取的地方只有一处（另一处在引导里）')
+      // **时机**：引导彻底关掉之后才弹，不叠在引导上
+      const closeFn = locate(introSrc, /function close\(\)[\s\S]*?\n  \}/g, 'close() 的定位')[0]
+      t.ok(/modal\.hidden = true/.test(closeFn), '先把引导藏起来')
+      t.ok(/requestAnimationFrame\(\(\) => app\.presentNotice\(\)\)/.test(closeFn),
+        '再推迟一帧去叫那个渲染者 —— 两个弹层不许叠在一起')
+      t.ok(closeFn.indexOf('modal.hidden = true') < closeFn.indexOf('presentNotice'), '顺序不能反')
+      t.ok(!('intro.act3.badLink' in DICT.zh) && !('intro.act3.badLink' in DICT.en),
+        '引导那份坏消息文案已删')
+      t.ok(/title: t\('share\.failed\.title'\)/.test(main) && /body: t\(key\) \|\| t\('share\.bad\.other'\)/.test(main),
+        '挡路框的标题与正文来自 share.failed.title / share.bad.*')
 
       // 兑现：finish() 里，送礼那一步前面的判据**与挑句子的判据同一组**
       const fulfil = bodyOf('finish')

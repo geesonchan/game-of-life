@@ -884,8 +884,12 @@ app.applyShareHash = function (hash) {
   // 认不认得那个内置局名字，解码那一步就问清楚（认不出直接拒，不开空盘）
   const r = decodeShare(hash, { knownId: id => !!app.favorites && app.favorites.knownId(id) })
   if (!r.ok) {
-    // 粘一条链接进来，那一下的唯一目的就是打开它 —— 失败要挡路，不能底下飘一句（D110 §24）
-    if (r.reason !== 'empty') app.reportLinkFailure(r.reason)
+    // 粘一条链接进来，那一下的唯一目的就是打开它 —— 失败要挡路，不能底下飘一句（D110 §24）。
+    // 走的是**同一条队 + 同一个渲染者**（§31）：这里只负责"入队"，呈现不归它管。
+    if (r.reason !== 'empty') {
+      app.queueNotice({ kind: 'linkFailed', reason: r.reason })
+      app.presentNotice()
+    }
     return false
   }
   app.applyShareState(r.state)
@@ -1252,6 +1256,19 @@ try {
 if (app.shareApplied) app.toast(t('share.opened'))
 if (linkBroken) app.queueNotice({ kind: 'linkFailed', reason: linkBroken })
 
+/**
+ * 队里那件事的**唯一渲染者**（D110 §31，作者定：B 案）。
+ * 谁都可以来叫它（开机时没有引导 / 引导关掉之后），但**只有它会呈现** ——
+ * 从前引导自己也渲染一套，于是措辞、分量、要不要点一下都可能分叉。
+ * 现在分叉不是"被守卫拦住"，而是**不存在**：只有一个渲染者。
+ */
+app.presentNotice = function () {
+  const n = app.takeNotice()
+  if (!n) return false
+  if (n.kind === 'linkFailed') app.reportLinkFailure(n.reason)
+  return true
+}
+
 app.reportLinkFailure = function (reason, opts = {}) {
   const key = 'share.bad.' + reason
   app.alertAction({
@@ -1408,9 +1425,8 @@ if (prefs.get('introSeen') !== '1') {
   const savedMode = prefs.get('mode')
   app.intro.open({ chooser: savedMode !== 'simple' && savedMode !== 'full' })
 } else {
-  // 没有引导 → 队里若还有那件事，就由挡路框呈现（引导那条路会先把它取走）
-  const n = app.takeNotice()
-  if (n && n.kind === 'linkFailed') app.reportLinkFailure(n.reason)
+  // 没有引导 → 直接呈现。有引导的那条路由引导关闭时来叫（D110 §31）
+  app.presentNotice()
 }
 
 // 便于在浏览器控制台里做手工验证

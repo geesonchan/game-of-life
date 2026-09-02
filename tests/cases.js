@@ -1869,16 +1869,13 @@ cases.push(
       // 从别人的链接进来时，棋盘上已经有他要看的那一局 —— 这时候再放小家伙就是把它盖掉；
       // 于是文案换成另一句（不承诺放东西），动作也跟着不放。
       // **要守的仍是同一件事：说的与做的用的是同一个条件。**
-      const PROMISES = [
-        {
-          key: 'intro.act3.gift',       // 「这就给你放一个『会走路的小家伙』」
-          alt: 'intro.act3.shared',     // 从链接进来时改说这一句（不承诺放东西）
-          renderer: 'act3',             // 渲染这两句话的函数
-          fulfiller: 'finish',          // 兑现它的函数
-          call: 'placeStarterGift',     // 兑现动作
-          cond: 'app.shareApplied'      // 唯一允许的那个条件
-        }
-      ]
+      // **D110 §23 之后这条从二值改成三值**（用户实测抓到）：
+      // 从前只分"有链接 / 没链接"，于是**有链接但坏了**落进了后者 ——
+      // 引导照常清盘送礼，而"链接坏了"这件事恰恰对最需要知道的那个人隐藏了：
+      // 第一次点开、正在走引导的人。老窗口反而看得到，因为它不走引导。
+      // 三条路：有效链接 / 坏链接 / 没链接，**说的那句与做的那件事必须用同一组判据**。
+      const LINE_KEYS = ['intro.act3.gift', 'intro.act3.shared', 'intro.act3.badLink']
+      const PREDICATES = ['app.shareApplied', 'intent.starterGift === false', 'intent.brokenLink']
       const src = stripLiterals(readSrc('src/ui/intro.js'))
       const bodyOf = name => {
         const i = src.indexOf('function ' + name)
@@ -1887,26 +1884,39 @@ cases.push(
         return src.slice(i, next < 0 ? src.length : next)
       }
       const raw = readSrc('src/ui/intro.js')
-
-      for (const p of PROMISES) {
-        t.ok(raw.indexOf(p.key) >= 0, `${p.renderer} 应当渲染 ${p.key}`)
-        t.ok(raw.indexOf(p.alt) >= 0, `${p.renderer} 也要渲染另一句 ${p.alt}`)
-        for (const lang of ['zh', 'en']) t.ok(p.alt in DICT[lang], `${lang} 缺 ${p.alt}`)
-
-        // 两句话由**同一个条件**挑：`cond ? alt : key`
-        t.ok(new RegExp(p.cond.replace('.', '\\.') + ' \\? \'' + p.alt + '\' : \'' + p.key + '\'').test(raw),
-          `${p.renderer} 里必须按 ${p.cond} 在两句话之间挑`)
-
-        const fulfil = bodyOf(p.fulfiller)
-        t.ok(fulfil.indexOf(p.call) >= 0, `${p.fulfiller}() 必须调用 ${p.call}`)
-
-        // 核心判据：兑现动作前面**只允许**那一个条件；别的 if 一律不许
-        const before = fulfil.slice(0, fulfil.indexOf(p.call))
-        const ifs = before.match(/\bif\s*\([^)]*\)/g) || []
-        t.equal(ifs.length, 1, `${p.call} 前面应当只有一个条件（实际 ${ifs.length} 个）`)
-        t.ok(ifs[0] && ifs[0].indexOf(p.cond) >= 0,
-          `${p.call} 前面那个条件必须就是 ${p.cond} —— 说的与做的得用同一个条件`)
+      for (const key of LINE_KEYS) {
+        t.ok(raw.indexOf(key) >= 0, `第三幕要挑得到 ${key}`)
+        for (const lang of ['zh', 'en']) t.ok(key in DICT[lang], `${lang} 缺 ${key}`)
       }
+      // 三句话由**一处**挑（giftLineKey），而不是散在几个三元表达式里。
+      // 词条名是字符串字面量：bodyOf 拿的是 stripLiterals 的输出，查它得用**原文**（D88 §3）
+      const rawBodyOf = name => {
+        const i = raw.indexOf('function ' + name)
+        t.ok(i >= 0, `intro.js 里应有 ${name}()`)
+        const next = raw.indexOf('\n  function ', i + 1)
+        return raw.slice(i, next < 0 ? raw.length : next)
+      }
+      const picker = rawBodyOf('giftLineKey')
+      for (const key of LINE_KEYS) t.ok(picker.indexOf(key) >= 0, `giftLineKey 里要挑得到 ${key}`)
+      t.ok(/\$\{t\(giftLineKey\(\)\)\}/.test(raw), '第三幕那句话就是它挑出来的')
+
+      // 兑现：finish() 里，送礼那一步前面的判据**与挑句子的判据同一组**
+      const fulfil = bodyOf('finish')
+      t.ok(fulfil.indexOf('placeStarterGift') >= 0, 'finish() 必须调用 placeStarterGift')
+      const before = fulfil.slice(0, fulfil.indexOf('placeStarterGift'))
+      const ifs = before.match(/\bif\s*\([^)]*\)/g) || []
+      t.equal(ifs.length, 1, `送礼前面应当只有一个条件（实际 ${ifs.length} 个）`)
+      for (const pred of PREDICATES) {
+        t.ok(ifs[0].indexOf(pred) >= 0, `那个条件里少了 ${pred} —— 说的与做的得用同一组判据`)
+        t.ok(picker.indexOf(pred.split(' ')[0]) >= 0, `giftLineKey 里也要看 ${pred.split(' ')[0]}`)
+      }
+      // **坏链接这条路**：裁决层就得把它与"没链接"分开，否则前面这些都白搭
+      const broken = resolveInitialBoard({ share: null, firstVisit: true, density: 0.3, brokenLink: 'truncated' })
+      t.equal(broken.starterGift, false, '链接坏了不送小家伙 —— 给他个滑翔机等于把失败盖掉')
+      t.equal(broken.brokenLink, 'truncated', '坏的理由要带到意图里')
+      const fine = resolveInitialBoard({ share: null, firstVisit: true, density: 0.3 })
+      t.equal(fine.starterGift, true, '真没链接的人照旧收礼')
+      t.equal(fine.brokenLink, undefined, '没链接就没有这一项')
     }
   },
   {
@@ -6261,7 +6271,8 @@ cases.push(
       // 收尾第一件事就是看这一局是不是链接来的；是就原样退出
       // D110 之后判据来自开机那次裁决（intent.starterGift），shareApplied 管的是
       // 引导开着时才粘进来的链接。两条都要在，少一条就有一种人被抹掉。
-      const RET = /if \(app\.shareApplied \|\| intent\.starterGift === false\) return/
+      // D110 §23：从二值改成三值 —— 有效链接 / 坏链接 / 没链接
+      const RET = /if \(app\.shareApplied \|\| intent\.starterGift === false \|\| intent\.brokenLink\) return/
       t.ok(RET.test(fin[0]), '有链接时收尾直接返回，不清盘不送礼')
       t.ok(/const intent = app\.initialIntent/.test(fin[0]), '判据取自 app.initialIntent，不另立一套')
       const before = fin[0].slice(0, fin[0].indexOf('placeStarterGift'))
@@ -6501,7 +6512,14 @@ cases.push(
       t.ok(/if \(document\.hidden\) \{ if \(on\) pause\(\); return \}/.test(vis[0]), '切走就暂停')
       t.ok(/noteActivity\(\)/.test(vis[0]), '回来重新计时')
       // "重新计时"不是"接着算"：noteActivity 把起点推到现在
-      t.ok(/function noteActivity\(\) \{ lastActivity = Date\.now\(\) \}/.test(ui), '重新计时 = 起点推到现在')
+      t.ok(/function noteActivity\(\) \{ lastActivity = performance\.now\(\) \}/.test(ui), '重新计时 = 起点推到现在')
+      // **时钟必须与 tick 收到的那个是同一个**（D110 §26）。混用纪元毫秒与 rAF 时间戳，
+      // idleMs 恒为巨大的负数 —— 自动开演永远不会发生，而界面上看不出任何异常。
+      // 上一轮我"验过"它：手动喂了纪元时间，喂的不是 app 喂的那个数。
+      const code = stripComments(ui)
+      t.ok(code.indexOf('Date.now()') < 0, '看展里不许出现 Date.now() —— tick 拿的是 rAF 时间戳')
+      t.ok(/dueAt = performance\.now\(\) \+ cur\.dwellMs/.test(code), '换局的到期时刻也用同一个时钟')
+      t.ok(/const idleMs = now - lastActivity/.test(code), '闲了多久 = 同一时钟的两个读数相减')
     }
   },
   {
@@ -6617,11 +6635,23 @@ cases.push(
       t.ok(!!bar && /min-width: 44px/.test(bar[1]) && /min-height: 44px/.test(bar[1]),
         '横幅上的按钮 44×44，桌面也不缩水')
       t.ok(/\.show-bar \{[^}]*z-index: 5/.test(css), '横幅在附着层（D79）')
-      // 窄屏挪到下沿：放上面会压住 HUD 那一行（实测截图为证）
-      t.ok(/@media \(max-width: 767px\) \{[\s\S]*?\.show-bar \{[^}]*bottom: 10px/.test(css),
-        '窄屏挪到画布下沿 —— 上面是 HUD 的地方')
-      t.ok(/@media \(max-width: 767px\) \{[\s\S]*?white-space: nowrap/.test(css),
-        '窄屏不许换行 —— 竖着挤成四行比没有还难认')
+      // **按可用宽度收，不按屏幕宽度**（D110 §25）：半屏窗口时屏幕还宽、画布已经很窄，
+      // 横幅那时会顶出去压住右边的参数栏（用户实测）。所以判据是容器查询。
+      t.ok(/\.stage \{[^}]*container-type: inline-size/.test(css), '画布那块地方要成为查询容器')
+      t.ok(/@container stage \(max-width: 720px\) \{[\s\S]*?\.show-bar \{[^}]*bottom: 10px/.test(css),
+        '地方一窄就挪到下沿 —— 上面是 HUD 的地方')
+      t.ok(/@container stage \(max-width: 720px\) \{[\s\S]*?white-space: nowrap/.test(css),
+        '不许换行 —— 竖着挤成四行比没有还难认')
+      // 再窄就收成小条：一个绿点 + 两个图标（要传达的只有三件事）
+      t.ok(/@container stage \(max-width: 420px\) \{[\s\S]*?\.show-what \{ display: none/.test(css),
+        '很窄时收掉文字')
+      t.ok(/#show-next::after \{ content: '⏭' \}/.test(css) && /#show-exit::after \{ content: '✕' \}/.test(css),
+        '收成图标之后仍看得出哪颗是下一局、哪颗是退出')
+      t.ok(/@container stage \(max-width: 420px\)[\s\S]*?min-width: 44px/.test(css),
+        '收成小条也不许破 44px（D74 ③ 那条老账不留例外）')
+      // 老引擎兜底：做的是同一件事，判据粗一点
+      t.ok(/@supports not \(container-type: inline-size\)[\s\S]*?@media \(max-width: 767px\)/.test(css),
+        '不支持容器查询的退回屏幕宽度规则')
     }
   },
   {

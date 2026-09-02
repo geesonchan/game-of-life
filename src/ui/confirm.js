@@ -26,6 +26,8 @@ export function createConfirm(app) {
    * @param {()=>void} onYes 用户点「继续」之后才跑
    */
   app.confirmAction = function (text, onYes) {
+    el.no.hidden = false                // 告知框把它藏起来过，这里要还原
+    el.yes.classList.add('danger')
     el.title.textContent = text.title
     el.body.textContent = text.body
     el.yes.textContent = text.yes
@@ -34,6 +36,22 @@ export function createConfirm(app) {
     el.modal.hidden = false
     // 焦点落在「取消」上：默认那一下回车不该是破坏性的那颗
     if (el.no.focus) el.no.focus()
+  }
+
+  /**
+   * **挡路的告知框**：只有一个按钮，点了才走（D110 §24）。
+   * 用在"用户此行的唯一目的失败了"那一类 —— 比如他专程为一条链接而来，而链接打不开。
+   * 顺带发生的事仍用不挡路的 toast。
+   */
+  app.alertAction = function (text, onClose) {
+    el.title.textContent = text.title
+    el.body.textContent = text.body
+    el.yes.textContent = text.yes || t('confirm.ok')
+    el.yes.classList.remove('danger')
+    el.no.hidden = true                 // 一个按钮：没有"取消"这一说，事情已经发生了
+    pending = onClose || null
+    el.modal.hidden = false
+    if (el.yes.focus) el.yes.focus()
   }
 
   el.yes.addEventListener('click', () => { const go = pending; close(); if (go) go() })

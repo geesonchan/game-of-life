@@ -308,12 +308,21 @@ export function createIntro(app) {
   }
 
   /* ---------------- 第三幕 ---------------- */
+  /** 第三幕最后那句话走哪一条 —— 与 finish() 的三条路是**同一个判据**（D70/D110 §23） */
+  function giftLineKey() {
+    if (app.shareApplied) return 'intro.act3.shared'
+    const intent = app.initialIntent || {}
+    if (intent.brokenLink) return 'intro.act3.badLink'
+    if (intent.starterGift === false) return 'intro.act3.shared'
+    return 'intro.act3.gift'
+  }
+
   function act3() {
     bodyEl.innerHTML = `
       <h3>${t('intro.act3.title')}</h3>
       <p class="lead">${t('intro.act3.body')}</p>
       <p class="caption">${t('intro.act3.caption')}</p>
-      <p class="gift">${t(app.shareApplied ? 'intro.act3.shared' : 'intro.act3.gift')}</p>
+      <p class="gift">${t(giftLineKey())}</p>
       ${pageList().includes('helpAge')
         ? `<button class="appendix-link" data-appendix>${t('intro.appendix.entry')}</button>`
         : ''}`
@@ -421,10 +430,14 @@ export function createIntro(app) {
     // **链接优先**（D107 ③）：棋盘上这一局是别人分享来的，收尾就不能清盘、也不能送滑翔机 ——
     // 否则任何第一次收到链接的人，走完引导看到的都不是分享的那一局。
     // 第三幕的文案在这种情况下也换了一句（不能承诺放小家伙却不放，D70）。
-    // 判据来自开机那次裁决（D110 §2），不在这儿另立一套：
-    // starterGift === false 就是"这局有主人了"。shareApplied 是引导开着时才粘进来的链接。
+    // **三条路，不是两条**（D110 §23）：
+    //   有链接且有效 → 直接返回，不清盘不送礼；
+    //   有链接但坏了 → 也不清盘不送礼（第三幕已经明说那条链接没打开）；
+    //   没有链接     → 照旧清盘送礼。
+    // 从前只分"有链接 / 没链接"，坏链接落进后者：引导清盘送礼，
+    // 而"链接坏了"这件事对最需要知道的那个人（正在走引导的第一次访客）隐藏了。
     const intent = app.initialIntent || {}
-    if (app.shareApplied || intent.starterGift === false) return
+    if (app.shareApplied || intent.starterGift === false || intent.brokenLink) return
     app.clear({ silent: true })   // 走既有的清空路径，记账与用户自己点清空完全一致
     placeStarterGift(app.engine)
     app.visual.reconcile(app.engine)

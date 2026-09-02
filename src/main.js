@@ -888,7 +888,8 @@ app.applyShareHash = function (hash) {
   // 认不认得那个内置局名字，解码那一步就问清楚（认不出直接拒，不开空盘）
   const r = decodeShare(hash, { knownId: id => !!app.favorites && app.favorites.knownId(id) })
   if (!r.ok) {
-    if (r.reason !== 'empty') app.toast(t('share.bad.' + r.reason) || t('share.bad.other'))
+    // 粘一条链接进来，那一下的唯一目的就是打开它 —— 失败要挡路，不能底下飘一句（D110 §24）
+    if (r.reason !== 'empty') app.reportLinkFailure(r.reason)
     return false
   }
   app.applyShareState(r.state)
@@ -1243,9 +1244,10 @@ const firstVisit = prefs.get('introSeen') !== '1'
 const bootShare = location.hash
   ? decodeShare(location.hash, { knownId: id => app.favorites.knownId(id) })
   : { ok: false, reason: 'empty' }
-if (location.hash && !bootShare.ok && bootShare.reason !== 'empty') {
-  app.toast(t('share.bad.' + bootShare.reason) || t('share.bad.other'))
-}
+// 链接坏了 = **这个人此行的唯一目的失败了**，所以是挡路提示，不是底下飘一句（D110 §24）。
+// 但如果他还要走引导，那句话由第三幕来说 —— 两个弹层不该叠在一起。
+const linkBroken = location.hash && !bootShare.ok && bootShare.reason !== 'empty'
+  ? bootShare.reason : null
 // **抛出去要有人接**（D110 §15）：闸没开就抛，那是给代码看的；
 // 线上真抛了而没人接，就是白屏 —— 为正确性做的机制变成可用性事故。
 // 所以这里兜一层：退到安全空盘 + 说一句 + 把错**照原样报出来**（不吞）。
@@ -1257,12 +1259,23 @@ try {
   density: app.density,
   // 自动看展开着没，在**裁决**里就定下来（D110 §14）：看展自己不许去读 hash，
   // 它只问意图。压缩落地那天 decodeShare 变异步，这条也不会悄悄错。
-  autoShowcaseEnabled: prefs.get('autoShow') !== '0'
+  autoShowcaseEnabled: prefs.get('autoShow') !== '0',
+  brokenLink: linkBroken
   }))
 } catch (err) {
   app.recoverToEmptyBoard(err)
 }
 if (app.shareApplied) app.toast(t('share.opened'))
+// 链接坏了的挡路提示：**引导不会出现时**才在这儿弹（引导会出现的话，第三幕已经说了）。
+// 两个弹层叠在一起谁也读不清 —— 而这句话必须被读到，所以要它独占那一刻。
+app.reportLinkFailure = function (reason, opts = {}) {
+  const key = 'share.bad.' + reason
+  app.alertAction({
+    title: t('share.failed.title'),
+    body: t(key) || t('share.bad.other'),
+    yes: t('share.failed.ok')
+  }, opts.onClose)
+}
 app.setRunning(false)
 // 不预填种子框：规格里"留空则随机生成种子并显示"意味着空 = 换一张新盘。
 // 预填的话第一次点「随机填充」会用同一个种子重放出一模一样的棋盘，看上去就像按钮没反应。
@@ -1411,6 +1424,10 @@ requestAnimationFrame(frame)
 if (prefs.get('introSeen') !== '1') {
   const savedMode = prefs.get('mode')
   app.intro.open({ chooser: savedMode !== 'simple' && savedMode !== 'full' })
+} else if (linkBroken) {
+  // 不走引导的人（老窗口、回访）在这儿看到那个挡路框。
+  // 走引导的人由第三幕来说 —— 那句话同样挡路（他必须点「开始玩」才过得去）。
+  app.reportLinkFailure(linkBroken)
 }
 
 // 便于在浏览器控制台里做手工验证

@@ -49,19 +49,27 @@ export function resolveInitialBoard(ctx) {
       starterGift: false
     }
   }
+  // **第三种：有链接，但坏了**（D110 §23）。此前只有"有链接 / 没链接"两条路，
+  // 坏链接被归进"没链接" —— 于是引导照常清盘送礼，而"链接坏了"这件事
+  // 恰恰对最需要知道的那个人隐藏了：第一次点开、正在走引导的人。
+  const broken = ctx && ctx.brokenLink ? { brokenLink: ctx.brokenLink } : null
   if (ctx && ctx.firstVisit) {
     return {
       source: 'firstVisitDemo',
       seed: 4271,
       density: ctx.density,
       autoShowcase: !!(ctx && ctx.autoShowcaseEnabled),
-      starterGift: true
+      // 链接坏了也**不送小家伙**：这个人是为那条链接来的，
+      // 给他一个滑翔机等于把失败盖掉（D110 §23）
+      starterGift: !broken,
+      ...broken
     }
   }
   return {
     source: 'empty',
     autoShowcase: !!(ctx && ctx.autoShowcaseEnabled),
-    starterGift: true
+    starterGift: !broken,
+    ...broken
   }
 }
 

@@ -18,7 +18,11 @@ export function createShow(app) {
   let dueAt = 0
   let snapshot = null        // 进来之前那一刻：格子 + 环境 + 取景
   let loading = false        // 看展自己在换局（这期间的写盘不算"用户动了手"）
-  let lastActivity = Date.now()
+  // **时钟要和 tick 收到的那个是同一个**（D110 §26）。tick(now) 拿的是 rAF 的时间戳
+  // （从页面加载算起，几万），纪元毫秒是一万七千亿 —— 两个混用，idleMs 恒为巨大的负数：
+  // **自动开演永远不会发生**，而界面上看不出任何异常。
+  // 我上一轮"验过"它，是因为手动喂了纪元时间 —— 喂的不是 app 喂的那个数。
+  let lastActivity = performance.now()
   let auto = false           // 这一场是自动开的还是他自己点的
 
   /** 现在在不在看展 —— 别处（写盘入口、自动开演）都问它 */
@@ -85,7 +89,7 @@ export function createShow(app) {
     } finally {
       loading = false
     }
-    dueAt = Date.now() + cur.dwellMs
+    dueAt = performance.now() + cur.dwellMs      // 同上：与 tick 的时钟对齐
     render()
   }
 
@@ -124,7 +128,7 @@ export function createShow(app) {
     if (!on || !paused) return
     paused = false
     app.setRunning(true)
-    dueAt = Date.now() + (list[at] ? list[at].dwellMs : 0)
+    dueAt = performance.now() + (list[at] ? list[at].dwellMs : 0)
     render()
   }
 
@@ -148,7 +152,7 @@ export function createShow(app) {
   }
 
   /** 任何用户操作都刷新空闲计时；看展开着时，动画布只是暂停，不退出 */
-  function noteActivity() { lastActivity = Date.now() }
+  function noteActivity() { lastActivity = performance.now() }
 
   // **切到后台不算"闲着"**（D110 §17，冷启动清单里的"时序冷"）。
   // 手机上切走五分钟回来，正撞在自动开演中途，第一反应是"我的局呢" ——

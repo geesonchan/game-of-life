@@ -1785,16 +1785,47 @@ input[type="range"] { touch-action: pan-y; }
   border-radius: 999px; font-size: 13px;
 }
 .show-bar button.danger { color: var(--danger) }
-/* 窄屏：挪到画布**下沿**。放上面会压住 HUD（"代数/存活"那一行被挡掉半截，实测截图为证），
-   而下沿那块地方本来就空着。文字一律不换行 —— 竖着挤成四行比没有还难认。 */
-@media (max-width: 767px) {
+/* 横幅按**可用宽度**收，不按屏幕宽度（D110 §25）。
+   半屏窗口时屏幕还很宽，但画布已经很窄 —— 横幅那时会顶出去压住右边的参数栏（用户实测）。
+   所以用容器查询：问的是"我这块地方还剩多少"，而不是"这台设备多大"。
+   不支持容器查询的老引擎退回原来那条屏幕宽度规则，两条规则做的是同一件事。 */
+.stage { container-type: inline-size; container-name: stage }
+
+/* 画布还宽：挪到下沿（上面是 HUD 那一行，实测截图为证），文字不换行 */
+@container stage (max-width: 720px) {
   .show-bar {
     top: auto; bottom: 10px; gap: 6px; padding: 4px 6px 4px 10px;
     max-width: calc(100% - 16px);
   }
   .show-bar .show-what b, .show-bar .show-note { white-space: nowrap }
-  .show-bar .show-what b { max-width: 30vw; overflow: hidden; text-overflow: ellipsis }
+  .show-bar .show-what b { max-width: 30cqw; overflow: hidden; text-overflow: ellipsis }
   .show-bar button { padding: 0 10px; font-size: 12px }
+}
+
+/* 更窄：收成小条 —— 一个绿点 + 两个图标。要传达的只有三件事：
+   这是看展 / 下一局 / 退出。名字和"不记账"那句在这个宽度上是奢侈品，
+   点开退出之前也用不着（横幅本身就是"正在看展"的信号）。 */
+@container stage (max-width: 420px) {
+  .show-bar { gap: 4px; padding: 4px 6px }
+  .show-bar .show-what { display: none }
+  .show-bar button { min-width: 44px; padding: 0; font-size: 0 }
+  .show-bar button::after { font-size: 18px; line-height: 1 }
+  #show-next::after { content: '⏭' }
+  #show-exit::after { content: '✕' }
+  #show-never::after { content: '🚫' }
+}
+
+/* 老引擎兜底：没有容器查询时按屏幕宽度来（做的是同一件事，只是判据粗一点） */
+@supports not (container-type: inline-size) {
+  @media (max-width: 767px) {
+    .show-bar {
+      top: auto; bottom: 10px; gap: 6px; padding: 4px 6px 4px 10px;
+      max-width: calc(100% - 16px);
+    }
+    .show-bar .show-what b, .show-bar .show-note { white-space: nowrap }
+    .show-bar .show-what b { max-width: 30vw; overflow: hidden; text-overflow: ellipsis }
+    .show-bar button { padding: 0 10px; font-size: 12px }
+  }
 }
 
 /* 链接重放的进度条（D110 §20）。与看展横幅同在附着层（D79 z-index 5），

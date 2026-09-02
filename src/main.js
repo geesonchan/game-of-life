@@ -7,6 +7,7 @@ import { createConfirm } from './ui/confirm.js'
 import { visualFor, isBigBoard } from './data/board-sizes.js'
 import { encodeShare, decodeShare, shareVerdict } from './data/share.js'
 import { resolveInitialBoard } from './data/startup.js'
+import { resizePlan, captureSession, pasteCells, cellBounds } from './data/session.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
 import { VisualState } from './render/visual-state.js'
@@ -265,9 +266,25 @@ app.updateRuleInfo = function () {
 
 app.resizeBoard = function (w, h, opts = {}) {
   app.setRunning(false)
+  // **旧内容要搬过去**（D110 §10）。手机上那个 bug 就是这里：200→300 是变大，
+  // 装不下的可能性为零，格子却全没了 —— `engine.resize` 重新分配数组，旧的一扔了之。
+  // 用户摆的东西不许被静默清掉（D82 的老原则），改尺寸只是换了个更大的场地。
+  const carry = opts.carry !== false && app.engine.stats.alive > 0
+  const snap = carry ? captureSession(app.engine) : null
   app.engine.resize(w, h)
+  if (snap) {
+    // 包围盒要传进去：变小时它决定"能保住的尽量保住"。
+    // 不传的话按钮那边问的（会丢一点）与这里做的（按盘心硬裁）可能不是一回事。
+    const plan = resizePlan({ w: snap.w, h: snap.h }, { w, h },
+      cellBounds(snap.cells, snap.w, snap.h))
+    // 居中搬：变大时视觉上"四周长出来"，用户摆的东西留在原处
+    pasteCells(snap.cells, { w: snap.w, h: snap.h }, app.engine.cur, { w, h }, plan.offsetX, plan.offsetY)
+    app.engine.generation = snap.generation
+    app.engine.stats.alive = app.engine.countAlive()
+    app.engine.initType = 'pattern'
+  }
   app.visual.sync(app.engine)
-  app.runDirty = false
+  app.runDirty = !!snap          // 搬过内容的局面，种子重放不出来了
   app.baseline = null
   app.series.clear()
   app.records.startRun()
@@ -769,11 +786,26 @@ app.applySharedView = function (view) {
 app.copyShareLink = async function (opts = {}) {
   const { url, droppedPattern, verdict } = app.shareLink(opts)
   if (verdict === 'refuse') {
-    // 三条路全断：种子说不清、图案装不下。**失败发生在这一边，而且看得见** ——
-    // 复制一条会给对方开出空盘/第 0 代的链接，是把失败悄悄转嫁出去。
+    // 手改过、图案又装不下：种子指向的是另一局。**失败发生在这一边，而且看得见** ——
+    // 复制一条会给对方开出别的局面，是把失败悄悄转嫁出去。
     app.toast(t('share.refuse'))
     return null
   }
+  if (verdict === 'askGen') {
+    // 只是跑过代、种子干净：链接带得回第 0 代 —— 不是废链接，只是不是这一帧。
+    // 这是分享的人自己的取舍，**把决定还给他**，别替他拒。
+    app.confirmAction({
+      title: t('share.askGen.title'),
+      body: t('share.askGen.body', { n: app.engine.generation }),
+      yes: t('share.askGen.yes')
+    }, () => app.writeShareLink(url, droppedPattern))
+    return null
+  }
+  return app.writeShareLink(url, droppedPattern)
+}
+
+/** 真正写剪贴板的那一步。上面那几条判据过了才走到这里 */
+app.writeShareLink = async function (url, droppedPattern) {
   try {
     await navigator.clipboard.writeText(url)
     app.toast(droppedPattern ? t('share.copiedNoPattern') : t('share.copied'))
@@ -803,7 +835,9 @@ app.applyShareHash = function (hash) {
 
 /** 把一份已解码的链接局面落到棋盘上。开机走 applyInitialBoard，粘链接走 applyShareHash */
 app.applyShareState = function (st) {
-  if (st.board !== app.engine.w) app.resizeBoard(st.board, st.board, { silent: true })
+  // 链接是"换成另一局"：不搬旧内容（D110 §10）。不写 carry:false 的话，
+  // 一条只带环境、不带图案也不带种子的链接会把上一局的格子留在盘上。
+  if (st.board !== app.engine.w) app.resizeBoard(st.board, st.board, { silent: true, carry: false })
   if (st.boundary !== app.engine.boundary) app.setBoundary(st.boundary)
   app.applyNotation(st.rule)
   if (st.rle) {

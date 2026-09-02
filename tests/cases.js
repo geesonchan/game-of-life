@@ -19,6 +19,7 @@ import { shouldCount } from '../src/analytics.js'
 import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MAX_URL, shareVerdict, seedCanTell } from '../src/data/share.js'
 import { shouldShow, viewBox, pickCenter, REDRAW_MS } from '../src/ui/minimap.js'
 import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup.js'
+import { SESSION_WRITERS, resizePlan, captureSession, pasteCells, cellBounds } from '../src/data/session.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
@@ -5276,7 +5277,10 @@ cases.push(
       t.equal(showEntryPlan({ sameRule: true, fits: false, boardEmpty: true, running: false }), 'replace',
         '摆不下但盘是空的：没有劳动可毁，直接换')
       const src = stripLiterals(readSrc('src/ui/favorites-view.js'))
-      t.ok(/resizeBoard\(need, need, \{ silent: true \}\)/.test(src), '复现时先把盘换到够大再铺')
+      // carry: false 是明写的"这条路是换局，不搬旧内容"（D110 §10）——
+      // 改尺寸默认搬，这里不写就会先把旧格子搬进新盘、下一行再清掉，白做一趟
+      t.ok(/resizeBoard\(need, need, \{ silent: true, carry: false \}\)/.test(src),
+        '复现时先把盘换到够大再铺，且明写不搬旧内容')
       // 三种理由三句话，不拼字符串
       for (const which of ['needRule', 'needEnv', 'needBoth']) {
         for (const lang of ['zh', 'en']) {
@@ -6366,6 +6370,123 @@ cases.push(
     }
   },
   {
+    name: '改尺寸不许把盘上的东西扔掉（D110 §10）',
+    run(t) {
+      // 手机实测：新访问 → 标准版 → 摆图案 → 设置里 200×200 改 300×300 → 格子全没了。
+      // 这是**变大**，装不下的可能性为零 —— `engine.resize` 重新分配数组，旧的一扔了之。
+      // 上半张表和它那六条守卫一条都管不着：它们只看启动段，这是会话中途。
+      t.equal(resizePlan({ w: 200, h: 200 }, { w: 300, h: 300 }, { minX: 10, minY: 10, maxX: 190, maxY: 190 }).offsetX,
+        50, '变大居中搬：四周各长出 50')
+      t.equal(resizePlan({ w: 200, h: 200 }, { w: 300, h: 300 }, { minX: 0, minY: 0, maxX: 199, maxY: 199 }).lost,
+        false, '变大一定装得下')
+      t.equal(resizePlan({ w: 300, h: 300 }, { w: 200, h: 200 }, { minX: 10, minY: 10, maxX: 290, maxY: 290 }).lost,
+        true, '变小且铺得开：会丢')
+      t.equal(resizePlan({ w: 300, h: 300 }, { w: 200, h: 200 }, { minX: 120, minY: 120, maxX: 180, maxY: 180 }).lost,
+        false, '变小但东西都在中间：不丢，不该拦')
+      // 贴格子这一步本身
+      const src = new Uint8Array([1, 0, 1, 0, 1, 0, 1, 0, 1]), dst = new Uint8Array(25)
+      t.equal(pasteCells(src, { w: 3, h: 3 }, dst, { w: 5, h: 5 }, 1, 1), 5, '五个活格子都贴过去了')
+      t.equal(dst[6], 1, '左上角落在 (1,1)')
+      t.equal(dst[18], 1, '右下角落在 (3,3)')
+
+      // 变小时"能保住就保住"：包围盒装得进新盘，就把偏移夹到刚好装下的位置。
+      // 不夹的话会出现"提示说会丢一点、做出来全丢"——那句提示就成了假话（自查时抓到的）。
+      const corner = resizePlan({ w: 200, h: 200 }, { w: 100, h: 100 }, { minX: 150, minY: 150, maxX: 180, maxY: 180 })
+      t.equal(corner.lost, false, '东西在角上但装得下：不该丢')
+      t.equal(corner.offsetX, -81, '偏移夹到刚好装下的位置，而不是盘心的 -50')
+      // 包围盒一处定义两处用（按钮问的那句 = resizeBoard 做的那件事）
+      const cells = new Uint8Array(25); cells[6] = 1; cells[18] = 1
+      t.equal(JSON.stringify(cellBounds(cells, 5, 5)), '{"minX":1,"minY":1,"maxX":3,"maxY":3}', '包围盒算得对')
+      t.equal(cellBounds(new Uint8Array(25), 5, 5), null, '空盘没有包围盒')
+      const ctlSrc = readSrc('src/ui/controls.js')
+      t.ok(/cellBounds\(e\.cur, e\.w, e\.h\)/.test(ctlSrc), '按钮那边用共用的包围盒')
+      t.ok(/cellBounds\(snap\.cells, snap\.w, snap\.h\)/.test(readSrc('src/main.js')),
+        'resizeBoard 也用它 —— 问的和做的必须是同一套')
+
+      // 接线：resizeBoard 默认搬，换局的两条路明写不搬
+      const main = readSrc('src/main.js')
+      const rb = /app\.resizeBoard = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!rb, '找得到 resizeBoard')
+      t.ok(/const carry = opts\.carry !== false && app\.engine\.stats\.alive > 0/.test(rb[0]),
+        '默认搬 —— 要不搬得明写')
+      t.ok(/captureSession\(app\.engine\)/.test(rb[0]) && /pasteCells\(/.test(rb[0]), '真的搬了')
+      t.ok(rb[0].indexOf('captureSession') < rb[0].indexOf('app.engine.resize('), '先存快照，再重建棋盘')
+      t.ok(/app\.runDirty = !!snap/.test(rb[0]), '搬过内容就不能再声称能靠种子重放')
+      // 变小要先问 —— 而且问在按钮那儿，不在 resizeBoard 里（换局/收链接不该弹框）
+      t.ok(!/confirmAction/.test(rb[0]), 'resizeBoard 自己不弹框')
+      const ctl = readSrc('src/ui/controls.js')
+      t.ok(/if \(!plan\.lost\) \{ app\.resizeBoard\(n, n\); return \}/.test(ctl), '不丢就直接换')
+      t.ok(/app\.confirmAction\(\{[\s\S]{0,200}?size\.shrink\.title/.test(ctl), '会丢就先问一句')
+      for (const lang of ['zh', 'en']) {
+        for (const k of ['size.shrink.title', 'size.shrink.body', 'size.shrink.yes']) {
+          t.ok(!!DICT[lang][k], `${lang} 缺 ${k}`)
+        }
+      }
+    }
+  },
+  {
+    name: '下半张表：会话中途谁能改棋盘与环境（D110 §10）',
+    run(t) {
+      // 上半张管启动，下半张管中途。两张表同源同数据、字段一样，
+      // 否则"表里有"这件事只对启动阶段成立 —— 手机上那个 bug 就落在没人管的那一半。
+      t.ok(SESSION_WRITERS.length >= 12, '中途写入者不止那么两三个')
+      for (const w of SESSION_WRITERS) {
+        t.ok(/^(cells|env|view)(\+(cells|env|view))*$/.test(w.writes), `${w.name} 的 writes 字段格式不对`)
+        t.ok(['carry', 'replace', 'keep'].indexOf(w.keeps) >= 0, `${w.name} 的 keeps 要在三种之内`)
+        t.equal(typeof w.asks, 'boolean', `${w.name} 要说清会不会先问`)
+      }
+      const by = n => SESSION_WRITERS.find(x => x.name === n)
+      // 这一条就是那个 bug 的判据：改尺寸属于"搬"，不属于"换"
+      t.equal(by('resizeBoard').keeps, 'carry', '改尺寸要把旧内容搬过去')
+      t.ok(by('resizeBoard').asks, '装不下时要先问')
+      t.equal(by('setBoundary').keeps, 'keep', '改边界不碰格子')
+      t.equal(by('applyNotation').keeps, 'keep', '改规则不碰格子')
+      t.equal(by('clear').keeps, 'replace', '清空是用户明说要的')
+      t.equal(by('exitShow').keeps, 'replace', '退看展要还原进入前那一刻')
+      t.equal(by('minimapJump').writes, 'view', '点小地图只改取景')
+      // 文档那张表与它同源，逐行对齐
+      const dec = readSrc('docs/decisions.md')
+      const sec = dec.slice(dec.indexOf('### 十、下半张表'))
+      const rows = (sec.match(/^\| `[a-zA-Z]+` \|.*$/gm) || []).map(r => /`([a-zA-Z]+)`/.exec(r)[1])
+      t.equal(rows.join(','), SESSION_WRITERS.map(x => x.name).join(','),
+        'decisions 下半张表与 SESSION_WRITERS 逐行对齐')
+    }
+  },
+  {
+    name: '链接被截断必须明确拒绝，不得开出半张图（D110 §9）',
+    run(t) {
+      // 微信实测：约 2000 字符的链接被截断。此前的行为是**静默半张图** ——
+      // 砍到 85% 仍然解码成功，parseRLE 照样吐出 7 格（本该 15 格），一句提示都没有。
+      const rle = 'x = 15, y = 7, rule = B3/S23\nbo11bo$2bo11bo$3o9b3o2$7bo$8bo$6b3o!\n'
+      const full = encodeShare({ rule: 'B3/S23', boundary: 'torus', board: 200, seed: 0,
+        density: 0.35, view: { cx: 47, cy: 44, span: 28 }, speed: 10, rle }, 40).hash
+      t.ok(decodeShare(full).ok, '完整链接当然要开得了')
+      // **逐字符砍**：一个静默通过的都不许有
+      let silent = 0
+      for (let cut = 10; cut < full.length; cut++) {
+        if (decodeShare(full.slice(0, cut)).ok) silent++
+      }
+      t.equal(silent, 0, `任何位置砍断都必须被拒（有 ${silent} 处静默通过）`)
+      t.equal(decodeShare(full.slice(0, Math.floor(full.length * 0.85))).reason, 'truncated',
+        '拒绝的理由说得出口')
+      // 接了尾巴也算不完整
+      t.ok(!decodeShare(full + '&x=1').ok, '被接了尾巴也要拒')
+      // **老链接（没有 L）必须仍然打得开** —— 已经发出去的那些
+      t.ok(decodeShare('#v=1&r=B3%2FS23&b=t&n=200&s=0&d=0.35&cx=47&cy=44&w=28&sp=10').ok,
+        '老链接照旧')
+      // RLE 缺 `!` 是独立的第二道网：手抄漏一截、编辑器折行，L 不一定发现
+      const noBang = encodeShare({ rule: 'B3/S23', boundary: 'torus', board: 200,
+        rle: 'x = 3, y = 3, rule = B3/S23\nbo$2bo$3o' }, 40).hash
+      t.equal(decodeShare(noBang).reason, 'truncated', 'RLE 没有 ! 收尾 = 没传完')
+      // **URL 里不许有空白**：转发通道的链接识别在第一个换行处就停住（微信实测）
+      t.ok(!/\s/.test(full), '链接里不许出现空白或换行')
+      const big = encodeShare({ rule: 'B3/S23', boundary: 'torus', board: 300, seed: 7,
+        density: 0.35, rle: 'x = 2, y = 2, rule = B3/S23\n2o$2o!\n' }, 40).hash
+      t.ok(!/\s/.test(big), '带图案的也不许')
+      for (const lang of ['zh', 'en']) t.ok(!!DICT[lang]['share.bad.truncated'], `${lang} 缺 truncated 的提示`)
+    }
+  },
+  {
     name: '三条路全断时不生成链接：失败要发生在分享的人这边（D110 §8）',
     run(t) {
       // 最坏组合：稠密随机盘 → 手改过几格 → 又跑了 500 代 → 分享。
@@ -6382,16 +6503,28 @@ cases.push(
         'refuse', '只手改过也一样：种子指向的是另一局')
       // **跑过代也要拒**：那时收的人拿到的是第 0 代，而且看不出来。
       // `g=` 字段落地后这一条会变回 seedOnly（见 acceptance 第 4 节）。
+      // **两档，不是一档**（用户修正）：硬拒是替用户做决定，提示是把决定还给他
       t.equal(shareVerdict({ droppedPattern: true, alive: 31513, initType: 'random', runDirty: false, generation: 500 }),
-        'refuse', '跑过代也拒 —— 否则收的人静默看到第 0 代')
+        'askGen', '只是跑过代、种子干净：问一句，别替他拒')
+      t.equal(shareVerdict({ droppedPattern: true, alive: 999, initType: 'pattern', runDirty: false, generation: 0 }),
+        'refuse', '压根不是种子来的：硬拒')
       t.ok(!seedCanTell({ initType: 'pattern', runDirty: false, generation: 0 }), '不是种子来的，种子就说不清')
 
       // 接线：拒绝时**不复制**，并且说出来
       const main = readSrc('src/main.js')
       const copy = /app\.copyShareLink = async function[\s\S]*?\n\}/.exec(main)
       t.ok(!!copy, '找得到 copyShareLink')
-      const head = copy[0].slice(0, copy[0].indexOf('clipboard'))
+      // 写剪贴板那一步已经拆到 writeShareLink 里；判据必须排在**调用它之前**
+      const head = copy[0].slice(0, copy[0].indexOf('return app.writeShareLink'))
+      t.ok(head.length > 100 && copy[0].indexOf('return app.writeShareLink') > 0, '找得到那道分界')
       t.ok(/if \(verdict === 'refuse'\)[\s\S]*?return null/.test(head), '拒绝要发生在写剪贴板之前')
+      t.ok(!/clipboard/.test(head), '判据这一段里不许出现剪贴板')
+      t.ok(/if \(verdict === 'askGen'\)[\s\S]*?confirmAction/.test(head), '跑过代那一档是问一句，不是拒')
+      t.ok(/share\.askGen\.body[\s\S]{0,60}?\{ n: app\.engine\.generation \}/.test(head),
+        '那句话里要写出真实代数 —— 信息摆在他面前，他才谈得上自己决定')
+      for (const lang of ['zh', 'en']) {
+        t.ok(/\{n\}/.test(DICT[lang]['share.askGen.body']), `${lang} 那句话要带代数占位`)
+      }
       t.ok(/app\.toast\(t\('share\.refuse'\)\)/.test(head), '要说一句为什么，并给出路（导出文件）')
       for (const lang of ['zh', 'en']) {
         t.ok(!!DICT[lang]['share.refuse'], `${lang} 缺 share.refuse`)

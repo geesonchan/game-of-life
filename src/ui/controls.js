@@ -5,6 +5,7 @@ import { t, setLang, getLang } from '../i18n/index.js'
 import { prefs } from './prefs.js'
 import { attachNumericEntry, NUMERIC_SLIDERS, CODEC_SLIDERS } from './numeric-entry.js'
 import { isBigBoard, costOf } from '../data/board-sizes.js'
+import { resizePlan, cellBounds } from '../data/session.js'
 
 const $ = id => document.getElementById(id)
 
@@ -101,8 +102,23 @@ export function setupControls(app) {
 
   el.size = setupBtnGroup('in-size', String(app.engine.w), v => {
     const n = Number(v)
-    app.resizeBoard(n, n)
+    // 改尺寸会把盘上的东西**搬**过去（D110 §10）。变大一定装得下；
+    // 变小则可能有活格子掉在外面 —— 那是"会毁掉用户劳动"的一步，必须先问（D93）。
+    // 问在这儿、不在 resizeBoard 里：那个函数还被换局/收链接调用，那些路不该弹框。
+    const e = app.engine
+    const plan = e.stats.alive > 0
+      ? resizePlan({ w: e.w, h: e.h }, { w: n, h: n }, cellBounds(e.cur, e.w, e.h))
+      : { lost: false }
+    if (!plan.lost) { app.resizeBoard(n, n); return }
+    app.confirmAction({
+      title: t('size.shrink.title'),
+      body: t('size.shrink.body', { w: n }),
+      yes: t('size.shrink.yes')
+    }, () => app.resizeBoard(n, n))
+    el.size.set(String(e.w))     // 先把按钮弹回去；用户点了「继续」再跟着变
   })
+
+
 
   /**
    * 大盘下把三个视觉开关置灰，并说明为什么（D94）。

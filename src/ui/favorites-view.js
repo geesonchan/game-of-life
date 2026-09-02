@@ -58,10 +58,11 @@ export function createFavorites(app) {
     // 清空 / 读档 / 换局时再还回去。这些局的生平都是在各自的环境里量出来的 ——
     // 繁殖者那几个数是 2048² 死边界上的数，摆到 200 环形盘上，卡片那行字就成了假话。
     app.enterShowEnv(entry)
-    // 中量级经典要更大的盘才摆得下（D94 ②）。换盘会清盘，所以顺序是"先换盘再铺"，
-    // 而且这一步之前必须已经问过用户 —— 问在 openShowEntry 那里，不在这里。
+    // 中量级经典要更大的盘才摆得下（D94 ②）。这条路是"换成另一局"，
+    // 所以明写 carry: false —— 改尺寸默认会把旧内容搬过去（D110 §10），这里不要搬，
+    // 下一行本来就要清盘。而且这一步之前必须已经问过用户 —— 问在 openShowEntry 那里。
     const need = boardNeededBy(entry)
-    if (need && app.engine.w < need) app.resizeBoard(need, need, { silent: true })
+    if (need && app.engine.w < need) app.resizeBoard(need, need, { silent: true, carry: false })
     // keepShowEnv：这次清空是"铺这一局"的一部分，不是"退出这一局"（D104）
     app.clear({ silent: true, keepShowEnv: true })
     if (rule) app.applyNotation(rule)

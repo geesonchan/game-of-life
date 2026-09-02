@@ -88,7 +88,6 @@ function utf8String(bytes) {
  */
 export function encodeShare(state, budget = 0) {
   const parts = [
-    'v=' + SHARE_VERSION,
     'r=' + encodeURIComponent(state.rule || 'B3/S23'),
     'b=' + (state.boundary === 'dead' ? 'd' : 't'),
     'n=' + (state.board | 0)
@@ -107,7 +106,15 @@ export function encodeShare(state, budget = 0) {
     if (budget + parts.join('&').length + 1 + p.length + 1 <= MAX_URL) parts.push(p)
     else droppedPattern = true      // 带不下就不带，并且要让上层说出来
   }
-  return { hash: '#' + parts.join('&'), droppedPattern }
+  // **完整性字段放在头部**（D110 §9）：截断只切得掉尾巴，切不掉它。
+  // L 记的是它后面那一截的长度 —— 转发通道把链接截短，收的人这边一比就对不上，
+  // 于是"静默拿到半张图"变成"明确拒绝"。老链接没有 L，照旧当"没这一层保护"接受。
+  const rest = parts.join('&')
+  const hash = '#v=' + SHARE_VERSION + '&L=' + rest.length + '&' + rest
+  // URL 里出现换行/空白，转发通道的链接识别会在那儿断掉（微信实测）。
+  // 编码器现在不会产生它们，但这道断言留着 —— 以后谁加了带空白的字段，这里当场就炸。
+  if (/\s/.test(hash)) throw new Error('分享链接里不许出现空白字符：' + JSON.stringify(hash.slice(0, 80)))
+  return { hash, droppedPattern }
 }
 
 /**
@@ -126,6 +133,16 @@ export function decodeShare(hash) {
   const v = Number(q.v)
   if (!Number.isFinite(v)) return { ok: false, reason: 'noVersion' }
   if (v > SHARE_VERSION) return { ok: false, reason: 'newer' }
+  // 完整性：L 说了后面该有多长，对不上就是被截断（或被接了尾巴）——
+  // 宁可明说"这条链接不完整"，也不能让人拿着半张图以为看到的是发的人那一局。
+  if (q.L !== undefined) {
+    const want = Number(q.L)
+    const at = raw.indexOf('&L=' + q.L + '&')
+    const rest = at >= 0 ? raw.slice(at + ('&L=' + q.L + '&').length) : null
+    if (!Number.isFinite(want) || rest === null || rest.length !== want) {
+      return { ok: false, reason: 'truncated' }
+    }
+  }
   const board = Number(q.n)
   if (!Number.isFinite(board) || board < 8 || board > 4096) return { ok: false, reason: 'board' }
   const state = {
@@ -158,6 +175,10 @@ export function decodeShare(hash) {
   if (q.p !== undefined) {
     const rle = fromBase64url(q.p)
     if (!rle) return { ok: false, reason: 'pattern' }
+    // **RLE 以 `!` 收尾**。缺尾就是没传完 —— 而半截 RLE 是能解析的：
+    // 实测砍到 85% 仍然解出 7 格（本该 15 格），收的人一点提示都没有。
+    // 这道检查独立于 L：手抄漏一截、编辑器折行截断，L 不一定发现，这里发现。
+    if (rle.indexOf('!') < 0) return { ok: false, reason: 'truncated' }
     state.rle = rle
   }
   return { ok: true, state }
@@ -184,5 +205,12 @@ export function seedCanTell(ctx) {
 export function shareVerdict(ctx) {
   if (!ctx || !ctx.droppedPattern) return 'ok'
   if ((ctx.alive | 0) <= 0) return 'ok'
-  return seedCanTell(ctx) ? 'seedOnly' : 'refuse'
+  if (seedCanTell(ctx)) return 'seedOnly'
+  // **两档，不是一档**（用户修正）：
+  //  · 手改过（或压根不是种子来的）→ 种子指向的是另一局，硬拒；
+  //  · 只是跑过代、种子干净 → 链接带得回第 0 代，**这不是废链接，只是不是这一帧**。
+  //    那是分享的人自己的取舍，把决定还给他 —— 信息已经摆在他面前了。
+  //    硬拒是替用户做决定。（`g=` 落地后这一档自动消失。）
+  if (ctx.initType === 'random' && !ctx.runDirty) return 'askGen'
+  return 'refuse'
 }

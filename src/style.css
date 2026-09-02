@@ -1780,10 +1780,11 @@ input[type="range"] { touch-action: pan-y; }
    它就读不出是坏消息（作者实测反馈"一句话都没有"，而那句话其实在屏幕上）。
    琥珀色 + 左侧竖条：与全站的 .warn 同色（#e3b341），不引入新语义。 */
 .intro-body .mishap {
-  margin: 14px 0 0; padding: 10px 12px;
+  /* 它排在标题**下面**（D110 §28），所以上下都要留空 —— 不是接在正文后面的那种 */
+  margin: 4px 0 14px; padding: 10px 12px;
   background: #221d12; border: 1px solid #6b5a2f; border-left-width: 3px; border-radius: 8px;
   font-size: 13px; color: #e8dcc0; line-height: 1.7;
 }
-.intro-body .mishap .mishap-why {
-  display: block; margin-top: 6px; font-size: 12px; color: #c9b98f;
-}
+/* 理由与引子**同字号同颜色**（D110 §27）：更小更暗的第二行在坏消息里读起来像装饰，
+   而它恰恰是唯一有用的那部分（作者手机上的反馈：只看到块，没看到理由）。 */
+.intro-body .mishap b { color: #f0e6cc; }

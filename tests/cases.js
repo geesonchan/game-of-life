@@ -1915,7 +1915,8 @@ cases.push(
       // 三句话由**一处**挑（giftLineKey），而不是散在几个三元表达式里。
       // 词条名是字符串字面量：bodyOf 拿的是 stripLiterals 的输出，查它得用**原文**（D88 §3）
       const rawBodyOf = name => {
-        const i = raw.indexOf('function ' + name)
+        // 加上左括号再找：不然 'act3' 会先匹配到 act3Notice（前缀相同，自查时抓到的）
+        const i = raw.indexOf('function ' + name + '(')
         t.ok(i >= 0, `intro.js 里应有 ${name}()`)
         const next = raw.indexOf('\n  function ', i + 1)
         return raw.slice(i, next < 0 ? raw.length : next)
@@ -1925,6 +1926,18 @@ cases.push(
       t.ok(/const n = act3Notice\(\)/.test(raw), '第三幕那一块就是它挑出来的')
       // **失败不许穿礼物的衣服**：坏消息与礼物不能共用 .gift 那个绿框
       t.ok(/cls: 'mishap'/.test(picker) && /cls: 'gift'/.test(picker), '两种消息两种样子')
+      // **坏消息要连原因一起说；只说"出事了"不算说了**（D110 §27，作者定）。
+      // 原因当过"第二行小字"，作者在手机上的反馈是"只看到块，没看到理由" ——
+      // 更小更暗的第二行在坏消息里读起来像装饰，而它恰恰是唯一有用的那部分。
+      const act3src = rawBodyOf('act3')
+      t.ok(/reasonKey \? ' ' \+ \(t\(n\.reasonKey\)/.test(act3src),
+        '原因接在同一句话里，不是另起一个小字块')
+      t.ok(/<p class="mishap"><b>\$\{t\(n\.key\)\}<\/b>\$\{why\}<\/p>/.test(act3src),
+        '引子加粗，原因紧随其后 —— 同一段')
+      t.ok(!/mishap-why/.test(readSrc('src/style.css')), '不许再有"更小更暗的第二行"那条样式')
+      t.ok(!/mishap-why/.test(act3src), '模板里也不许再有')
+      // 兜底：认不出的理由也要说得出话
+      t.ok(!!DICT.zh['share.bad.other'] && !!DICT.en['share.bad.other'], '没有对应词条时有兜底那句')
       t.ok(/\.intro-body \.mishap \{/.test(readSrc('src/style.css')), 'mishap 有自己的样式')
       t.ok(!/\*\*/.test(DICT.zh['intro.act3.badLink']), '文案里不许留渲染不了的 ** 标记')
       // 队列：拒绝一发生就入队，第三幕与挡路框**二选一**消费（D110 §24 修订）

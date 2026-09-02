@@ -330,16 +330,24 @@ export function createIntro(app) {
   }
 
   function act3() {
+    const n = act3Notice()
+    // 具体理由只决定**说什么**，不决定走哪条路（D110 §23 修订）
+    // **坏消息要连原因一起说**（D110 §27）：原因不是附注，是这句话的后半。
+    // 它当过"第二行小字"（12px、更暗的颜色）—— 作者在手机上的反馈是"没看到理由"。
+    // 一个更小更暗的第二行，在坏消息里读起来像装饰，而它恰恰是唯一有用的那部分。
+    const why = n.reasonKey ? ' ' + (t(n.reasonKey) || t('share.bad.other')) : ''
+    const block = n.cls === 'mishap'
+      ? `<p class="mishap"><b>${t(n.key)}</b>${why}</p>`
+      : `<p class="${n.cls}">${t(n.key)}</p>`
+    // **坏消息排在解说之前**（D110 §28）：矮视口上（横屏手机实测 667×375）正文区会滚，
+    // 排在末尾的那一块正好落在折线以下 —— 于是又变成"在屏幕上但没被读到"。
+    // 礼物那一句相反：它是收尾的奖励，排在最后才对。
     bodyEl.innerHTML = `
       <h3>${t('intro.act3.title')}</h3>
+      ${n.cls === 'mishap' ? block : ''}
       <p class="lead">${t('intro.act3.body')}</p>
       <p class="caption">${t('intro.act3.caption')}</p>
-      ${(() => {
-        const n = act3Notice()
-        // 具体理由只决定**说什么**，不决定走哪条路（D110 §23 修订）
-        const why = n.reasonKey ? `<span class="mishap-why">${t(n.reasonKey) || t('share.bad.other')}</span>` : ''
-        return `<p class="${n.cls}">${t(n.key)}${why}</p>`
-      })()}
+      ${n.cls === 'mishap' ? '' : block}
       ${pageList().includes('helpAge')
         ? `<button class="appendix-link" data-appendix>${t('intro.appendix.entry')}</button>`
         : ''}`

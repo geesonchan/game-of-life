@@ -1388,8 +1388,9 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 .zoom-track { position: relative; display: flex; align-items: center; justify-content: center; }
 /* 竖向滑块。**触控区 44px 宽，轨道只有 3px、滑块 12px** ——
    这两件事必须分开：手指要按得着，眼睛不该被一根粗条占住（D85 ①）。
-   自绘轨道要 appearance:none，于是老的 slider-vertical 只能放进 @supports 兜底里，
-   两者不能同时写（互相冲突）。 */
+   自绘轨道要 appearance:none。老的 `slider-vertical` 兜底已在 v1.15.0 删掉：
+   Chrome 在**解析阶段**就报废弃警告，@supports 命不命中都一样，控制台一次四条；
+   现代三家引擎都支持竖排 writing-mode，兜底没有真实受众了。 */
 #in-zoom {
   writing-mode: vertical-lr;
   direction: rtl;
@@ -1412,10 +1413,6 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 #in-zoom::-moz-range-track { width: 3px; background: var(--line); border-radius: 2px; }
 #in-zoom::-moz-range-thumb {
   width: 12px; height: 12px; border: none; border-radius: 50%; background: var(--accent);
-}
-/* 兜底：没有竖排 writing-mode 的老引擎仍能得到一个竖滑块（样式退回原生） */
-@supports not (writing-mode: vertical-lr) {
-  #in-zoom { -webkit-appearance: slider-vertical; appearance: slider-vertical; }
 }
 /* 拖动时的倍数读数：贴在滑条左边，不占位置（窄屏 HUD 上没有「缩放」那一项，
    第 4 项起就藏了 —— 手机上这是唯一能读到倍数的地方）。 */

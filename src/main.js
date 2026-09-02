@@ -6,6 +6,7 @@ import { createFavorites } from './ui/favorites-view.js'
 import { createConfirm } from './ui/confirm.js'
 import { visualFor, isBigBoard } from './data/board-sizes.js'
 import { encodeShare, decodeShare } from './data/share.js'
+import { resolveInitialBoard } from './data/startup.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
 import { VisualState } from './render/visual-state.js'
@@ -64,6 +65,7 @@ const app = {
   fpsWindowStart: 0,
   fps: 0,
   needsFit: false,
+  pendingView: null,      // 画布还没尺寸时欠着的取景意图（D110 §3）
   chartGen: -1,
   mode: 'full',       // 'simple' | 'full'
   stamp: null,        // 当前选中的图案（跟随鼠标待放置）
@@ -559,6 +561,8 @@ app.adoptEngine = function (engine) {
 }
 
 app.fitView = function () {
+  // 点了"适配整盘"就是不要那个框了：欠着的取景意图作废，免得布局一到又被兑现回去
+  app.pendingView = null
   const { w, h } = app.renderer.resize()
   if (w <= 1 || h <= 1) {
     // 布局还没算出来（首帧之前），推迟到主循环里再适配
@@ -577,16 +581,16 @@ app.fitView = function () {
  * 重新 fit 又会把用户的缩放冲掉。折中就是"锚住中心点"。
  */
 app.handleResize = function () {
-  const vp = app.viewport
+  // **响应式写入者**（D110 §1 第三类）：随时触发、又不能禁用，排序和门禁都管不住它。
+  // 治法是剥夺它的决定权 —— 它不许自己挑倍率，只能把**改动之前**的取景意图重算一遍。
+  // 从前这里保的是像素倍率（scale 原样留着，只挪中心），于是 D108 那句
+  // "w×w 方格在任何屏幕上完整可见"只在链接落地那一瞬成立：
+  // 之后窗口一窄、工具条一收，画布小了而倍率没动，框里的东西就少了一圈，没人会发现。
+  const before = app.viewIntentNow()
   const oldW = app.canvas.width, oldH = app.canvas.height
-  const cx = vp.originX + oldW / (2 * vp.scale)
-  const cy = vp.originY + oldH / (2 * vp.scale)
   const { w, h } = app.renderer.resize()
-  if (app.needsFit) { app.fitView(); return }
-  if (oldW > 1 && oldH > 1 && w > 1 && h > 1) {
-    vp.originX = cx - w / (2 * vp.scale)
-    vp.originY = cy - h / (2 * vp.scale)
-  }
+  if (app.needsFit) { app.settleView(); return }
+  if (oldW > 1 && oldH > 1 && w > 1 && h > 1) app.applyViewIntent(before, 'atLeast')
   app.dirty = true
 }
 
@@ -636,13 +640,7 @@ app.shareState = function (opts = {}) {
   // **视图与速度也是这一局的一部分**（D108）：发的人在 33.5× 上框住了三架滑翔机，
   // 收的人若落在 6× 上，看到的是一片什么都分不出的灰。
   // 编的是"看哪儿 + 看多宽"，不是倍率 —— 倍率是屏幕的属性，不是这一局的。
-  const vp = app.viewport
-  const cw = app.canvas.width, ch = app.canvas.height
-  state.view = {
-    cx: vp.originX + cw / (2 * vp.scale),
-    cy: vp.originY + ch / (2 * vp.scale),
-    span: Math.min(cw, ch) / vp.scale        // 短边看得见多少格
-  }
+  state.view = app.viewIntentNow()
   state.speed = app.speed
   if (opts.rle !== undefined) state.rle = opts.rle
   else if (e.stats.alive > 0) state.rle = app.currentLayoutRle() || undefined
@@ -661,19 +659,66 @@ app.shareLink = function (opts = {}) {
 }
 
 /**
- * 按链接给的"看哪儿 + 看多宽"取景（D108）。
- * **倍率是自己算的**：收的人屏幕多大、能缩到多少，都由他这边说了算 ——
- * 照抄发件人的倍率，在另一块屏上框住的就是另一片东西。
+ * **取景意图**：这一局"看哪儿 + 看多宽"（D108/D110）。
+ * 倍率不在里面 —— 倍率是屏幕的属性，不是这一局的属性：
+ * 同样的意图，在手机和 27 寸上算出来的倍率本就该不一样。
+ * 发链接、收链接、改画布尺寸，三处都问这一个函数，不许各算各的。
  */
-app.applySharedView = function (view) {
+app.viewIntentNow = function () {
   const vp = app.viewport
   const cw = app.canvas.width, ch = app.canvas.height
-  const wanted = Math.min(cw, ch) / Math.max(1, view.span)
-  vp.scale = Math.max(vp.minScale, Math.min(vp.maxScale, wanted))
-  vp.originX = view.cx - cw / (2 * vp.scale)
-  vp.originY = view.cy - ch / (2 * vp.scale)
+  return {
+    cx: vp.originX + cw / (2 * vp.scale),
+    cy: vp.originY + ch / (2 * vp.scale),
+    span: Math.min(cw, ch) / vp.scale        // 短边看得见多少格
+  }
+}
+
+/**
+ * 把取景意图落到视口上。
+ *
+ * `mode: 'exact'`（收链接）—— 倍率就按 span 算，发的人框住多宽就看多宽。
+ * `mode: 'atLeast'`（画布尺寸变了）—— **只保证不少看**：
+ *   窗口变窄、工具条收起，倍率必须退到让这片区域仍然完整可见；
+ *   窗口变大则保留原倍率，多出来的地方多看一点。
+ *   反过来做（变大就跟着放大）会让"拉宽窗口反而看得更少"，那不是人预期的。
+ */
+app.applyViewIntent = function (intent, mode = 'exact') {
+  const vp = app.viewport
+  // exact 是"照这个框来"，得按**当下真实**的画布算 —— 开机时链接落地那一刻，
+  // 布局可能还没跑过（画布还是 300×150 的出厂值），照它算出来的倍率是错的。
+  // atLeast 由 handleResize 调用，它自己刚量过，不重复量。
+  if (mode === 'exact') app.renderer.resize()
+  const cw = app.canvas.width, ch = app.canvas.height
+  if (cw <= 1 || ch <= 1) {
+    // 画布还没有尺寸（面板隐藏、首帧之前）。**把意图存着**，等布局到了照原样兑现 ——
+    // 不存的话这里只会 needsFit，主循环随后 fitView，发的人那个 33.5× 的框就没了。
+    if (mode === 'exact') app.pendingView = intent
+    app.needsFit = true
+    return
+  }
+  const wanted = Math.min(cw, ch) / Math.max(1e-6, intent.span)
+  const next = mode === 'atLeast' ? Math.min(vp.scale, wanted) : wanted
+  vp.scale = Math.max(vp.minScale, Math.min(vp.maxScale, next))
+  vp.originX = intent.cx - cw / (2 * vp.scale)
+  vp.originY = intent.cy - ch / (2 * vp.scale)
+  if (mode === 'exact') app.pendingView = null
   app.needsFit = false
   app.dirty = true
+}
+
+/**
+ * 布局终于有尺寸了，该看哪儿：**欠着的取景优先，没欠才自动适配整盘**。
+ * 两处推迟点都走它 —— 少走一处，链接的取景就会在那条路上被 fitView 吃掉。
+ */
+app.settleView = function () {
+  if (app.pendingView) app.applyViewIntent(app.pendingView, 'exact')
+  else app.fitView()
+}
+
+/** 按链接给的取景（D108）。收的人的屏幕说了算，照抄发件人的倍率框住的是另一片东西 */
+app.applySharedView = function (view) {
+  app.applyViewIntent(view, 'exact')
 }
 
 /** 复制到剪贴板；剪贴板用不了时把链接摆出来让用户自己复制 */
@@ -701,7 +746,13 @@ app.applyShareHash = function (hash) {
     if (r.reason !== 'empty') app.toast(t('share.bad.' + r.reason) || t('share.bad.other'))
     return false
   }
-  const st = r.state
+  app.applyShareState(r.state)
+  app.toast(t('share.opened'))
+  return true
+}
+
+/** 把一份已解码的链接局面落到棋盘上。开机走 applyInitialBoard，粘链接走 applyShareHash */
+app.applyShareState = function (st) {
   if (st.board !== app.engine.w) app.resizeBoard(st.board, st.board, { silent: true })
   if (st.boundary !== app.engine.boundary) app.setBoundary(st.boundary)
   app.applyNotation(st.rule)
@@ -722,8 +773,30 @@ app.applyShareHash = function (hash) {
   app.dirty = true
   app.updateHud()
   app.shareApplied = true      // 引导收尾时据此**不清盘、不送滑翔机**（D107 ③）
-  app.toast(t('share.opened'))
-  return true
+}
+
+/**
+ * **开机时唯一被允许写棋盘的函数**（D110 §2）。
+ * 启动段里除它以外不许出现 randomize / clear / importRleText / placeStarterGift /
+ * fitView / applySharedView —— 有守卫盯着（tests/cases.js「启动写盘唯一入口」）。
+ * 从前那三处各写各的，谁在前谁在后靠读代码才知道；D107 那张表也就只是一句约定。
+ */
+app.applyInitialBoard = function (intent) {
+  app.initialIntent = intent
+  if (intent.source === 'link') {
+    app.applyShareState(intent)
+  } else if (intent.source === 'firstVisitDemo') {
+    app.engine.randomize(intent.seed, intent.density)
+    app.visual.sync(app.engine)
+    app.records.startRun()
+    app.fitView()
+  } else {
+    app.visual.sync(app.engine)
+    app.records.startRun()
+    app.fitView()
+  }
+  app.series.push(app.engine.stats.alive)
+  return intent
 }
 
 let toastTimer = 0
@@ -868,23 +941,31 @@ function trailLabelOf(v) {
   return t(v <= 6 ? 'vis.trail.short' : v <= 13 ? 'vis.trail.mid' : 'vis.trail.long')
 }
 
-// 开局状态：首访给"导演场"，回访给"空场"（依据见 docs/decisions.md D69）。
-// 回访者的实际动作是"先清空再开始" —— 那说明满盘随机不是他要的开场，
-// 是他每次都要先撤掉的东西。
+// 开局状态：棋盘从哪儿来，由 resolveInitialBoard 一处裁决（D110）。
+// 从前这里是三处各写各的（首访随机盘 / 链接 / 引导收尾），顺序全靠读代码才看得出来 ——
+// D107 那张优先级表也就只是文档里的一句话。现在表在 src/data/startup.js 里是数据，
+// 写盘只有 applyInitialBoard 一个出口，想绕也绕不过去。
+//
+// 首访给"导演场"，回访给"空场"（D69）：回访者的实际动作是"先清空再开始"，
+// 那说明满盘随机不是他要的开场，是他每次都要先撤掉的东西。
+//
+// 链接**在这里就参与裁决**，不是先摆一局再被盖掉（D107 ③）：
+// 别人发来的那一局，打开就该是那一局，中间不该闪一下别的。
 const firstVisit = prefs.get('introSeen') !== '1'
-if (firstVisit) app.engine.randomize(4271, app.density)
-app.visual.sync(app.engine)
-app.series.push(app.engine.stats.alive)
-app.records.startRun()
+const bootShare = location.hash ? decodeShare(location.hash) : { ok: false, reason: 'empty' }
+if (location.hash && !bootShare.ok && bootShare.reason !== 'empty') {
+  app.toast(t('share.bad.' + bootShare.reason) || t('share.bad.other'))
+}
+app.applyInitialBoard(resolveInitialBoard({
+  share: bootShare.ok ? bootShare.state : null,
+  firstVisit,
+  density: app.density
+}))
+if (app.shareApplied) app.toast(t('share.opened'))
+app.setRunning(false)
 // 不预填种子框：规格里"留空则随机生成种子并显示"意味着空 = 换一张新盘。
 // 预填的话第一次点「随机填充」会用同一个种子重放出一模一样的棋盘，看上去就像按钮没反应。
 // 开机这局的种子在编年史的「开局」一条里有记录，不会丢。
-app.fitView()
-app.setRunning(false)
-
-// **链接优先于开局状态**（D106）：别人发来的那一局，打开就该是那一局，
-// 而不是先闪一下"导演场"再被盖掉。放在这里 —— 控件都接好了，切盘换边界才有人跟着变。
-if (location.hash) app.applyShareHash(location.hash)
 
 // 页面已经开着时把链接粘进地址栏，浏览器**不会重新加载**（只换了 hash）——
 // 不听这个事件，那种情形下就是"粘了没反应"。本机就是这么发现的：
@@ -912,7 +993,7 @@ function frame(now) {
   const dt = Math.min(now - last, 250)
   last = now
 
-  if (app.needsFit) app.fitView()
+  if (app.needsFit) app.settleView()
 
   if (app.running) {
     const speed = app.effectiveSpeed()

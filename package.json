@@ -1,7 +1,7 @@
 {
   "name": "game-of-life-lab",
   "private": true,
-  "version": "1.14.0",
+  "version": "1.15.0",
   "type": "module",
   "description": "生命游戏实验台",
   "scripts": {

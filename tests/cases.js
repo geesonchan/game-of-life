@@ -18,6 +18,7 @@ import { METAPIXEL_LAYOUT } from '../src/data/metapixel-layout.js'
 import { shouldCount } from '../src/analytics.js'
 import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MAX_URL } from '../src/data/share.js'
 import { shouldShow, viewBox, pickCenter, REDRAW_MS } from '../src/ui/minimap.js'
+import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
@@ -2142,8 +2143,18 @@ cases.push(
       const main = readSrc('src/main.js')
       t.ok(/const firstVisit = prefs\.get\('introSeen'\) !== '1'/.test(main),
         '开局状态应由 introSeen 决定，而不是别开一个偏好键')
-      t.ok(/if \(firstVisit\) app\.engine\.randomize\(/.test(main),
-        '随机填充只在首访执行；回访不填充')
+      // D110 之后随机盘不再写在启动段，而是 firstVisit 交给 resolveInitialBoard 裁决、
+      // 由唯一出口执行。所以这里改查两头：裁决进去、执行出来。
+      t.ok(/resolveInitialBoard\(\{[\s\S]{0,200}?firstVisit,/.test(main),
+        'firstVisit 要交给 resolveInitialBoard 裁决')
+      t.equal(resolveInitialBoard({ share: null, firstVisit: true, density: 0.3 }).source, 'firstVisitDemo',
+        '首访裁给导演场')
+      t.equal(resolveInitialBoard({ share: null, firstVisit: false, density: 0.3 }).source, 'empty',
+        '回访裁给空场')
+      const exec = /app\.applyInitialBoard = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!exec, '找得到 applyInitialBoard')
+      const demo = /source === 'firstVisitDemo'\) \{\s*\n\s*app\.engine\.randomize\(/.test(exec[0])
+      t.ok(demo, '随机填充只挂在导演场那一支；回访不填充')
       // 空盘不能有种子语义：开机仍不许回填种子框（原有守卫也在管这条，这里再钉一次动机）
       t.ok(!/el\.seed\.value\s*=/.test(main), '开机不许回填种子框')
 
@@ -3749,8 +3760,11 @@ cases.push(
       // 竖向滑块：现代写法与老 WebKit 写法都要写
       const vert = /#in-zoom \{([^}]*)\}/.exec(css)
       t.ok(!!vert && /writing-mode:\s*vertical/.test(vert[1]), '竖排要有 writing-mode 写法')
-      t.ok(/@supports not \(writing-mode: vertical-lr\)[\s\S]{0,200}slider-vertical/.test(css),
-        '老引擎的竖排写法要留着，但只能放在 @supports 兜底里 —— 自绘细轨要 appearance:none，两者不能同写（D85 ①）')
+      // v1.15.0 起兜底删掉：Chrome 在**解析阶段**就报 slider-vertical 废弃警告，
+      // @supports 命不命中都一样（用户在控制台看到四条）。现代三家引擎都支持竖排 writing-mode。
+      // 注释里提它是可以的（那儿记着为什么删）—— 报警告的是**声明**，所以先把注释剥掉
+      t.ok(!/slider-vertical/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')),
+        '声明里不许再出现 slider-vertical —— 解析阶段就会报废弃警告')
     }
   },
   {
@@ -3954,8 +3968,8 @@ cases.push(
 
       // 自绘要 appearance:none，于是老写法只能进 @supports 兜底 —— 两者不能同时写
       t.ok(/#in-zoom \{[^}]*appearance:\s*none/.test(css), '自绘轨道要 appearance: none')
-      t.ok(/@supports not \(writing-mode: vertical-lr\)[\s\S]{0,200}slider-vertical/.test(css),
-        '没有竖排 writing-mode 的老引擎要有兜底')
+      t.ok(!/slider-vertical/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')),
+        '兜底已删（v1.15.0）：解析阶段就报废弃警告，@supports 拦不住')
     }
   },
   {
@@ -6224,19 +6238,27 @@ cases.push(
       const fin = /function finish\(\)[\s\S]*?\n  \}/.exec(intro)
       t.ok(!!fin, '找得到 finish()')
       // 收尾第一件事就是看这一局是不是链接来的；是就原样退出
-      t.ok(/if \(app\.shareApplied\) return/.test(fin[0]), '有链接时收尾直接返回，不清盘不送礼')
+      // D110 之后判据来自开机那次裁决（intent.starterGift），shareApplied 管的是
+      // 引导开着时才粘进来的链接。两条都要在，少一条就有一种人被抹掉。
+      const RET = /if \(app\.shareApplied \|\| intent\.starterGift === false\) return/
+      t.ok(RET.test(fin[0]), '有链接时收尾直接返回，不清盘不送礼')
+      t.ok(/const intent = app\.initialIntent/.test(fin[0]), '判据取自 app.initialIntent，不另立一套')
       const before = fin[0].slice(0, fin[0].indexOf('placeStarterGift'))
-      t.ok(/if \(app\.shareApplied\) return/.test(before), '那句 return 排在清盘与送礼之前')
-      t.ok(before.indexOf('app.clear') < 0 || before.indexOf('if (app.shareApplied) return') < before.indexOf('app.clear'),
+      t.ok(RET.test(before), '那句 return 排在清盘与送礼之前')
+      t.ok(before.indexOf('app.clear') < 0 || before.search(RET) < before.indexOf('app.clear'),
         '清盘也在那句 return 之后 —— 先返回，才谈得上"没被盖掉"')
 
       const main = readSrc('src/main.js')
       t.ok(/app\.shareApplied = false/.test(main), '标志位有初值')
-      const apply = /app\.applyShareHash = function[\s\S]*?\n\}/.exec(stripLiterals(main))
+      const apply = /app\.applyShareState = function[\s\S]*?\n\}/.exec(stripLiterals(main))
       t.ok(apply && /app\.shareApplied = true/.test(apply[0]), '链接生效时才置位')
-      // 解不出来的链接不许置位 —— 否则引导会以为棋盘上有东西而不送礼，两头落空
-      const failPath = apply[0].slice(0, apply[0].indexOf('app.shareApplied = true'))
-      t.ok(/if \(!r\.ok\)[\s\S]*?return false/.test(failPath), '解不出来时先返回，不置位')
+      // 解不出来的链接不许置位 —— 否则引导会以为棋盘上有东西而不送礼，两头落空。
+      // 置位在 applyShareState 里，而它只在 r.ok 之后才被调用；开机那条路同理。
+      const hashFn = /app\.applyShareHash = function[\s\S]*?\n\}/.exec(stripLiterals(main))
+      const failPath = hashFn[0].slice(0, hashFn[0].indexOf('app.applyShareState'))
+      t.ok(/if \(!r\.ok\)[\s\S]*?return false/.test(failPath), '解不出来时先返回，不落地也不置位')
+      t.ok(/share: bootShare\.ok \? bootShare\.state : null/.test(stripLiterals(main)),
+        '开机那条路也一样：解不出来就当没链接')
     }
   },
   {
@@ -6301,10 +6323,14 @@ cases.push(
 
       // 收的人按自己的屏算倍率
       const main = stripLiterals(readSrc('src/main.js'))
-      const apply = /app\.applySharedView = function[\s\S]*?\n\}/.exec(main)
-      t.ok(!!apply, '有 applySharedView')
-      t.ok(/Math\.min\(cw, ch\) \/ Math\.max\(1, view\.span\)/.test(apply[0]), '倍率由"我这块屏 ÷ 要看多宽"算出来')
-      t.ok(/vp\.minScale|vp\.maxScale/.test(apply[0]), '再夹到自己这边的缩放上下限里')
+      const apply = /app\.applyViewIntent = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!apply, '有 applyViewIntent')
+      t.ok(/Math\.min\(cw, ch\) \/ Math\.max\(1e-6, intent\.span\)/.test(apply[0]),
+        '倍率由"我这块屏 ÷ 要看多宽"算出来')
+      t.ok(/vp\.minScale/.test(apply[0]) && /vp\.maxScale/.test(apply[0]), '再夹到自己这边的缩放上下限里')
+      // 'exact' 是字符串字面量，stripLiterals 会把它剥成空 —— 查它必须用原文（D88 §3）
+      t.ok(/app\.applySharedView = function[\s\S]{0,240}?applyViewIntent\(view, 'exact'\)/.test(readSrc('src/main.js')),
+        '收链接走同一个取景意图，mode 是 exact')
       t.ok(/if \(st\.view\) app\.applySharedView\(st\.view\)\s*\n\s*else app\.fitView\(\)/.test(main),
         '给了取景就照它，没给才自动适配（老链接走后一条）')
     }
@@ -6340,20 +6366,158 @@ cases.push(
     }
   },
   {
+    name: '启动写盘唯一入口：启动段里除 applyInitialBoard 外不许有人碰盘（D110 §2）',
+    run(t) {
+      // 从前启动段有三处各写各的（首访随机盘 / 链接 / 引导收尾），D107 那张优先级表
+      // 只是文档里的一句话 —— 想绕就绕得过去。现在写盘只有一个出口，这条守卫盯着它。
+      const raw = readSrc('src/main.js')
+      const from = raw.indexOf('// 开局状态：棋盘从哪儿来')
+      const to = raw.indexOf('new ResizeObserver(() => app.handleResize())')
+      t.ok(from > 0 && to > from, '找得到启动段的头尾')
+      const boot = raw.slice(from, to)
+      // 守卫的扫描清单**必须含视图写入者**：D108 已把取景划进"这一局"，
+      // 只盯格子的话，同样的漂移会在视图轴上原样重来一遍。
+      const FORBID = ['engine.randomize(', 'engine.clear(', 'importRleText(', 'placeStarterGift(',
+        'app.fitView(', 'applySharedView(']
+      for (const f of FORBID) {
+        t.ok(boot.indexOf(f) < 0, `启动段不许直接调用 ${f} —— 走 applyInitialBoard`)
+      }
+      t.ok(/app\.applyInitialBoard\(resolveInitialBoard\(\{/.test(boot),
+        '启动段只有这一句写盘：裁决 → 唯一出口')
+      // 出口自己当然要写盘，否则守卫等于把功能搬空了还全绿
+      const exec = /app\.applyInitialBoard = function[\s\S]*?\n\}/.exec(raw)
+      t.ok(!!exec && /app\.engine\.randomize\(/.test(exec[0]) && /app\.fitView\(\)/.test(exec[0]),
+        '出口里真的写盘、真的取景')
+      t.ok(/app\.initialIntent = intent/.test(exec[0]), '出口记下这次意图，供引导收尾等处取用')
+    }
+  },
+  {
+    name: '链接的取景不许被"还没布局"吃掉（D110 §3）',
+    run(t) {
+      // 本机实测抓到的：开机时链接落地那一刻，布局可能还没跑过（画布还是出厂的 300×150），
+      // 照它算出来的倍率是错的；随后画布变大，atLeast 只保证"不少看"，
+      // 于是发的人那个 33.5× 的框就永远回不来了 —— 收的人看到的还是一片灰。
+      const main = readSrc('src/main.js')
+      const av = /app\.applyViewIntent = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!av, '找得到 applyViewIntent')
+      t.ok(/if \(mode === 'exact'\) app\.renderer\.resize\(\)/.test(av[0]),
+        'exact 要按当下真实画布算 —— 自己先量一次')
+      t.ok(/app\.pendingView = intent/.test(av[0]), '量不出来就把意图欠着')
+      t.ok(/if \(mode === 'exact'\) app\.pendingView = null/.test(av[0]), '兑现之后销账')
+      const sv = /app\.settleView = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!sv, '找得到 settleView')
+      t.ok(/if \(app\.pendingView\) app\.applyViewIntent\(app\.pendingView, 'exact'\)/.test(sv[0]),
+        '欠着的取景优先')
+      t.ok(/else app\.fitView\(\)/.test(sv[0]), '没欠账才自动适配整盘')
+      // **两处推迟点都要走 settleView**：少走一处，链接的取景就在那条路上被 fitView 吃掉
+      t.equal((main.match(/if \(app\.needsFit\) \{? ?app\.settleView\(\)/g) || []).length, 2,
+        'handleResize 与主循环两处推迟点都走 settleView')
+      t.ok(!/if \(app\.needsFit\) \{? ?app\.fitView\(\)/.test(main), '推迟点不许再直接 fitView')
+      // 用户点"适配整盘"就是不要那个框了，欠账要作废
+      const fv = /app\.fitView = function[\s\S]*?\n\}/.exec(main)
+      t.ok(/app\.pendingView = null/.test(fv[0]), '适配整盘作废欠账')
+    }
+  },
+  {
+    name: '优先级表是数据不是约定：文档那张表照 SOURCES 写（D110 §2b）',
+    run(t) {
+      const ranks = SOURCES.map(x => x.rank)
+      t.ok(ranks.every((r, i) => i === 0 || r >= ranks[i - 1]), 'SOURCES 本身按 rank 排好')
+      t.equal(priorityTable().map(x => x.name).join(','), SOURCES.map(x => x.name).join(','), '表就是它排序后的样子')
+      // 三类写入者都要在表里有代表，缺一类就说明这张表没描述完启动（D110 §1）
+      const kinds = new Set(SOURCES.map(x => x.kind))
+      for (const k of ['once', 'periodic', 'responsive']) t.ok(kinds.has(k), `表里要有${k}类`)
+      // 链接必须排在首访随机盘之后（后写者赢），排在用户动作之前
+      const rank = n => SOURCES.find(x => x.name === n).rank
+      t.ok(rank('link') > rank('firstVisitDemo'), '链接盖过首访随机盘')
+      t.ok(rank('link') < rank('user'), '用户自己的动作仍是最后一票')
+      t.ok(rank('chooser') < rank('link'), '首屏选择页在链接之前（它不写格子，只改画布尺寸）')
+      t.equal(SOURCES.find(x => x.name === 'chooser').writes, 'view', '选择页只碰视图这一列')
+      t.equal(SOURCES.find(x => x.name === 'prefs').writes, 'none', '偏好恢复两列都不碰')
+      // 文档那张表与它同源：每一行的名字都要在 decisions 里出现
+      // 只查"名字在 D110 这一节里出现过"是假的：resize 在正文里到处都是
+      //（handleResize、renderer.resize），删掉表里那一行照样绿。自查时抓到的。
+      // 所以解析**表格行**：第二列必须是 `名字`。
+      const dec = readSrc('docs/decisions.md')
+      const sec = dec.slice(dec.indexOf('## D110'))
+      const rows = (sec.match(/^\| [\d.]+ \| `[a-zA-Z]+` \|.*$/gm) || [])
+      const named = rows.map(r => /`([a-zA-Z]+)`/.exec(r)[1])
+      t.equal(named.join(','), SOURCES.map(x => x.name).join(','),
+        'decisions 那张表的行与 SOURCES 逐行对齐（顺序也要一致）')
+      for (const r of rows) {
+        const cols = r.split('|').map(c => c.trim())
+        const src = SOURCES.find(x => x.name === /`([a-zA-Z]+)`/.exec(r)[1])
+        const writesView = cols[5] !== '—'
+        t.equal(writesView, src.writes.indexOf('view') >= 0, `${src.name} 那行的"碰视图"列与 SOURCES 不符`)
+      }
+    }
+  },
+  {
+    name: '周期性写盘靠"不启动"，不靠排序（D110 §1）',
+    run(t) {
+      // 排序只管得住第一帧：轮播第二帧照样盖掉链接那一局。
+      // 所以有链接时自动看展**根本不启动**，而不是"先启动再被盖过一次"。
+      const withLink = resolveInitialBoard({
+        share: { board: 200, boundary: 'dead', rule: 'B3/S23', view: { cx: 1, cy: 1, span: 40 } },
+        firstVisit: true, density: 0.3, autoShowcaseEnabled: true
+      })
+      t.equal(withLink.autoShowcase, false, '有链接时自动看展不启动')
+      t.equal(withLink.starterGift, false, '有链接时引导也不送小家伙')
+      const noLink = resolveInitialBoard({ share: null, firstVisit: true, density: 0.3, autoShowcaseEnabled: true })
+      t.equal(noLink.autoShowcase, true, '没链接时该开还是开 —— 守卫不许把功能锁死')
+      t.equal(SOURCES.find(x => x.name === 'autoShowcase').kind, 'periodic', '自动看展登记为周期性')
+      t.equal(SOURCES.find(x => x.name === 'resize').kind, 'responsive', '尺寸变化登记为响应式')
+    }
+  },
+  {
+    name: '响应式写入者无权决定看哪儿：改尺寸只能从已有意图重算（D110 §1 第三类）',
+    run(t) {
+      // 它随时触发又不能禁用，排序和门禁都无效 —— 只能剥夺它的决定权。
+      // 从前这里保的是像素倍率，于是 D108 那句"w×w 在任何屏幕上完整可见"
+      // 只在链接落地那一瞬成立：窗口一窄、工具条一收，框里就少了一圈。
+      const main = readSrc('src/main.js')   // 'atLeast'/'exact' 是字面量，得扫原文（D88 §3）
+      const hr = /app\.handleResize = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!hr, '找得到 handleResize')
+      t.ok(/const before = app\.viewIntentNow\(\)/.test(hr[0]), '先取改动之前的取景意图')
+      t.ok(/app\.applyViewIntent\(before, 'atLeast'\)/.test(hr[0]), '再从意图重算，不保像素倍率')
+      t.ok(!/vp\.originX = cx -/.test(hr[0]), '不许再手搓一套挪中心的算法')
+      // 三处用的必须是同一个意图，不是各算各的（D110 §2 修正 2）
+      const st = /app\.shareState = function[\s\S]*?\n\}/.exec(main)
+      t.ok(/state\.view = app\.viewIntentNow\(\)/.test(st[0]), '发链接也问同一个函数')
+      // 钉函数名是假的（改名就绕过去了）。钉**那道公式**：短边 ÷ 倍率 = 看多宽，
+      // 全文件只许出现一次，否则又会有人各算各的。
+      t.equal((main.match(/Math\.min\(cw, ch\) \/ vp\.scale/g) || []).length, 1,
+        '"短边看得见多少格"这道公式只有一处')
+      t.equal((main.match(/app\.viewIntentNow = function/g) || []).length, 1, '取景意图只有一处定义')
+      // atLeast 的含义：只保证不少看。窗口变大保留原倍率，多出来的地方多看一点
+      const av = /app\.applyViewIntent = function[\s\S]*?\n\}/.exec(main)
+      t.ok(/mode === 'atLeast' \? Math\.min\(vp\.scale, wanted\) : wanted/.test(av[0]),
+        'atLeast 取 min —— 变窄要退倍率，变大不跟着放大')
+    }
+  },
+  {
     name: '可分享链接：接线（开机读、粘贴也读、两处能复制）（D106）',
     run(t) {
       const src = stripLiterals(readSrc('src/main.js'))
       // **两处都要有**：开机一次，hashchange 一次。只查一次的话，删掉开机那句照样绿 ——
       // 因为监听器体内是同一行（自查时抓到的）。
-      t.equal((src.match(/if \(location\.hash\) app\.applyShareHash\(location\.hash\)/g) || []).length, 2,
-        '开机读一次、hashchange 再读一次')
+      // 开机那次 D110 之后改走裁决 + 唯一出口，hashchange 仍直接读。**两处都要查**：
+      // 只查一处的话，删掉另一处照样绿。
+      t.ok(/const bootShare = location\.hash \? decodeShare\(location\.hash\)/.test(src),
+        '开机解一次链接，交给裁决')
+      t.ok(/share: bootShare\.ok \? bootShare\.state : null/.test(src), '解出来的局面进意图对象')
+      const hc = /addEventListener\('hashchange', \(\) => \{[\s\S]*?\n\}\)/.exec(readSrc('src/main.js'))
+      t.ok(!!hc && /app\.applyShareHash\(location\.hash\)/.test(hc[0]), 'hashchange 里再读一次')
       // 页面开着时粘链接只换 hash，浏览器不会重载 —— 不听这个事件就是"粘了没反应"
       // 查"必须出现某字符串"要用**原文**：stripLiterals 会把 'hashchange' 剥成空串（D88 §3）
       t.ok(/addEventListener\('hashchange'/.test(readSrc('src/main.js')), '也听 hashchange')
       const apply = /app\.applyShareHash = function[\s\S]*?\n\}/.exec(src)
       t.ok(!!apply, '找得到 applyShareHash')
       t.ok(/if \(!r\.ok\)/.test(apply[0]), '解不出来就不动棋盘')
-      t.ok(/resizeBoard|setBoundary|applyNotation/.test(apply[0]), '盘、边界、规则都按链接来')
+      const land = /app\.applyShareState = function[\s\S]*?\n\}/.exec(src)
+      t.ok(!!land, '找得到 applyShareState')
+      t.ok(/resizeBoard/.test(land[0]) && /setBoundary/.test(land[0]) && /applyNotation/.test(land[0]),
+        '盘、边界、规则都按链接来')
       // 两处能复制
       // 查的是**按钮本身**：只查 data-fav-link 的话，点击处理器里那句 closest 会替它顶上（自查时抓到的）
       t.ok(/<button data-fav-link=/.test(readSrc('src/ui/favorites-view.js')), '收藏行有复制链接那颗按钮')

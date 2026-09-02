@@ -421,7 +421,10 @@ export function createIntro(app) {
     // **链接优先**（D107 ③）：棋盘上这一局是别人分享来的，收尾就不能清盘、也不能送滑翔机 ——
     // 否则任何第一次收到链接的人，走完引导看到的都不是分享的那一局。
     // 第三幕的文案在这种情况下也换了一句（不能承诺放小家伙却不放，D70）。
-    if (app.shareApplied) return
+    // 判据来自开机那次裁决（D110 §2），不在这儿另立一套：
+    // starterGift === false 就是"这局有主人了"。shareApplied 是引导开着时才粘进来的链接。
+    const intent = app.initialIntent || {}
+    if (app.shareApplied || intent.starterGift === false) return
     app.clear({ silent: true })   // 走既有的清空路径，记账与用户自己点清空完全一致
     placeStarterGift(app.engine)
     app.visual.reconcile(app.engine)

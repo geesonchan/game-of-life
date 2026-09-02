@@ -62,6 +62,44 @@ export function staleReason(entry, now) {
 }
 
 /**
+ * **没有改变任何东西的操作，不是一步**（D113，作者定）。
+ *
+ * 空盘上点清空、随机填充生成了完全相同的一盘、图案落在界外一个格子都没放上 ——
+ * 这些都"发生"过，但棋盘一个比特都没动。
+ * 把它们压进栈里，用户按撤销就是**按了没反应** —— 那正是我们追了一路的那类事情
+ * （§12 那一族：说的与做的不一致；这一次是"按钮说有一步可退，其实没有"）。
+ *
+ * 判据落在**结果**上，不落在"哪个操作"上：不去枚举"清空要判空盘、随机要比种子"，
+ * 而是问一句"棋盘变了吗"。枚举注定漏（下一个写盘入口就忘了），问结果漏不掉。
+ *
+ * @param {object} entry 栈里那一条（补丁或快照）
+ * @param {{w:number,h:number,rule:string,generation:number,boundary:*,
+ *          cells:ArrayLike<number>, get:(x:number,y:number)=>number}} board 现在的棋盘
+ * @returns {boolean} 真的改变了什么
+ */
+export function stepChangedAnything(entry, board) {
+  if (!entry) return false
+  if (entry.kind === 'patch') {
+    // 补丁记的是**旧值**；哪一格现在与旧值不同，哪一格就真被改过
+    for (let i = 0; i < entry.cells.length; i++) {
+      const c = entry.cells[i]
+      if (board.get(c[0], c[1]) !== c[2]) return true
+    }
+    return false
+  }
+  const s = entry.session
+  // 便宜的先比，逐格那一遍放最后 —— 大盘上它是几百万次比较
+  if (s.w !== board.w || s.h !== board.h) return true
+  if (s.generation !== board.generation) return true
+  if (s.rule !== board.rule) return true
+  if (s.boundary !== board.boundary) return true
+  const cur = board.cells
+  if (s.cells.length !== cur.length) return true
+  for (let i = 0; i < s.cells.length; i++) if (s.cells[i] !== cur[i]) return true
+  return false
+}
+
+/**
  * 撤销栈。**多步**，按字节封顶，超了丢最旧的。
  *
  * @param {number} limit 字节上限

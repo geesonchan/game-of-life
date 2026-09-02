@@ -8,7 +8,7 @@ import { visualFor, isBigBoard } from './data/board-sizes.js'
 import { encodeShare, decodeShare, shareVerdict } from './data/share.js'
 import { resolveInitialBoard } from './data/startup.js'
 import { resizePlan, captureSession, pasteCells, cellBounds } from './data/session.js'
-import { createUndoStack, staleReason, MAX_UNDO_BYTES } from './data/undo.js'
+import { createUndoStack, staleReason, stepChangedAnything, MAX_UNDO_BYTES } from './data/undo.js'
 import { runReplay, etaSeconds } from './ui/replay-driver.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
@@ -33,7 +33,7 @@ import { createExplorerView } from './ui/explorer-view.js'
 import { createCriticalView } from './ui/critical-view.js'
 import { boardBaseline } from './engine/save.js'
 import { AGE_MAX } from './render/palette.js'
-import { placePattern, centerOrigin, transformPattern } from './engine/patterns.js'
+import { placePattern, centerOrigin, transformPattern, fitsInBoard } from './engine/patterns.js'
 import { t, applyStatic, onLangChange, setRegister, setLang, getLang } from './i18n/index.js'
 import { prefs } from './ui/prefs.js'
 import { setupAnalytics } from './analytics.js'
@@ -242,8 +242,59 @@ app.boardNow = function () {
  * 三处各判一次的话，迟早出现"按钮亮着、点下去没反应"。
  */
 app.canUndo = function () {
+  app.settleStep()          // 先把待定那一步结算掉，再回答（D113）
   return app.undoStack.canUndo() && !staleReason(app.undoStack.peek(), app.boardNow())
 }
+
+/**
+ * **一步"待定"，直到看得出它有没有改变什么**（D113）。
+ *
+ * 快照必须在动手**之前**抓（那才是"上一步之前那一刻"），可"改变了没有"要动手**之后**才知道。
+ * 所以压栈分两拍：先放进这个待定位，等**第一个来问栈的人**到了再结算 ——
+ * 那时操作已经做完，比一比就知道该不该收下它。
+ *
+ * **判断只在 `settleStep` 这一处**：写盘入口照旧只说一句"这是一步"，
+ * 谁都不必自己判"我这次算不算数"。每个调用点各判一遍的话，
+ * 下一个写盘入口就会忘 —— 而忘了的表现是"按钮亮着、按了没反应"。
+ */
+app.pendingStep = null
+
+/** 比给 `stepChangedAnything` 看的那份"现在的棋盘" */
+app.boardSnapshotNow = function () {
+  return {
+    w: app.engine.w,
+    h: app.engine.h,
+    rule: (app.engine.rule && app.engine.rule.notation) || 'B3/S23',
+    generation: app.engine.generation,
+    boundary: app.engine.boundary,
+    cells: app.engine.cur,
+    get: (x, y) => app.engine.get(x, y)
+  }
+}
+
+/**
+ * 结算待定的那一步：**真改了东西才收下**，没改就丢掉。
+ *
+ * 幂等、可重入 —— 谁先问栈谁触发它，问第二遍时待定位已经空了。
+ */
+app.settleStep = function () {
+  const step = app.pendingStep
+  if (!step) return app.lastStepAdded
+  app.pendingStep = null
+  app.lastStepAdded = stepChangedAnything(step.entry, app.boardSnapshotNow())
+  if (app.lastStepAdded) app.undoStack.push(step.entry, step.opts)
+  return app.lastStepAdded
+}
+
+/**
+ * 上一次结算收下了没有。
+ *
+ * 临时条问的是"**刚才那一步**"，不是"栈里还有东西吗" —— 两者不是一回事：
+ * 同种子连按两次随机填充，第二次什么都没变，可栈里还留着第一次那一步。
+ * 那时弹条就是在说谎（"刚才那一步可以撤销"，而刚才那一步根本不存在）。
+ * 结算是幂等的，所以这个答案在同一拍里问几次都一样。
+ */
+app.lastStepAdded = false
 
 /**
  * 两个入口的**唯一**刷新处（常驻按钮 + 临时条）。
@@ -272,6 +323,8 @@ app.refreshUndo = function () {
 app.undoBarTimer = null
 
 app.showUndoBar = function () {
+  // **这一次操作真的产生了一步，才出声**（D113）—— 不是"栈里还有东西"
+  if (!app.settleStep()) return
   if (!app.canUndo() || !app.el || !app.el.undoBar) return
   app.el.undoBar.parentNode.hidden = false
   if (app.undoBarTimer) clearTimeout(app.undoBarTimer)
@@ -290,7 +343,9 @@ app.hideUndoBar = function () {
  * `dropPatches` 那一档给 A 类（改尺寸/读档/载入）：盘要换了，之前的补丁坐标失去前提。
  */
 app.pushUndoSnapshot = function (label, opts = {}) {
-  app.undoStack.push({
+  app.settleStep()          // 上一步先结算，待定位一次只放一个
+  app.lastStepAdded = false // 这一次还没结算，先别让别人读到上一次的答案
+  app.pendingStep = { opts, entry: {
     kind: 'snapshot',
     label,
     session: captureSession(app.engine, {
@@ -303,22 +358,22 @@ app.pushUndoSnapshot = function (label, opts = {}) {
     // "在不在跑"不还，用户会看着自己那一局莫名其妙动起来。
     showId: app.currentShowId,
     pre: app.boardNow()
-  }, opts)
-  app.refreshUndo()
+  } }
 }
 
 /** 一笔画完压栈：存补丁（input.js 收笔时叫，D67 那个数组白捡） */
 app.pushUndoPatch = function (cells, runDirtyBefore) {
   if (!cells || !cells.length) return
-  app.undoStack.push({
+  app.settleStep()
+  app.lastStepAdded = false
+  app.pendingStep = { opts: {}, entry: {
     kind: 'patch',
     label: 'draw',
     cells,
     runDirtyBefore,
     showId: app.currentShowId,
     pre: app.boardNow()
-  })
-  app.refreshUndo()
+  } }
 }
 
 /**
@@ -329,6 +384,7 @@ app.pushUndoPatch = function (cells, runDirtyBefore) {
  * 得有自己的守卫：跑过一代，补丁记的那个棋盘就不存在了，整栈作废。
  */
 app.invalidateUndoOnStep = function () {
+  app.pendingStep = null      // 待定的那一步也一起作废：它记的棋盘同样已经不存在了
   if (app.undoStack.size()) { app.undoStack.clear(); app.refreshUndo() }
 }
 
@@ -337,6 +393,7 @@ app.invalidateUndoOnStep = function () {
  * 用户永远回不到更早的地方。
  */
 app.undo = function () {
+  app.settleStep()
   const top = app.undoStack.peek()
   if (!top) return false
   // **先说再丢**：前提对不上就说清为什么，然后把其余栈一并丢掉 ——
@@ -694,6 +751,11 @@ app.placeStampConfirm = function () {
   const x = pos.x + 'px', y = pos.y + 'px'
   if (btn.style.left !== x) btn.style.left = x
   if (btn.style.top !== y) btn.style.top = y
+  // **把失败挡在发生之前**（D113）：放不下就把「放这」变灰、幽灵变色，
+  // 一眼看出来，而不是按下去、失败、再解释。两处都问 `stampFitsAt`。
+  const fits = app.stampFitsAt(gc)
+  btn.disabled = !app.stampFitsAt(gc)
+  if (app.stampOutside !== !fits) { app.stampOutside = !fits; app.dirty = true }
 }
 
 app.setStamp = function (pattern) {
@@ -715,12 +777,32 @@ app.setStamp = function (pattern) {
 }
 
 /** 在某个格子放下当前图案（以光标为中心） */
+/**
+ * **放不放得下：单一判断源**（D113）。
+ * 「放这」按钮灰不灰、幽灵变不变色、真按下去落不落得成，三处都问它 ——
+ * 三处各判一遍的话，迟早出现"按钮亮着，按下去没反应"（§12 第三面那一族）。
+ */
+app.stampFitsAt = function (cell) {
+  const p = app.stampPattern()
+  if (!p || !cell) return false
+  const o = centerOrigin(p, cell.x, cell.y)
+  return fitsInBoard(p, o.x, o.y, app.engine.w, app.engine.h)
+}
+
 app.placeStampAt = function (cell) {
   const p = app.stampPattern()      // 放下的必须与幽灵一致
   if (!p) return
   const label = p.label || t('pattern.' + p.key)
   if (p.w > app.engine.w || p.h > app.engine.h) {
     app.toast(t('pattern.tooBig', { name: label }))
+    return
+  }
+  // **落在界外就不落子**（D113）：从前这里照放不误，`placePattern` 把界外的格子裁掉，
+  // 然后照样弹一句「已放置」—— 一个格子都没上去，却说放好了，还把幽灵留在手上，
+  // 用户分不清是"还没放"还是"放了没生效"。
+  // 现在：不放、说清楚、**幽灵留着**（他还要挪，别让他重新选一遍图案）。
+  if (!app.stampFitsAt(cell)) {
+    app.toast(t('pattern.outside', { name: label }))
     return
   }
   const o = centerOrigin(p, cell.x, cell.y)
@@ -1612,7 +1694,7 @@ function frame(now) {
           }
         }
       }
-      app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h)
+      app.renderer.drawGhost(app.viewport, gp, o.x, o.y, app.engine.w, app.engine.h, 1, app.stampOutside)
       if (app.pendingStamp) app.placeStampConfirm()   // 幽灵动了、转了、缩放了，按钮都要跟上
     }
     if (app.selection) app.renderer.drawSelection(app.viewport, app.selection)
@@ -1631,6 +1713,13 @@ function frame(now) {
     app.records.renderPanel()
     app.recAt = now
   }
+
+  // **撤销的两个入口在这里刷新**（D113）。
+  // 为什么在帧里、不在 `updateHud()` 里：`clear()` 开头压栈，随后调 `setRunning(false)`，
+  // 而它自己会叫一次 `updateHud()` —— 那一刻棋盘**还没清**，
+  // 在那里结算就会把刚压的那一步当成"什么都没改"给丢掉（写的时候真踩到了）。
+  // 帧回调跑在整段同步操作**之后**，是唯一不会撞上半截状态的时刻。
+  app.refreshUndo()
 
   requestAnimationFrame(frame)
 }

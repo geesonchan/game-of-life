@@ -490,6 +490,9 @@ export const DICT = {
     // 撤销 / 后悔药。**三种失效原因共用一个句式**（定稿点名）——
     // 三句各写各的，迟早有一句读起来像是出了故障。它们说的是同一件事：
     // 补丁按坐标回滚，而坐标的前提没了。句子要**具体**，不能只说"撤不了"。
+    // 界外放置：**说清楚，并且说清楚下一步该干什么**（D113）。
+    // 只说"放不下"不够 —— 用户手上还举着那个图案，他要知道的是「挪回盘里」。
+    'pattern.outside': '{name} 有一部分在棋盘外，放不下 —— 往盘里挪一挪',
     'undo.done': '已撤销',
     'undo.stale.size': '换了棋盘尺寸之后，之前的改动就退不回去了',
     'undo.stale.rule': '换了规则之后，之前的改动就退不回去了',
@@ -1514,6 +1517,7 @@ export const DICT = {
     'preset.daynight': 'Life and death are symmetric',
 
     'toast.cleared': 'Board cleared',
+    'pattern.outside': '{name} sticks out past the board edge — move it inside',
     'undo.done': 'Undone',
     'undo.stale.size': 'After changing the board size, earlier edits can no longer be undone',
     'undo.stale.rule': 'After changing the rule, earlier edits can no longer be undone',

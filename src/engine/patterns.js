@@ -279,6 +279,24 @@ export function placePattern(engine, pattern, ox, oy) {
   return placed
 }
 
+/**
+ * 这个图案摆在 (ox, oy) 时，**活格是不是全都落在盘内**（D113）。
+ *
+ * 判据看的是**活格**不是外接框：图案四角常常是空的，
+ * 按外接框判会把"其实放得下"的位置误判成放不下。
+ *
+ * 有了它，界外放置就能**挡在发生之前**（按钮变灰 + 幽灵变色），
+ * 而不是让用户按下去、失败、再解释。`placePattern` 那边照旧裁剪 ——
+ * 它是最后一道，不是第一道。
+ */
+export function fitsInBoard(pattern, ox, oy, boardW, boardH) {
+  for (const [dx, dy] of pattern.cells) {
+    const x = ox + dx, y = oy + dy
+    if (x < 0 || y < 0 || x >= boardW || y >= boardH) return false
+  }
+  return true
+}
+
 /** 让图案在 (cx, cy) 居中时的左上角坐标 */
 export function centerOrigin(pattern, cx, cy) {
   return { x: cx - (pattern.w >> 1), y: cy - (pattern.h >> 1) }

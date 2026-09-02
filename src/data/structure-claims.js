@@ -169,6 +169,12 @@ export const STRUCTURE_CLAIMS = Object.freeze([
   {
     kind: 'prose',
     file: 'src/main.js',
+    says: '**撤销的两个入口在这里刷新**',
+    why: '引用上面 controls.js 那条已钉住的"两个入口"，说的是同一件事，不另钉。'
+  },
+  {
+    kind: 'prose',
+    file: 'src/main.js',
     says: '从前是两处各判一次',
     why: '**讲历史** —— 说的是改之前的样子，本来就不该与现在的代码对得上。'
   },

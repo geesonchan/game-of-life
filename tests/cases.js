@@ -7323,6 +7323,46 @@ cases.push(
         /padding-bottom: var\(--safe-b\)/.test(css),
         '把手要长到盖满露出来那一带 —— 否则横条里露出的是面板正文，' +
         '第一条分组标题正好落在那儿，等于把一个危险目标换成另一个')
+
+      // **每一个够得着底边的 fixed 层，都得自己让开**（D113）。
+      // `#app` 那句 padding-bottom 罩不住它们 —— 它们不在 #app 的流里。
+      // 这条是**结构性**的：新加一个触底的浮层而忘了让开，当场红，不必靠记性。
+      const blocks = css.match(/\{[^{}]*\}/g) || []
+      const missed = []
+      for (const b of blocks) {
+        if (!/position:\s*fixed/.test(b)) continue
+        const reachesBottom = /inset:\s*0/.test(b) || /(^|[;{\s])bottom:/.test(b)
+        if (!reachesBottom) continue                       // 只挂在顶上的不用管
+        if (/var\(--safe-b\)/.test(b)) continue            // 自己让开了
+        missed.push(b.replace(/\s+/g, ' ').slice(0, 70))
+      }
+      t.equal(missed.length, 0,
+        '有够得着底边的 fixed 层没让开安全区（#app 的 padding 罩不住它们）：' + missed.join(' ／ '))
+    }
+  },
+  {
+    name: '底部安全区：有几种盖住底部的状态，就得探几遍（D113）',
+    run(t) {
+      // 上一轮逐点探的结论"只有抽屉把手在危险带里"是**在引导关着的时候**得出的 ——
+      // 引导是另一层，探不到。**逐点探只能探到探测那一刻存在的东西。**
+      // 所以这里把"会盖住底部的状态"列成表，真机验法照着它一个个走。
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+      // 四个弹层共用 .modal，三个全屏视图共用 .tower-view —— 各自一处就够
+      const modals = (html.match(/class="modal"/g) || []).length
+      const views = (html.match(/class="tower-view"/g) || []).length
+      t.ok(modals >= 4, `弹层至少四个（引导/挡路框/总结/规则），实际 ${modals}`)
+      t.ok(views >= 3, `全屏视图至少三个（观塔/勘探/临界），实际 ${views}`)
+      const modalRule = locate(css, /\.modal \{[^}]*\}/g, '.modal 规则的定位')[0]
+      t.ok(/padding-bottom: var\(--safe-b\)/.test(modalRule), '四个弹层靠 .modal 这一处让开')
+      const viewRule = locate(css, /\.tower-view \{[^}]*\}/g, '.tower-view 规则的定位')[0]
+      t.ok(/padding-bottom: var\(--safe-b\)/.test(viewRule), '三个全屏视图靠 .tower-view 这一处让开')
+      // 「更多」浮层挂在顶上且封了高度，够不着底 —— 记一笔，免得下次又去探它
+      // `.tb-more-group {` 全仓有三处（display:contents / display:none / 这一处），
+      // 要的是带 position:fixed 的那一条 —— 匹配式必须唯一命中它想命中的东西（§30）
+      const more = locate(css, /\.tb-more-group \{[^}]*position: fixed[^}]*\}/g, '「更多」浮层规则的定位')[0]
+      t.ok(/top: 54px/.test(more) && /max-height/.test(more),
+        '「更多」是顶部下拉且封了高度，够不着底边；它变成触底浮层时，上面那条守卫会红')
     }
   }
 

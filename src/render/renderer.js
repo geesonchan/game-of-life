@@ -387,13 +387,16 @@ export class Renderer {
    * （当年是给"闪现一秒再淡出"用的，那套方案在 D89 ① 被两步放置取代；
    *   参数留着 —— 它是个干净的能力，不是那套方案的残留。）
    */
-  drawGhost(vp, pattern, ox, oy, boardW, boardH, alpha = 1) {
+  drawGhost(vp, pattern, ox, oy, boardW, boardH, alpha = 1, outside = false) {
     const ctx = this.ctx
     const size = Math.max(1, vp.scale)
     const k = Math.max(0, Math.min(1, alpha))
+    // 放不下的时候幽灵变色（D113）：**一眼看出来**，不必按下去才知道。
+    // 用警示红而不是变淡 —— 淡会被读成"还没选中"，那是另一个意思。
+    const tint = outside ? [220, 90, 90] : this.flat
     ctx.save()
     ctx.globalAlpha = 0.6 * k
-    ctx.fillStyle = rgb(this.flat)
+    ctx.fillStyle = rgb(tint)
     for (const [dx, dy] of pattern.cells) {
       const x = ox + dx, y = oy + dy
       if (x < 0 || y < 0 || x >= boardW || y >= boardH) continue
@@ -402,7 +405,7 @@ export class Renderer {
       ctx.fillRect(px, py, size, size)
     }
     ctx.globalAlpha = 0.9 * k
-    ctx.strokeStyle = rgb(this.flat)
+    ctx.strokeStyle = rgb(tint)
     ctx.setLineDash([4, 3])
     ctx.lineWidth = 1
     const bx = (ox - vp.originX) * vp.scale

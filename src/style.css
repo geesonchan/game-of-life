@@ -227,7 +227,14 @@ input[type="text"]:focus, select:focus { outline: 1px solid var(--accent-dim); }
 
 /* 层级见 docs/decisions.md D79：模态 80 > 全屏视图 60 > 常驻浮层 40/41 > 贴附 5。
    原值 50 低于抽屉的 55 与「更多」的 60，于是抽屉能盖住规则编辑器 —— 层级倒置。 */
-.modal { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; }
+/* 弹层也要让开底部安全区（D113）。
+   `#app` 那句 padding-bottom **罩不住它们** —— 它们是 position:fixed，不在 #app 的流里。
+   好在四个弹层（引导 / 挡路框 / 总结 / 规则编辑）共用这一个类，所以还是一处就够。 */
+.modal {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  padding-bottom: var(--safe-b);
+}
 .modal[hidden] { display: none; }
 .modal-backdrop { position: absolute; inset: 0; background: rgba(6, 8, 12, 0.72); backdrop-filter: blur(2px); }
 
@@ -851,6 +858,7 @@ button.rescue:hover { background: #26497a; border-color: #3a72ad; color: #f0f7ff
   position: fixed; inset: 0; z-index: 60;   /* 全屏视图层（D79） */
   display: flex; flex-direction: column;
   background: #0b0d12;
+  padding-bottom: var(--safe-b);            /* 三个全屏视图共用这一个类（D113） */
 }
 .tower-view[hidden] { display: none; }
 

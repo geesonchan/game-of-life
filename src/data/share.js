@@ -17,6 +17,12 @@ export const SHARE_VERSION = 1
  */
 export const MAX_URL = 2000
 
+/**
+ * 链接里能带的最大代数。1024² 上重放十万代要二十分钟 ——
+ * 那不是"打开一条链接"，是另一件事，所以直接拒（用户拍板）。
+ */
+export const MAX_REPLAY_GENS = 100000
+
 /** base64url：自己写，避免 btoa / Buffer 在两个运行器里不一样 */
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 export function toBase64url(text) {
@@ -100,8 +106,16 @@ export function encodeShare(state, budget = 0) {
     parts.push('w=' + Math.max(1, Math.round(state.view.span)))
   }
   if (Number.isFinite(state.speed)) parts.push('sp=' + Math.max(1, Math.min(60, Math.round(state.speed))))
+  // **内置局按名字调用**（D110 §19）：不搬格子，因此不受长度预算约束。
+  // 收藏区每条本来就有 id（builtin:xxx），那就是这条路的现成入口。
+  if (state.id) parts.push('id=' + encodeURIComponent(state.id))
+  // **跑过多少代**（D110 §20）：种子 + 密度 + 代数才说得清"你现在看到的这一帧"。
+  // 没有它，收的人静默看到第 0 代 —— 那是分享功能最早那个坑。
+  if (Number.isFinite(state.gen) && state.gen > 0) parts.push('g=' + Math.round(state.gen))
   let droppedPattern = false
-  if (state.rle) {
+  if (state.id) {
+    // 名字已经指到那一局了，格子不必再搬一遍
+  } else if (state.rle) {
     const p = 'p=' + toBase64url(state.rle)
     if (budget + parts.join('&').length + 1 + p.length + 1 <= MAX_URL) parts.push(p)
     else droppedPattern = true      // 带不下就不带，并且要让上层说出来
@@ -122,7 +136,7 @@ export function encodeShare(state, budget = 0) {
  * 而不是拿默认值凑一局出来 —— 那样用户以为自己打开的是别人那一局，其实不是。
  * @returns {{ok:true, state:object}|{ok:false, reason:string}}
  */
-export function decodeShare(hash) {
+export function decodeShare(hash, opts) {
   const raw = String(hash || '').replace(/^#/, '')
   if (!raw) return { ok: false, reason: 'empty' }
   const q = {}
@@ -172,6 +186,22 @@ export function decodeShare(hash) {
     if (!Number.isFinite(sp) || sp < 1 || sp > 60) return { ok: false, reason: 'speed' }
     state.speed = Math.round(sp)
   }
+  if (q.id !== undefined) {
+    const id = decodeURIComponent(q.id)
+    if (!/^builtin:[a-zA-Z0-9_-]+$/.test(id)) return { ok: false, reason: 'unknownId' }
+    // **认不出的 id 明确拒绝，不开空盘**（用户定的边界，复用 v=2 那套）。
+    // 存在性交给调用方判断 —— 这一层不认识精彩局名单，也不该认识。
+    if (opts && typeof opts.knownId === 'function' && !opts.knownId(id)) {
+      return { ok: false, reason: 'unknownId' }
+    }
+    state.id = id
+  }
+  if (q.g !== undefined) {
+    const g = Number(q.g)
+    if (!Number.isFinite(g) || g < 0 || Math.round(g) !== g) return { ok: false, reason: 'gen' }
+    if (g > MAX_REPLAY_GENS) return { ok: false, reason: 'tooFar' }
+    state.gen = g
+  }
   if (q.p !== undefined) {
     const rle = fromBase64url(q.p)
     if (!rle) return { ok: false, reason: 'pattern' }
@@ -190,7 +220,13 @@ export function decodeShare(hash) {
  * 少一条，收的人看到的就不是发的人那一局 —— 而且没有任何迹象。
  */
 export function seedCanTell(ctx) {
-  return !!ctx && ctx.initType === 'random' && !ctx.runDirty && (ctx.generation | 0) === 0
+  if (!ctx) return false
+  // 名字指得到那一局，就不需要种子说话了（内置局，D110 §19）
+  if (ctx.id) return true
+  if (ctx.initType !== 'random' || ctx.runDirty) return false
+  // **跑过代也说得清了**（D110 §20）：`g=` 把代数带过去，收的人重放到那一帧。
+  // 只有远到重放不动的才算说不清。
+  return (ctx.generation | 0) <= MAX_REPLAY_GENS
 }
 
 /**
@@ -211,6 +247,7 @@ export function shareVerdict(ctx) {
   //  · 只是跑过代、种子干净 → 链接带得回第 0 代，**这不是废链接，只是不是这一帧**。
   //    那是分享的人自己的取舍，把决定还给他 —— 信息已经摆在他面前了。
   //    硬拒是替用户做决定。（`g=` 落地后这一档自动消失。）
+  // 干净种子但代数远到重放不动：链接只带得回第 0 代 —— 问一句，把决定还给他
   if (ctx.initType === 'random' && !ctx.runDirty) return 'askGen'
   return 'refuse'
 }

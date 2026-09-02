@@ -1796,3 +1796,18 @@ input[type="range"] { touch-action: pan-y; }
   .show-bar .show-what b { max-width: 30vw; overflow: hidden; text-overflow: ellipsis }
   .show-bar button { padding: 0 10px; font-size: 12px }
 }
+
+/* 链接重放的进度条（D110 §20）。与看展横幅同在附着层（D79 z-index 5），
+   但它在**下沿** —— 重放时人的眼睛在棋盘上，别拿横幅挡住正在长出来的东西。 */
+.replay-note {
+  position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+  z-index: 5; min-width: 220px; max-width: calc(100% - 20px);
+  padding: 8px 12px; border-radius: 12px;
+  background: rgba(20, 22, 28, 0.82); border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px); font-size: 12px; text-align: center;
+}
+.replay-note .replay-track {
+  margin-top: 6px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.replay-note .replay-track i { display: block; height: 100%; width: 0; background: var(--accent) }

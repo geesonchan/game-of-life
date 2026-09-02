@@ -140,6 +140,11 @@
         <canvas class="minimap" id="minimap" hidden aria-hidden="true"></canvas>
         <!-- 看展横幅：**明说不记账**（D110 §14）。放的是别人的局，
              记进用户的编年史与台账就是把不属于他的东西塞进他的记录里 -->
+        <!-- 链接重放（D110 §20）：不冻结、看得见、随时可停 -->
+        <div class="replay-note" id="replay-note" hidden>
+          <span>—</span>
+          <div class="replay-track"><i id="replay-bar"></i></div>
+        </div>
         <div class="show-bar" id="show-bar" hidden>
           <span class="show-dot" aria-hidden="true"></span>
           <span class="show-what"><b id="show-name">—</b><span class="show-note" id="show-note" data-i18n="show.noRecord">看展中 · 不记账</span></span>

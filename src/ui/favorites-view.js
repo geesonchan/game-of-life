@@ -67,6 +67,9 @@ export function createFavorites(app) {
     app.clear({ silent: true, keepShowEnv: true })
     if (rule) app.applyNotation(rule)
     const ok = app.importRleText(entry.rle, { center: true })
+    // 记下"现在盘上是哪一局" —— 分享时按名字走（D110 §19）。
+    // 用户一动手（画、清、随机、读档）就作废，那时盘上已经不是这一局了。
+    app.currentShowId = ok ? (entry.id || null) : null
     // 看展换局时不弹这句：横幅上已经写着现在放的是哪一局，再弹一次是噪音
     if (ok && !opts.silent) app.toast(t('fav.replayed', { name: entry.name || t(entry.nameKey) }))
     return ok
@@ -446,6 +449,10 @@ export function createFavorites(app) {
     render,
     // 看展的排片从**这同一个出口**取行 —— 手抄一张名单迟早与卡片分叉（D83 §1）
     rowsForShow: () => rowsNow().filter(r => r.builtin),
+    // `id=builtin:` 那条路要的两样：认不认得这个名字、这个名字的格子在哪儿（D110 §19）
+    knownId: id => rowsNow().some(r => r.builtin && r.id === id),
+    byId: id => rowsNow().find(r => r.builtin && r.id === id) || null,
+    rleOf,
     renderShow: renderShowStrip,      // 拿起/放下图案时只重画卡片带，不动整个收藏面板
     syncShowHint,
     relocalize: render,

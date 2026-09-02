@@ -16,12 +16,13 @@ import { BIG_LAYOUTS } from '../src/data/big-layouts.js'
 import { MACHINE_LAYOUTS } from '../src/data/machine-layouts.js'
 import { METAPIXEL_LAYOUT } from '../src/data/metapixel-layout.js'
 import { shouldCount } from '../src/analytics.js'
-import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MAX_URL, shareVerdict, seedCanTell } from '../src/data/share.js'
+import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MAX_URL, MAX_REPLAY_GENS, shareVerdict, seedCanTell } from '../src/data/share.js'
 import { shouldShow, viewBox, pickCenter, REDRAW_MS } from '../src/ui/minimap.js'
 import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup.js'
 import { SESSION_WRITERS, resizePlan, captureSession, pasteCells, cellBounds } from '../src/data/session.js'
 import { QUANTITY_PROMISES, unregisteredEstimates, ESTIMATE_MARKS } from '../src/data/promises.js'
-import { showPlaylist, nextShowIndex, shouldAutoStart, exitPlan, DWELL_MS, IDLE_MS, SHOW_MAX_BOARD } from '../src/data/show.js'
+import { runReplay, etaSeconds } from '../src/ui/replay-driver.js'
+import { showPlaylist, nextShowIndex, shouldAutoStart, exitPlan, visibleInDwell, DWELL_MS, IDLE_MS, SHOW_MAX_BOARD, VISIBLE_GENS } from '../src/data/show.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
@@ -6464,6 +6465,46 @@ cases.push(
     }
   },
   {
+    name: '大盘那句报的是**这台机器**量出来的（D110 §16）',
+    run(t) {
+      // 用别人机器的数字加一句免责声明是缓解不是解法 —— 而本机标定本来就在手上：
+      // 主循环每帧都在攒 stepMsEma，卡顿判定用的就是它。一处测量，三处用。
+      const main = readSrc('src/main.js')
+      t.ok(/app\.measuredStepMs = function \(\) \{ return app\.stepMsEma > 0 \? app\.stepMsEma : null \}/.test(main),
+        '有"这台机器每代多少毫秒"这一处定义')
+      const rec = /app\.recordStepCost = function[\s\S]*?\n\}/.exec(main)
+      t.ok(/app\.stepMsEma = app\.stepMsEma === 0 \? per :/.test(rec[0]), '它就是主循环攒的那个 EMA')
+      t.ok(/app\.syncBigBoard\(\)/.test(rec[0]), '量到了要把那句话换过来')
+      t.ok(/now - \(app\.bigNoteAt \|\| 0\) > 1000/.test(rec[0]), '每秒最多刷一次，免得数字乱跳')
+      // 换盘要清掉上一档的实测值，否则报的是别的盘的速度
+      const rb = /app\.resizeBoard = function[\s\S]*?\n\}/.exec(main)
+      t.ok(/app\.stepMsEma = 0/.test(rb[0]), '换盘清掉上一档的实测值')
+      const ctl = readSrc('src/ui/controls.js')
+      t.ok(/const live = app\.measuredStepMs \? app\.measuredStepMs\(\) : null/.test(ctl), '先问本机')
+      t.ok(/const cost = live !== null \? live : costOf\(n, false\)/.test(ctl), '没量到才退回桌面实测表')
+      t.ok(/t\(live !== null \? 'board\.bigNoteMeasured' : 'board\.bigNote'/.test(ctl),
+        '两句话分开 —— 实测就说实测，预告就说预告')
+      for (const lang of ['zh', 'en']) {
+        t.ok(!!DICT[lang]['board.bigNoteMeasured'], `${lang} 缺实测那句`)
+        t.ok(/你这台|your machine/i.test(DICT[lang]['board.bigNoteMeasured']), `${lang} 要说清是"你这台"`)
+      }
+    }
+  },
+  {
+    name: '看展：切到后台不算闲着（D110 §17 · 时序冷）',
+    run(t) {
+      // 手机切走五分钟回来，正撞在自动开演中途，第一反应是"我的局呢" ——
+      // 而横幅那颗〔别自动开演〕解释的是怎么停，不解释它什么时候开始的。
+      const ui = readSrc('src/ui/show.js')
+      const vis = /document\.addEventListener\('visibilitychange'[\s\S]*?\n  \}\)/.exec(ui)
+      t.ok(!!vis, '听 visibilitychange')
+      t.ok(/if \(document\.hidden\) \{ if \(on\) pause\(\); return \}/.test(vis[0]), '切走就暂停')
+      t.ok(/noteActivity\(\)/.test(vis[0]), '回来重新计时')
+      // "重新计时"不是"接着算"：noteActivity 把起点推到现在
+      t.ok(/function noteActivity\(\) \{ lastActivity = Date\.now\(\) \}/.test(ui), '重新计时 = 起点推到现在')
+    }
+  },
+  {
     name: '看展：自动进入只问意图，绝不自己读 hash（D110 §14）',
     run(t) {
       // **硬要求**（用户定）：抑制判断必须问 resolver 要意图。自己读 hash 的话，
@@ -6537,21 +6578,34 @@ cases.push(
     }
   },
   {
-    name: '看展：排片从收藏那同一个出口取，且不放大盘（D110 §14）',
+    name: '看展：排片的闸问的是能不能看见，不是盘多大（D110 §14/§22）',
     run(t) {
-      const rows = [{ id: 'a', rle: 'x', board: 200 }, { id: 'b', rle: 'x', board: 2304 },
-        { id: 'c', rle: 'x' }, { id: 'd' }, { id: 'e', rle: 'x', board: 1024 }]
-      const list = showPlaylist(rows)
-      t.equal(list.map(x => x.id).join(','), 'a,c', '大盘的不放，没图案的不放')
+      // **闸从"盘有多大"改成"这一档时间里看得见东西吗"**（D110 §22）：
+      // 原来的理由（大盘慢）是对的，但量错了对象 —— 真正的约束是
+      // "看出它在干什么要多少代" ÷ "这台机器每秒多少代"。
+      const rows = [{ id: 'a', rle: 'x', board: 200 }, { id: 'meta', rle: 'x', board: 2304, showGens: 35328 },
+        { id: 'c', rle: 'x' }, { id: 'd' }, { id: 'big', rle: 'x', board: 2048 }]
+      const list = showPlaylist(rows, { gensPerSecFor: r => (r.board || 200) >= 2048 ? 30 : 1600 })
+      t.equal(list.map(x => x.id).join(','), 'a,c,big', '跑得动的大盘可以进；没图案的还是不放')
+      t.ok(list.map(x => x.id).indexOf('meta') < 0, '元像素进不来 —— 一个元代 35,328 代，12 秒里是一张静止的图')
       t.equal(list[0].dwellMs, DWELL_MS, '每局停留有默认值')
-      t.ok(SHOW_MAX_BOARD <= 500, '上限是小盘 —— 大盘每代十几毫秒，放起来是幻灯片')
+      t.equal(visibleInDwell({ showGens: 35328 }, 30, 12000), false, '要 35,328 代、只跑得出 360 代 → 看不见')
+      t.equal(visibleInDwell({ showGens: 35328 }, 30, 12000 * 200), true, '给足时间就看得见（判据是时间不是尺寸）')
+      t.equal(visibleInDwell({}, 30, 12000), true, `没声明的按 ${VISIBLE_GENS} 代估`)
+      t.ok(SHOW_MAX_BOARD >= 2048, '硬上限只挡"连一帧都画不动"的，不再拿尺寸当理由')
+      // 元像素自己声明了那个数，卡片行要带得过来
+      t.equal(METAPIXEL_LAYOUT.showGens, 35328, '元像素声明了它要跑多少代才看得出在干什么')
+      t.ok(/showGens: Number\.isFinite\(entry\.showGens\)/.test(readSrc('src/data/favorites.js')),
+        '卡片行把 showGens 带过来')
       t.equal(nextShowIndex(2, 3), 0, '转一圈回到头')
       t.equal(nextShowIndex(-1, 3), 0, '第一次从头开始')
       t.ok(IDLE_MS >= 60000, '空闲阈值不能太短，否则像故障')
       t.ok(/rowsForShow: \(\) => rowsNow\(\)\.filter\(r => r\.builtin\)/.test(readSrc('src/ui/favorites-view.js')),
         '排片走收藏那同一个出口 —— 手抄名单迟早与卡片分叉')
-      t.ok(/showPlaylist\(app\.favorites \? app\.favorites\.rowsForShow\(\) : \[\]\)/.test(readSrc('src/ui/show.js')),
+      t.ok(/showPlaylist\(app\.favorites \? app\.favorites\.rowsForShow\(\) : \[\], \{/.test(readSrc('src/ui/show.js')),
         '看展从那个出口取行')
+      t.ok(/gensPerSecFor: row =>/.test(readSrc('src/ui/show.js')), '闸用的是速度，不是尺寸')
+      t.ok(/app\.measuredStepMs\(\)/.test(readSrc('src/ui/show.js')), '速度优先用本机实测（D110 §16）')
       // 自动开演要能在**发生的那一刻**关掉，而不是让人去设置里翻
       const html = readSrc('index.html')
       t.ok(/id="show-never"/.test(html), '横幅上有"别自动开演"')
@@ -6581,7 +6635,18 @@ cases.push(
       t.ok(/app\.unlockBoard = function \(\) \{ app\.bootLocked = false \}/.test(main), '有开闸的函数')
       t.ok(/if \(app\.bootLocked\) \{\s*\n\s*throw new Error/.test(main), '闸没开就抛 —— 那是代码顺序错，不是用户干的')
       // **只有一处开闸**，而且在裁决之后
-      t.equal((main.match(/app\.unlockBoard\(\)/g) || []).length, 1, '开闸只有一处')
+      // 开闸只有两处，而且第二处必须是**兜底**那一条（D110 §15）：
+      // 裁决抛了要能退到空盘，否则连空盘都开不出来，用户看到的就是白屏。
+      // 多出第三处就说明有人在别处偷偷开闸 —— 那道闸也就形同虚设。
+      t.equal((main.match(/app\.unlockBoard\(\)/g) || []).length, 2, '开闸只有两处：正路 + 兜底')
+      const rec = /app\.recoverToEmptyBoard = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!rec && /app\.unlockBoard\(\)/.test(rec[0]), '第二处在兜底函数里')
+      t.ok(/console\.error\(/.test(rec[0]), '兜底要把错**照原样报出去**，不许吞')
+      t.ok(/app\.bootFailed = err/.test(rec[0]), '留下现场供排查')
+      t.ok(/app\.toast\(t\('boot\.recovered'\)\)/.test(rec[0]), '给用户一句人话，不假装一切正常')
+      t.ok(/\} catch \(err\) \{\s*\n\s*app\.recoverToEmptyBoard\(err\)/.test(main),
+        '启动那一句真的被 try 包住了 —— 抛出去要有人接')
+      for (const lang of ['zh', 'en']) t.ok(!!DICT[lang]['boot.recovered'], `${lang} 缺兜底那句话`)
       const exec = /app\.applyInitialBoard = function[\s\S]*?\n\}/.exec(main)
       t.ok(/app\.unlockBoard\(\)/.test(exec[0]), '开闸的是 applyInitialBoard')
       t.ok(exec[0].indexOf('app.unlockBoard()') < exec[0].indexOf('app.engine.randomize('),
@@ -6652,6 +6717,90 @@ cases.push(
     }
   },
   {
+    name: '内置局按名字走：认不出的 id 必须拒绝，不得开空盘（D110 §19）',
+    run(t) {
+      // 用户定死的两条边界：**id 发出即不可改**；**认不出的 id 明确拒绝、不开空盘**。
+      const hash = encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 2304,
+        id: 'builtin:otca-metapixel' }, 40).hash
+      t.ok(hash.length < 140, `按名字发的链接要短（实际 ${hash.length} 字符，格子有十六万）`)
+      t.equal(decodeShare(hash, { knownId: () => true }).state.id, 'builtin:otca-metapixel', '认得就带过去')
+      t.equal(decodeShare(hash, { knownId: () => false }).reason, 'unknownId', '认不出就拒 —— 不是开空盘')
+      t.ok(!decodeShare(hash, { knownId: () => false }).ok, '拒了就不许 ok')
+      // 手写 hash 会先被完整性检查（L）挡住，测不到想测的那一条 —— 用编码器造，再改坏那一段
+      const bogus = encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 200, id: 'x<script>' }, 40).hash
+      t.equal(decodeShare(bogus, { knownId: () => true }).reason, 'unknownId', '格式不对的 id 也拒')
+      // **id 发出即不可改**：这张名单是别人手里链接的钥匙，改名就等于把链接作废。
+      // 所以钉死在这里 —— 有人改了内置局的 id，这条当场红。
+      const ids = BUILTIN_LAYOUTS.map(l => l.id).concat(BIG_LAYOUTS.map(l => l.id))
+        .concat(MACHINE_LAYOUTS.map(l => l.id)).concat([METAPIXEL_LAYOUT.id])
+      for (const id of ids) t.ok(/^builtin:[a-z0-9-]+$/.test(id), `${id} 的格式不对`)
+      t.equal(new Set(ids).size, ids.length, 'id 不许重复 —— 重了就指不准哪一局')
+      t.equal(METAPIXEL_LAYOUT.id, 'builtin:otca-metapixel', '元像素的 id 钉死（发出即不可改）')
+      // 接线：两处解码都要问"认不认得"
+      const main = readSrc('src/main.js')
+      t.equal((main.match(/decodeShare\(location\.hash, \{ knownId/g) || []).length, 1, '开机那处问')
+      t.ok(/app\.applyShareHash = function[\s\S]{0,260}?decodeShare\(hash, \{ knownId/.test(main), '粘链接那处也问')
+      t.ok(/knownId: id => rowsNow\(\)\.some\(r => r\.builtin && r\.id === id\)/.test(readSrc('src/ui/favorites-view.js')),
+        '认不认得由收藏那同一个出口回答')
+      for (const lang of ['zh', 'en']) t.ok(!!DICT[lang]['share.bad.unknownId'], `${lang} 缺认不出那句`)
+    }
+  },
+  {
+    name: '链接带代数：分帧重放、可取消、超十万直接拒（D110 §20）',
+    run(t) {
+      // g= 之前：稠密局跑过代再分享，收的人静默看到第 0 代。
+      const hash = encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 300,
+        seed: 20260901, density: 0.35, gen: 800 }, 40).hash
+      t.equal(decodeShare(hash).state.gen, 800, '代数带得过去')
+      t.ok(hash.indexOf('&g=800') > 0, '字段就叫 g')
+      t.equal(encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 300, seed: 1, gen: 0 }, 40).hash.indexOf('g='),
+        -1, '第 0 代不必写')
+      // **超十万直接拒**（用户拍板）：1024² 上重放十万代要二十分钟
+      const far = encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 300, seed: 1,
+        gen: MAX_REPLAY_GENS + 1 }, 40).hash
+      t.equal(decodeShare(far).reason, 'tooFar', '太远的直接拒')
+      t.ok(decodeShare(encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 300, seed: 1,
+        gen: MAX_REPLAY_GENS }, 40).hash).ok, '正好十万还收')
+      const notNum = encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 200 }, 40).hash
+      const broken = notNum.replace(/&L=(\d+)&/, (m, n) => '&L=' + (Number(n) + 6) + '&') + '&g=abc'
+      t.equal(decodeShare(broken).reason, 'gen', '不是数就拒')
+      // **分帧**，不是同步循环：同步循环里的两秒是"卡死"不是"加载"
+      const main = readSrc('src/main.js')
+      const fn = /function replayTo\(gen\)[\s\S]*?\n\}/.exec(main)
+      t.ok(!!fn, '找得到重放那一段')
+      t.ok(/runReplay\(\{/.test(fn[0]), '走共用的分片驱动器')
+      t.ok(!/for \(let i = 0; i < total/.test(fn[0]), '不许是同步循环')
+      // **用户中途动手 = 取消**（不是禁用）：优先级表第 5 行
+      t.ok(/app\.replayCancel = handle\.cancel/.test(fn[0]), '取消的把手留得住')
+      t.ok(/addEventListener\('pointerdown', cancelAll/.test(fn[0]) &&
+        /addEventListener\('keydown', cancelAll/.test(fn[0]), '点一下、按一下都能停')
+      t.ok(/requestAnimationFrame\(\(\) => \{/.test(fn[0]), '监听要等下一帧再挂 —— 否则点开链接那一下自己就把它取消了')
+      t.ok(/share\.replayStopped/.test(fn[0]), '停下来要说停在第几代')
+      // 秒数与判据同源（§12 的第一个实例）
+      t.ok(/etaSec/.test(fn[0]), '秒数来自驱动器的外推')
+      t.ok(QUANTITY_PROMISES.some(p => p.key === 'share.replaying'), '那句话在登记表里')
+      for (const lang of ['zh', 'en']) {
+        t.ok(!!DICT[lang]['share.bad.tooFar'] && !!DICT[lang]['share.replaying'], `${lang} 词条不全`)
+      }
+    }
+  },
+  {
+    name: '分片重放只有一份实现（D110 §18）',
+    run(t) {
+      // 读档与 g= 各写一遍的话，"约需 X 秒"那句就会与真正跑的循环分叉 —— 正是 §12 的形状。
+      const io = readSrc('src/ui/io.js')
+      t.ok(/from '\.\/replay-driver\.js'/.test(io), '读档也用那一份')
+      t.ok(!/const stepChunk = \(\) =>/.test(io), '读档里那份手写的分片已经删掉')
+      t.ok(/runReplay\(\{/.test(io), '读档走驱动器')
+      t.equal(etaSeconds(1000, 100, 1000), 9, '还剩 900 代、每代 10ms → 9 秒')
+      t.equal(etaSeconds(100, 0, 1000), null, '还没跑过就说不知道，不许瞎报')
+      t.equal(etaSeconds(100, 1000, 1000), null, '跑完了就没有"还需"')
+      // 与"要不要弹条"同源：两者都拿 elapsed/done 外推
+      t.equal(shouldShowProgress(1000, 100, 1000), true, '预计 10 秒 → 弹条')
+      t.equal(shouldShowProgress(1, 100, 1000), false, '预计 10ms → 不弹')
+    }
+  },
+  {
     name: '链接被截断必须明确拒绝，不得开出半张图（D110 §9）',
     run(t) {
       // 微信实测：约 2000 字符的链接被截断。此前的行为是**静默半张图** ——
@@ -6702,9 +6851,15 @@ cases.push(
         'refuse', '只手改过也一样：种子指向的是另一局')
       // **跑过代也要拒**：那时收的人拿到的是第 0 代，而且看不出来。
       // `g=` 字段落地后这一条会变回 seedOnly（见 acceptance 第 4 节）。
-      // **两档，不是一档**（用户修正）：硬拒是替用户做决定，提示是把决定还给他
+      // **两档，不是一档**（用户修正）：硬拒是替用户做决定，提示是把决定还给他。
+      // `g=` 落地之后（D110 §20），"跑过代"这一档自动消失 —— 代数带得过去了，
+      // 只剩"远到重放不动"的还要问一句。这正是当初写下"g= 落地后这一档自动消失"的兑现。
       t.equal(shareVerdict({ droppedPattern: true, alive: 31513, initType: 'random', runDirty: false, generation: 500 }),
-        'askGen', '只是跑过代、种子干净：问一句，别替他拒')
+        'seedOnly', '跑过 500 代：g= 带得过去，不必再问')
+      t.equal(shareVerdict({ droppedPattern: true, alive: 31513, initType: 'random', runDirty: false,
+        generation: MAX_REPLAY_GENS + 1 }), 'askGen', '远到重放不动才问一句')
+      t.equal(shareVerdict({ droppedPattern: true, alive: 31513, id: 'builtin:otca-metapixel' }),
+        'seedOnly', '按名字发的内置局：格子不必搬，长度不是问题')
       t.equal(shareVerdict({ droppedPattern: true, alive: 999, initType: 'pattern', runDirty: false, generation: 0 }),
         'refuse', '压根不是种子来的：硬拒')
       t.ok(!seedCanTell({ initType: 'pattern', runDirty: false, generation: 0 }), '不是种子来的，种子就说不清')
@@ -6819,6 +6974,30 @@ cases.push(
     }
   },
   {
+    name: '链接解出来的每个字段都要进意图，一个都不许漏（D110 §21）',
+    run(t) {
+      // 实测抓到的：加 `id=` 那天，resolveInitialBoard 里逐字段抄写的清单漏了它，
+      // 于是链接照常"成功打开"，打开的却是另一局（漏掉的字段静默变成"没给"）。
+      // 这条守卫拿**真链接**过一遍：解码给出什么，意图里就得有什么。
+      const rle = 'x = 3, y = 3, rule = B3/S23\nbo$2bo$3o!\n'
+      for (const st of [
+        { rule: 'B3/S23', boundary: 'dead', board: 2304, id: 'builtin:otca-metapixel' },
+        { rule: 'B3/S23', boundary: 'torus', board: 200, seed: 7, density: 0.3, gen: 400 },
+        { rule: 'B3/S23', boundary: 'torus', board: 200, rle, view: { cx: 5, cy: 6, span: 30 }, speed: 12 }
+      ]) {
+        const hash = encodeShare(st, 40).hash
+        const dec = decodeShare(hash, { knownId: () => true })
+        t.ok(dec.ok, '这条链接本身要解得开')
+        const intent = resolveInitialBoard({ share: dec.state, firstVisit: false, density: 0.35 })
+        for (const k of Object.keys(dec.state)) {
+          t.equal(JSON.stringify(intent[k]), JSON.stringify(dec.state[k]), `意图里漏了 ${k}`)
+        }
+      }
+      // 展开写（...share）是这条守卫的落地方式：新字段不必再改一次这里
+      t.ok(/\.\.\.share,/.test(readSrc('src/data/startup.js')), '意图直接展开那份解码结果')
+    }
+  },
+  {
     name: '周期性写盘靠"不启动"，不靠排序（D110 §1）',
     run(t) {
       // 排序只管得住第一帧：轮播第二帧照样盖掉链接那一局。
@@ -6876,8 +7055,8 @@ cases.push(
       // 因为监听器体内是同一行（自查时抓到的）。
       // 开机那次 D110 之后改走裁决 + 唯一出口，hashchange 仍直接读。**两处都要查**：
       // 只查一处的话，删掉另一处照样绿。
-      t.ok(/const bootShare = location\.hash \? decodeShare\(location\.hash\)/.test(src),
-        '开机解一次链接，交给裁决')
+      t.ok(/const bootShare = location\.hash\s*\n?\s*\? decodeShare\(location\.hash, \{ knownId/.test(src),
+        '开机解一次链接，交给裁决（并且当场判断认不认得那个内置局名字）')
       t.ok(/share: bootShare\.ok \? bootShare\.state : null/.test(src), '解出来的局面进意图对象')
       const hc = /addEventListener\('hashchange', \(\) => \{[\s\S]*?\n\}\)/.exec(readSrc('src/main.js'))
       t.ok(!!hc && /app\.applyShareHash\(location\.hash\)/.test(hc[0]), 'hashchange 里再读一次')

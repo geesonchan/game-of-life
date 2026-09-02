@@ -3,6 +3,7 @@ import { t } from '../i18n/index.js'
 import { showPlaylist, nextShowIndex, shouldAutoStart, exitPlan, IDLE_MS } from '../data/show.js'
 import { captureSession } from '../data/session.js'
 import { prefs } from './prefs.js'
+import { costOf } from '../data/board-sizes.js'
 
 const $ = id => document.getElementById(id)
 
@@ -47,7 +48,16 @@ export function createShow(app) {
    */
   function start(reason) {
     if (on) return false
-    list = showPlaylist(app.favorites ? app.favorites.rowsForShow() : [])
+    // 闸问的是"这一档时间里看得见东西吗"，速度用**本机实测**（D110 §16/§22）——
+    // 还没量过就按 board-sizes 那张表估，量过之后自动跟着这台机器走。
+    list = showPlaylist(app.favorites ? app.favorites.rowsForShow() : [], {
+      gensPerSecFor: row => {
+        const live = app.measuredStepMs && app.engine.w === (row.board || app.engine.w)
+          ? app.measuredStepMs() : null
+        const ms = live !== null && live !== undefined ? live : (costOf(row.board || 200, false) || 1)
+        return 1000 / Math.max(0.01, ms)
+      }
+    })
     if (!list.length) return false
     // **先存这一刻**：格子 + 环境 + 取景。退出时还的就是它（D110 §11）
     snapshot = captureSession(app.engine, {
@@ -139,6 +149,15 @@ export function createShow(app) {
 
   /** 任何用户操作都刷新空闲计时；看展开着时，动画布只是暂停，不退出 */
   function noteActivity() { lastActivity = Date.now() }
+
+  // **切到后台不算"闲着"**（D110 §17，冷启动清单里的"时序冷"）。
+  // 手机上切走五分钟回来，正撞在自动开演中途，第一反应是"我的局呢" ——
+  // 而横幅那颗〔别自动开演〕解释的是怎么停，不解释它什么时候开始的。
+  // 所以：切走就暂停，回来重新计时（不是接着算）。
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { if (on) pause(); return }
+    noteActivity()          // 回来 = 重新开始数，不是接着上次
+  })
 
   el.open.addEventListener('click', () => { if (!stop('user')) start('user') })
   el.next.addEventListener('click', () => { if (paused) resume(); else advance() })

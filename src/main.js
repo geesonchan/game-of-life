@@ -9,6 +9,7 @@ import { encodeShare, decodeShare, shareVerdict } from './data/share.js'
 import { resolveInitialBoard } from './data/startup.js'
 import { resizePlan, captureSession, pasteCells, cellBounds } from './data/session.js'
 import { createShow } from './ui/show.js'
+import { runReplay, etaSeconds } from './ui/replay-driver.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
 import { VisualState } from './render/visual-state.js'
@@ -83,6 +84,7 @@ const app = {
   refRay: null,                          // 最近一次落子留下的参照线（D91）
   refSeq: 0,                             // 参照线的序号：挡住在途的旧量测回调
   runDirty: false,    // 本局是否被手动改过 ⇒ 存档不能再靠种子重放
+  currentShowId: null,   // 盘上这一局是哪个内置精彩局（分享时按名字走，D110 §19）
   baseline: null,     // 手改之后的重放基线 {rle, gen}
   selectArmed: false, // 侧栏按钮预备的一次性框选（Shift+拖则随时可用）
   selection: null     // {x0,y0,w,h}，拖动过程中的选框
@@ -206,6 +208,7 @@ app.assertBoardUnlocked = function (who) {
 
 app.clear = function (opts = {}) {
   app.assertBoardUnlocked('clear')
+  app.currentShowId = null
   app.setRunning(false)
   if (!opts.keepShowEnv) app.exitShowEnv()   // 清空 = 退出这一局（D104）
   app.cancelPending()               // 待放态整体退场，参照线一并清（D90 §4）
@@ -223,6 +226,7 @@ app.clear = function (opts = {}) {
 
 app.randomize = function () {
   app.assertBoardUnlocked('randomize')
+  app.currentShowId = null
   const seed = readSeedInput(app)
   app.engine.randomize(seed, app.density)
   app.visual.sync(app.engine)
@@ -314,6 +318,9 @@ app.resizeBoard = function (w, h, opts = {}) {
     app.engine.initType = 'pattern'
   }
   app.visual.sync(app.engine)
+  // 换了盘，上一档量出来的每代耗时就不作数了 —— 留着会让那句话报别的盘的速度
+  app.stepMsEma = 0
+  app.bigNoteAt = 0
   app.runDirty = !!snap          // 搬过内容的局面，种子重放不出来了
   app.baseline = null
   app.series.clear()
@@ -547,7 +554,10 @@ app.placeStampAt = function (cell) {
  * 那样每笔要算几十次全盘 RLE。基线抓在编辑那一刻而不是存档那一刻，
  * 读档时才有 (存档代数 - 编辑代数) 这段可以重放，年龄和统计才回得来。
  */
-app.markDirtyRun = function () { app.runDirty = true }
+app.markDirtyRun = function () {
+  app.runDirty = true
+  app.currentShowId = null   // 动过手就不再是那一局了，分享不能再按名字走
+}
 
 app.captureBaseline = function () {
   if (!app.runDirty) return
@@ -590,6 +600,7 @@ app.clearSelection = function () {
 /** 读档后换上新引擎：所有跟棋盘尺寸/规则挂钩的东西都要重新对齐 */
 app.adoptEngine = function (engine) {
   app.assertBoardUnlocked('adoptEngine')
+  app.currentShowId = null
   // 读档 / 换盘：整盘换掉，待放态与参照线一起退场（D90 §4）。
   // 放在这里而不是放在 io.js 的读档回调里 —— 凡是"整盘换掉"都走这个口，一处管住所有来路。
   app.cancelPending()
@@ -656,9 +667,21 @@ app.handleResize = function () {
  * 会教用户把黄字当背景 —— 那样真正意外的那次也就没人看了。
  * **降速照旧生效**，只是不再嚷嚷。
  */
+/**
+ * **这台机器上每代实际花多少毫秒**（D110 §16）。一处测量，三处用：
+ * 卡顿提示、大盘那句"多少代/秒"、以及将来 g= 重放的耗时估计。
+ * 还没跑过就是 null —— 那时才退回 board-sizes 那张桌面实测表，并**说明它是预告**。
+ */
+app.measuredStepMs = function () { return app.stepMsEma > 0 ? app.stepMsEma : null }
+
 app.recordStepCost = function (totalMs, count) {
   const per = totalMs / count
   app.stepMsEma = app.stepMsEma === 0 ? per : app.stepMsEma * 0.8 + per * 0.2
+  // 量到了就把大盘那句换成本机的数（每秒最多刷一次，免得数字乱跳）
+  if (isBigBoard(app.engine.w) && app.syncBigBoard) {
+    const now = performance.now()
+    if (now - (app.bigNoteAt || 0) > 1000) { app.bigNoteAt = now; app.syncBigBoard() }
+  }
   const shouldThrottle = app.stepMsEma > 16
   if (shouldThrottle !== app.throttled) {
     app.throttled = shouldThrottle
@@ -696,6 +719,14 @@ app.shareState = function (opts = {}) {
   // 编的是"看哪儿 + 看多宽"，不是倍率 —— 倍率是屏幕的属性，不是这一局的。
   state.view = app.viewIntentNow()
   state.speed = app.speed
+  // 盘上是内置精彩局 → **按名字发**（D110 §19）：元像素那一局的格子有十六万字符，
+  // 名字只要三十几个。判据只看 currentShowId：它由 replayLayout 设上，
+  // 用户一动手（markDirtyRun / 清空 / 随机 / 读档）就作废 —— 那时盘上已经不是这一局了。
+  // 不能再加 `!runDirty`：铺这一局本身就会置 runDirty（格子不是种子生成的），
+  // 那样条件永远不成立，id 这条路等于没接上（实测抓到的）。
+  if (app.currentShowId) state.id = app.currentShowId
+  // 跑过多少代（D110 §20）。带上它，收的人才看得到"你现在这一帧"
+  if (e.generation > 0) state.gen = e.generation
   if (opts.rle !== undefined) state.rle = opts.rle
   else if (e.stats.alive > 0) state.rle = app.currentLayoutRle() || undefined
   // 收藏里那一条要带**它自己的**环境，不是当前棋盘的（D106）
@@ -854,7 +885,8 @@ app.writeShareLink = async function (url, droppedPattern) {
 app.shareApplied = false     // 这一局是不是从链接来的（D107 ③：链接优先）
 
 app.applyShareHash = function (hash) {
-  const r = decodeShare(hash)
+  // 认不认得那个内置局名字，解码那一步就问清楚（认不出直接拒，不开空盘）
+  const r = decodeShare(hash, { knownId: id => !!app.favorites && app.favorites.knownId(id) })
   if (!r.ok) {
     if (r.reason !== 'empty') app.toast(t('share.bad.' + r.reason) || t('share.bad.other'))
     return false
@@ -867,12 +899,36 @@ app.applyShareHash = function (hash) {
 /** 把一份已解码的链接局面落到棋盘上。开机走 applyInitialBoard，粘链接走 applyShareHash */
 app.applyShareState = function (st) {
   app.assertBoardUnlocked('applyShareState')
+  app.currentShowId = null
   // 链接是"换成另一局"：不搬旧内容（D110 §10）。不写 carry:false 的话，
   // 一条只带环境、不带图案也不带种子的链接会把上一局的格子留在盘上。
   if (st.board !== app.engine.w) app.resizeBoard(st.board, st.board, { silent: true, carry: false })
   if (st.boundary !== app.engine.boundary) app.setBoundary(st.boundary)
   app.applyNotation(st.rule)
-  if (st.rle) {
+  if (st.id) {
+    // **按名字取那一局**（D110 §19）：认不认得这个名字，decodeShare 那一步就问过了，
+    // 所以走到这里必然找得到。元像素那种懒加载的（rleUrl）要等一下，界面上说一句。
+    const entry = app.favorites.byId(st.id)
+    app.engine.clear()
+    app.visual.sync(app.engine)
+    if (entry && entry.rle) {
+      app.importRleText(entry.rle, { center: true })
+      app.currentShowId = st.id
+    } else if (entry) {
+      app.toast(t('share.loadingId'))
+      app.favorites.rleOf(entry).then(text => {
+        if (!text) return
+        app.importRleText(text, { center: true })
+        app.currentShowId = st.id
+        if (Number.isFinite(st.gen) && st.gen > 0) replayTo(st.gen)
+        app.dirty = true
+        app.updateHud()
+      }).catch(err => {
+        console.error('[链接] 取内置局失败：', err)
+        app.toast(t('share.bad.idLoad'))
+      })
+    }
+  } else if (st.rle) {
     app.engine.clear()
     app.visual.sync(app.engine)
     app.importRleText(st.rle, { center: true })
@@ -882,6 +938,9 @@ app.applyShareState = function (st) {
     app.visual.sync(app.engine)
   }
   app.records.startRun()
+  // **跑到发的人看到的那一帧**（D110 §20）。只有种子局需要重放 ——
+  // 按名字/按图案来的，格子本来就是那一帧的样子……除非它也带了代数。
+  if (Number.isFinite(st.gen) && st.gen > 0 && !(st.id && !app.currentShowId)) replayTo(st.gen)
   // 视图：链接里给了就照它取景，没给才自动适配（老链接就是没给的那一种）
   if (st.view) app.applySharedView(st.view)
   else app.fitView()
@@ -889,6 +948,67 @@ app.applyShareState = function (st) {
   app.dirty = true
   app.updateHud()
   app.shareApplied = true      // 引导收尾时据此**不清盘、不送滑翔机**（D107 ③）
+}
+
+/**
+ * 跑到第 `gen` 代（D110 §20）。**分帧**：每帧一片，中间把控制权还给浏览器 ——
+ * 同步循环里的两秒是"卡死"不是"加载"。
+ *
+ * 秒数与"要不要弹进度条"的判据**同源**（D110 §12）：都来自驱动器按本机实测的外推。
+ * 这是登记表升格之后的第一个实例，不许两处各算一遍。
+ *
+ * 用户中途动手 = **取消**（不是禁用）——优先级表第 5 行：用户的动作永远最后一票。
+ */
+app.replayCancel = null
+
+function replayTo(gen) {
+  const total = Math.max(0, Math.round(gen))
+  if (!total) return
+  const note = document.getElementById('replay-note')
+  const bar = document.getElementById('replay-bar')
+  const cancelAll = () => { if (app.replayCancel) app.replayCancel() }
+  const finish = () => {
+    app.replayCancel = null
+    window.removeEventListener('pointerdown', cancelAll)
+    window.removeEventListener('keydown', cancelAll)
+    if (note) note.hidden = true
+  }
+  app.records.setReplaying(true)
+  const handle = runReplay({
+    total,
+    step: () => { app.engine.step(); app.visual.advance(app.engine) },
+    onProgress: p => {
+      if (!note) return
+      note.hidden = false
+      if (bar) bar.style.width = Math.round((p.done / p.total) * 100) + '%'
+      note.querySelector('span').textContent = t('share.replaying', {
+        gen: p.done, total: p.total, sec: Math.max(1, Math.round(p.etaSec || 0))
+      })
+      app.dirty = true
+    },
+    onDone: () => {
+      app.records.setReplaying(false)
+      app.engine.stats.alive = app.engine.countAlive()
+      app.dirty = true
+      app.updateHud()
+      finish()
+    },
+    onCancel: done => {
+      app.records.setReplaying(false)
+      app.engine.stats.alive = app.engine.countAlive()
+      app.dirty = true
+      app.updateHud()
+      finish()
+      app.toast(t('share.replayStopped', { gen: done, total }))
+    }
+  })
+  app.replayCancel = handle.cancel
+  // 用户的动作 = 取消。**监听要在下一帧才挂**，否则点开链接那一下自己就把它取消了
+  requestAnimationFrame(() => {
+    if (!handle.isRunning()) return
+    window.addEventListener('pointerdown', cancelAll, { once: true })
+    window.addEventListener('keydown', cancelAll, { once: true })
+  })
 }
 
 /**
@@ -919,6 +1039,28 @@ app.restoreSession = function (snap) {
   app.records.startRun()
   app.dirty = true
   app.updateHud()
+  return true
+}
+
+/**
+ * 启动兜底（D110 §15）：裁决或落盘抛了，退到一张安全的空盘。
+ *
+ * 闸没开就抛，那句抛是**给代码看的** —— 线上真抛了而没人接，就是白屏，
+ * 为正确性做的机制变成可用性事故。所以兜一层，但兜的方式有讲究：
+ *   · **错照原样报出去**（console.error），不吞；
+ *   · 留下 `app.bootFailed`，别处（和以后的排查）问得到；
+ *   · 给用户一句人话，说清"你那条链接/存档没打开"，而不是假装一切正常。
+ * 守卫查的是抛不抛，不是接不接 —— 所以测试里照旧红。
+ */
+app.recoverToEmptyBoard = function (err) {
+  console.error('[启动] 裁决或落盘出错，已退到空盘：', err)
+  app.bootFailed = err
+  app.unlockBoard()          // 后面那些写盘入口得能用，否则连空盘都开不出来
+  app.engine.clear()
+  app.visual.sync(app.engine)
+  app.records.startRun()
+  app.fitView()
+  app.toast(t('boot.recovered'))
   return true
 }
 
@@ -1098,18 +1240,28 @@ function trailLabelOf(v) {
 // 链接**在这里就参与裁决**，不是先摆一局再被盖掉（D107 ③）：
 // 别人发来的那一局，打开就该是那一局，中间不该闪一下别的。
 const firstVisit = prefs.get('introSeen') !== '1'
-const bootShare = location.hash ? decodeShare(location.hash) : { ok: false, reason: 'empty' }
+const bootShare = location.hash
+  ? decodeShare(location.hash, { knownId: id => app.favorites.knownId(id) })
+  : { ok: false, reason: 'empty' }
 if (location.hash && !bootShare.ok && bootShare.reason !== 'empty') {
   app.toast(t('share.bad.' + bootShare.reason) || t('share.bad.other'))
 }
-app.applyInitialBoard(resolveInitialBoard({
+// **抛出去要有人接**（D110 §15）：闸没开就抛，那是给代码看的；
+// 线上真抛了而没人接，就是白屏 —— 为正确性做的机制变成可用性事故。
+// 所以这里兜一层：退到安全空盘 + 说一句 + 把错**照原样报出来**（不吞）。
+// 测试里照旧红：守卫查的是抛不抛，不是接不接。
+try {
+  app.applyInitialBoard(resolveInitialBoard({
   share: bootShare.ok ? bootShare.state : null,
   firstVisit,
   density: app.density,
   // 自动看展开着没，在**裁决**里就定下来（D110 §14）：看展自己不许去读 hash，
   // 它只问意图。压缩落地那天 decodeShare 变异步，这条也不会悄悄错。
   autoShowcaseEnabled: prefs.get('autoShow') !== '0'
-}))
+  }))
+} catch (err) {
+  app.recoverToEmptyBoard(err)
+}
 if (app.shareApplied) app.toast(t('share.opened'))
 app.setRunning(false)
 // 不预填种子框：规格里"留空则随机生成种子并显示"意味着空 = 换一张新盘。

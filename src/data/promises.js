@@ -47,12 +47,38 @@ export const QUANTITY_PROMISES = Object.freeze([
     ok: true
   },
   {
+    key: 'share.replaying',
+    holds: ['sec'],
+    from: 'etaSeconds(...)（replay-driver.js，经 runReplay 的 onProgress）',
+    sameAs: '**同源**：与读档回放共用同一个驱动器，秒数就是那个分片循环按本机实测外推的。' +
+      '（这条是登记表自己抓到的 —— 加完 g= 跑测试，它当场红。用户说"别漏在自己脚下"，' +
+      '结果确实差点漏在自己脚下。）',
+    ok: true
+  },
+  {
+    key: 'io.replayingEta',
+    holds: ['sec'],
+    from: 'etaSeconds(elapsedMs, done, total)（replay-driver.js）',
+    sameAs: '**同源**：与驱动器判断"要不要弹进度条"用的是同一个外推（已跑代数 ÷ 已花时间），' +
+      '也就是真正在跑的那个分片循环自己量出来的。读档与链接里的 g= 共用这一份驱动器 —— ' +
+      '这是 §12 升格之后的第一个实例，不许两处各算一遍。',
+    ok: true
+  },
+  {
+    key: 'board.bigNoteMeasured',
+    holds: ['gps', 'ms'],
+    from: 'app.measuredStepMs()',
+    sameAs: '**同源**（D110 §16）：这就是主循环 recordStepCost 攒出来的那个 EMA，' +
+      '卡顿判定用的也是它。一处测量，三处用。',
+    ok: true
+  },
+  {
     key: 'board.bigNote',
     holds: ['gps', 'ms'],
-    from: 'costOf(n)（board-sizes.js 的实测表）',
-    sameAs: '**不同源，但这是预告不是承诺**（D104 预告口径）：它说的是"这一档说好的速度"，' +
-      '并且文案里写明了"桌面实测；手机更慢"。真实速度由 HUD 实时显示。' +
-      '把它换成实时值会更好，但那是另一件事，记在 acceptance 里。',
+    from: 'costOf(n)（board-sizes.js 的桌面实测表）',
+    sameAs: '**只在这台机器还没跑过这一档时出现**，一跑起来就换成上面那条本机实测的。' +
+      '此时它是预告不是承诺（D104 预告口径）。用别人机器的数字加免责声明是缓解不是解法，' +
+      '所以它现在只是"还没量到"的占位。',
     ok: true
   }
 ])

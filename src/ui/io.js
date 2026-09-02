@@ -5,19 +5,13 @@ import { parseRLE, boardToRLE } from '../engine/rle.js'
 import { centerOrigin, placePattern } from '../engine/patterns.js'
 import { liveBounds } from '../data/favorites.js'
 import { t } from '../i18n/index.js'
+import { runReplay, REPLAY_CHUNK } from './replay-driver.js'
 
 const $ = id => document.getElementById(id)
-const REPLAY_CHUNK = 400          // 每帧最多重放多少代，保证进度条能画出来
-const PROGRESS_THRESHOLD_MS = 1000 // 预计一秒内跑完的重放不弹进度条
+// 分片重放的驱动器搬到了 replay-driver.js：读档与链接里的 `g=` 走**同一份**（D110 §18）。
+// 这里保留 re-export，老的引用（测试、其它模块）不必跟着改名。
+export { shouldShowProgress, REPLAY_CHUNK, PROGRESS_THRESHOLD_MS } from './replay-driver.js'
 
-/**
- * 要不要弹进度条：跑完第一片之后按实测速度外推总耗时，超过阈值才弹。
- * 这样判据与棋盘大小、机器快慢自动挂钩 —— 500×500 上的两千代和 100×100 上的两千代
- * 不是一回事，写死一个"多少代以上才弹"是不对的。
- * 抽成纯函数是为了能直接测，不用去戳异步的 rAF 分片。
- * @param {number} elapsedMs 已经花掉的毫秒 @param {number} done 已重放代数
- * @param {number} total 总代数 @param {number} [thresholdMs]
- */
 /**
  * 浮出菜单的落点：默认贴在选区右下角外侧，越出画布就往内翻转，保证整块菜单可见。
  * 抽成纯函数是为了能直接测 —— 鼠标事件里的定位逻辑最容易写错又最难复现（D48）。
@@ -34,11 +28,6 @@ export function placeSelectionMenu(sel, menu, stage, gap = 8) {
   if (y + menu.h > stage.h) y = sel.top - gap - menu.h           // 往上翻
   if (y < gap) y = Math.min(sel.top, Math.max(gap, stage.h - menu.h - gap))
   return { x: Math.round(x), y: Math.round(y) }
-}
-
-export function shouldShowProgress(elapsedMs, done, total, thresholdMs = PROGRESS_THRESHOLD_MS) {
-  if (done <= 0 || done >= total) return false
-  return (elapsedMs / done) * total > thresholdMs
 }
 
 function download(filename, text, mime = 'application/json') {
@@ -117,30 +106,18 @@ export function setupIO(app) {
     if (total === 0) { finishLoad(replayTo); return }
 
     app.records.setReplaying(true)
-    let done = 0
-    let barShown = false
-    const startedAt = performance.now()
-
-    const stepChunk = () => {
-      const n = Math.min(REPLAY_CHUNK, total - done)
-      for (let i = 0; i < n; i++) app.replayStep(total - done - i)
-      done += n
-
-      // 短局不弹进度条：跑完第一片之后按实测速度估算总耗时，
-      // 预计一秒内能完事就干脆不弹，免得闪一下反而像出了故障
-      if (!barShown && shouldShowProgress(performance.now() - startedAt, done, total)) {
-        barShown = true
-        showProgress(done, total)
-      } else if (barShown) {
-        showProgress(done, total)
+    // 短局不弹进度条、秒数按本机实测外推 —— 这两件事都在驱动器里，读档与 g= 共用
+    runReplay({
+      total,
+      chunk: REPLAY_CHUNK,
+      step: remaining => app.replayStep(remaining),
+      onProgress: p => showProgress(p.done, p.total, p.etaSec),
+      onDone: () => {
+        app.records.setReplaying(false)
+        hideProgress()
+        finishLoad(replayTo)
       }
-
-      if (done < total) { requestAnimationFrame(stepChunk); return }
-      app.records.setReplaying(false)
-      hideProgress()
-      finishLoad(replayTo)
-    }
-    requestAnimationFrame(stepChunk)
+    })
   }
 
   function finishLoad(gen) {
@@ -152,11 +129,14 @@ export function setupIO(app) {
     app.toast(t('io.loaded', { gen }))
   }
 
-  function showProgress(gen, total) {
+  function showProgress(gen, total, etaSec) {
     el.progress.hidden = false
     const pct = total === 0 ? 100 : Math.round((gen / total) * 100)
     el.progressBar.style.width = pct + '%'
-    el.progressText.textContent = t('io.replaying', { gen, total })
+    // 那个秒数与驱动器判断"要不要弹条"用的是**同一个外推**（D110 §12）
+    el.progressText.textContent = etaSec === null || etaSec === undefined
+      ? t('io.replaying', { gen, total })
+      : t('io.replayingEta', { gen, total, sec: Math.max(1, Math.round(etaSec)) })
   }
   function hideProgress() { el.progress.hidden = true }
 

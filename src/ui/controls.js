@@ -138,9 +138,13 @@ export function setupControls(app) {
     }
     bigNote.hidden = !big
     if (big) {
+      // **先用这台机器量出来的**（D110 §16）。用别人机器的数字加一句免责声明，
+      // 是缓解不是解法 —— 而本机标定的东西本来就在手上（app.measuredStepMs）。
+      // 还没跑过才退回 board-sizes 那张桌面实测表，并且那时明说它是**预告**。
+      const live = app.measuredStepMs ? app.measuredStepMs() : null
       // 报的是**这一档实际会跑出来的**成本：视觉层已经关了，就别把它算进去
-      const cost = costOf(n, false)
-      bigNote.textContent = t('board.bigNote', {
+      const cost = live !== null ? live : costOf(n, false)
+      bigNote.textContent = t(live !== null ? 'board.bigNoteMeasured' : 'board.bigNote', {
         n, ms: cost ? cost.toFixed(0) : '?', gps: cost ? (1000 / cost).toFixed(0) : '?'
       })
     }

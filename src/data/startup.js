@@ -38,15 +38,11 @@ export function resolveInitialBoard(ctx) {
   const share = ctx && ctx.share
   if (share) {
     return {
+      // **把解出来的那份原样带上**（D110 §21）。逐个字段抄写过一次，
+      // 结果 `id=` 落地那天字段抄漏了，链接照常"成功打开"、打开的却是另一局 ——
+      // 因为漏掉的字段静默变成"没给"。展开写就不会漏，新字段也不必再改这里。
+      ...share,
       source: 'link',
-      board: share.board,
-      boundary: share.boundary,
-      rule: share.rule,
-      seed: share.seed,
-      density: share.density,
-      rle: share.rle,
-      view: share.view,
-      speed: share.speed,
       // 有链接就不许自动看展开播 —— 周期性写盘者靠"不启动"治，不靠排序（D110 §1）
       autoShowcase: false,
       // 引导收尾也不送小家伙：棋盘上已经有他要看的那一局（D107 ③）

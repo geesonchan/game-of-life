@@ -308,13 +308,25 @@ export function createIntro(app) {
   }
 
   /* ---------------- 第三幕 ---------------- */
-  /** 第三幕最后那句话走哪一条 —— 与 finish() 的三条路是**同一个判据**（D70/D110 §23） */
-  function giftLineKey() {
-    if (app.shareApplied) return 'intro.act3.shared'
+  /**
+   * 第三幕最后那一块：说什么、长什么样。
+   * 与 `finish()` 的三条路是**同一个判据**（D70 / D110 §23）。
+   *
+   * **失败不许穿礼物的衣服**：`.gift` 是那个绿色的"送你一个小家伙"框，
+   * 用户见过很多次。把"你的链接没打开"塞进同一个框里，它就读不出是坏消息 ——
+   * 作者实测的反馈是"一句话都没有"，而那句话其实在屏幕上（v1.19.1 修）。
+   */
+  function act3Notice() {
+    if (app.shareApplied) return { cls: 'gift', key: 'intro.act3.shared' }
     const intent = app.initialIntent || {}
-    if (intent.brokenLink) return 'intro.act3.badLink'
-    if (intent.starterGift === false) return 'intro.act3.shared'
-    return 'intro.act3.gift'
+    if (intent.brokenLink) {
+      // 队里那件事由**第三幕或挡路框二选一**呈现（D110 §24 修订）：
+      // 取到了就由我说，取不到说明别处已经说了。
+      if (app.takeNotice) app.takeNotice()
+      return { cls: 'mishap', key: 'intro.act3.badLink', reasonKey: 'share.bad.' + intent.brokenLink }
+    }
+    if (intent.starterGift === false) return { cls: 'gift', key: 'intro.act3.shared' }
+    return { cls: 'gift', key: 'intro.act3.gift' }
   }
 
   function act3() {
@@ -322,7 +334,12 @@ export function createIntro(app) {
       <h3>${t('intro.act3.title')}</h3>
       <p class="lead">${t('intro.act3.body')}</p>
       <p class="caption">${t('intro.act3.caption')}</p>
-      <p class="gift">${t(giftLineKey())}</p>
+      ${(() => {
+        const n = act3Notice()
+        // 具体理由只决定**说什么**，不决定走哪条路（D110 §23 修订）
+        const why = n.reasonKey ? `<span class="mishap-why">${t(n.reasonKey) || t('share.bad.other')}</span>` : ''
+        return `<p class="${n.cls}">${t(n.key)}${why}</p>`
+      })()}
       ${pageList().includes('helpAge')
         ? `<button class="appendix-link" data-appendix>${t('intro.appendix.entry')}</button>`
         : ''}`

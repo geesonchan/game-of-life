@@ -1774,3 +1774,16 @@ input[type="range"] { touch-action: pan-y; }
   overflow: hidden;
 }
 .replay-note .replay-track i { display: block; height: 100%; width: 0; background: var(--accent) }
+
+/* 第三幕里那句"链接没打开"（D110 §23 修订）。**失败不许穿礼物的衣服** ——
+   `.gift` 是那个绿色的"送你一个小家伙"框，用户见过很多次；把坏消息塞进同一个框，
+   它就读不出是坏消息（作者实测反馈"一句话都没有"，而那句话其实在屏幕上）。
+   琥珀色 + 左侧竖条：与全站的 .warn 同色（#e3b341），不引入新语义。 */
+.intro-body .mishap {
+  margin: 14px 0 0; padding: 10px 12px;
+  background: #221d12; border: 1px solid #6b5a2f; border-left-width: 3px; border-radius: 8px;
+  font-size: 13px; color: #e8dcc0; line-height: 1.7;
+}
+.intro-body .mishap .mishap-why {
+  display: block; margin-top: 6px; font-size: 12px; color: #c9b98f;
+}

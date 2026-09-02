@@ -1874,6 +1874,32 @@ cases.push(
       // 三条路：有效链接 / 坏链接 / 没链接，**说的那句与做的那件事必须用同一组判据**。
       const LINE_KEYS = ['intro.act3.gift', 'intro.act3.shared', 'intro.act3.badLink']
       const PREDICATES = ['app.shareApplied', 'intent.starterGift === false', 'intent.brokenLink']
+      // **拒绝的理由可以有 N 种，走的路只有一条**（D110 §23 修订，作者定）：
+      // 按理由挑路注定要漏（v1.18.1 那次就漏了"id 认不出"这条理由的呈现样式），
+      // 按结果挑路漏不掉。下面用**真链接**把每一种拒绝理由都过一遍。
+      const REJECTS = [
+        ['truncated', () => encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 200,
+          rle: 'x = 3, y = 3, rule = B3/S23\nbo$2bo$3o' }, 40).hash],
+        ['unknownId', () => encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 200,
+          id: 'builtin:no-such-board' }, 40).hash],
+        ['newer', () => '#v=99&L=8&n=200&x=1'],
+        ['tooFar', () => encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 200, seed: 1,
+          gen: MAX_REPLAY_GENS + 1 }, 40).hash],
+        ['board', () => encodeShare({ rule: 'B3/S23', boundary: 'dead', board: 2 }, 40).hash]
+      ]
+      for (const [why, mk] of REJECTS) {
+        const r = decodeShare(mk(), { knownId: id => id === 'builtin:known' })
+        t.ok(!r.ok, `${why} 这条链接应当被拒`)
+        // **一个条件罩住所有理由**：拒了就是"有链接但没用上"，与是哪种理由无关
+        const intent = resolveInitialBoard({ share: null, firstVisit: true, density: 0.3,
+          brokenLink: r.reason })
+        t.equal(intent.starterGift, false, `${why}：拒了就不该走"没链接"那条路`)
+        t.ok(!!intent.brokenLink, `${why}：拒了就要带上"有链接但没用上"`)
+        for (const lang of ['zh', 'en']) {
+          t.ok(!!DICT[lang]['share.bad.' + r.reason] || !!DICT[lang]['share.bad.other'],
+            `${lang} 缺 ${r.reason} 的说法`)
+        }
+      }
       const src = stripLiterals(readSrc('src/ui/intro.js'))
       const bodyOf = name => {
         const i = src.indexOf('function ' + name)
@@ -1894,9 +1920,21 @@ cases.push(
         const next = raw.indexOf('\n  function ', i + 1)
         return raw.slice(i, next < 0 ? raw.length : next)
       }
-      const picker = rawBodyOf('giftLineKey')
+      const picker = rawBodyOf('act3Notice')
       for (const key of LINE_KEYS) t.ok(picker.indexOf(key) >= 0, `giftLineKey 里要挑得到 ${key}`)
-      t.ok(/\$\{t\(giftLineKey\(\)\)\}/.test(raw), '第三幕那句话就是它挑出来的')
+      t.ok(/const n = act3Notice\(\)/.test(raw), '第三幕那一块就是它挑出来的')
+      // **失败不许穿礼物的衣服**：坏消息与礼物不能共用 .gift 那个绿框
+      t.ok(/cls: 'mishap'/.test(picker) && /cls: 'gift'/.test(picker), '两种消息两种样子')
+      t.ok(/\.intro-body \.mishap \{/.test(readSrc('src/style.css')), 'mishap 有自己的样式')
+      t.ok(!/\*\*/.test(DICT.zh['intro.act3.badLink']), '文案里不许留渲染不了的 ** 标记')
+      // 队列：拒绝一发生就入队，第三幕与挡路框**二选一**消费（D110 §24 修订）
+      t.ok(/if \(app\.takeNotice\) app\.takeNotice\(\)/.test(picker), '第三幕说了就把那件事取走')
+      const main = readSrc('src/main.js')
+      t.ok(/if \(linkBroken\) app\.queueNotice\(\{ kind: 'linkFailed', reason: linkBroken \}\)/.test(main),
+        '拒绝一发生就入队')
+      t.ok(/const n = app\.takeNotice\(\)\s*\n\s*if \(n && n\.kind === 'linkFailed'\) app\.reportLinkFailure/.test(main),
+        '没有引导时由挡路框取走呈现')
+      t.equal((main.match(/app\.takeNotice\(\)/g) || []).length, 1, '取的地方只有一处（另一处在引导里）')
 
       // 兑现：finish() 里，送礼那一步前面的判据**与挑句子的判据同一组**
       const fulfil = bodyOf('finish')

@@ -1197,6 +1197,25 @@ function trailLabelOf(v) {
   return t(v <= 6 ? 'vis.trail.short' : v <= 13 ? 'vis.trail.mid' : 'vis.trail.long')
 }
 
+/**
+ * **必须被读到的那件事，先入队，再决定谁来呈现**（D110 §24 修订）。
+ *
+ * 从前是两处各判一次"该我说吗"：开机那儿判"引导会不会出现"，第三幕自己判"要不要说"。
+ * 两处判断迟早分叉 —— 而分叉的表现恰好是"谁都以为对方说了，于是没人说"。
+ * 现在只有一处判断（有没有这件事），两个呈现者**二选一**地消费它：
+ * 引导开着 → 第三幕那一页说（那一页本身就挡路）；没有引导 → 挡路框说。
+ */
+app.pendingNotice = null
+
+app.queueNotice = function (notice) { app.pendingNotice = notice }
+
+/** 取走并清空 —— 取到的人负责呈现，取不到的人什么也不做 */
+app.takeNotice = function () {
+  const n = app.pendingNotice
+  app.pendingNotice = null
+  return n
+}
+
 // 开局状态：棋盘从哪儿来，由 resolveInitialBoard 一处裁决（D110）。
 // 从前这里是三处各写各的（首访随机盘 / 链接 / 引导收尾），顺序全靠读代码才看得出来 ——
 // D107 那张优先级表也就只是文档里的一句话。现在表在 src/data/startup.js 里是数据，
@@ -1211,8 +1230,9 @@ const firstVisit = prefs.get('introSeen') !== '1'
 const bootShare = location.hash
   ? decodeShare(location.hash, { knownId: id => app.favorites.knownId(id) })
   : { ok: false, reason: 'empty' }
-// 链接坏了 = **这个人此行的唯一目的失败了**，所以是挡路提示，不是底下飘一句（D110 §24）。
-// 但如果他还要走引导，那句话由第三幕来说 —— 两个弹层不该叠在一起。
+// **判据是"有链接，但没用上"，不是某一种拒绝理由**（D110 §23 修订）。
+// 理由可以有 N 种（不完整 / v=2 太新 / id 认不出 / RLE 解不了 / 以后新增的），
+// 走的路只有一条。按理由挑路注定要漏，按结果挑路漏不掉。
 const linkBroken = location.hash && !bootShare.ok && bootShare.reason !== 'empty'
   ? bootShare.reason : null
 // **抛出去要有人接**（D110 §15）：闸没开就抛，那是给代码看的；
@@ -1230,8 +1250,8 @@ try {
   app.recoverToEmptyBoard(err)
 }
 if (app.shareApplied) app.toast(t('share.opened'))
-// 链接坏了的挡路提示：**引导不会出现时**才在这儿弹（引导会出现的话，第三幕已经说了）。
-// 两个弹层叠在一起谁也读不清 —— 而这句话必须被读到，所以要它独占那一刻。
+if (linkBroken) app.queueNotice({ kind: 'linkFailed', reason: linkBroken })
+
 app.reportLinkFailure = function (reason, opts = {}) {
   const key = 'share.bad.' + reason
   app.alertAction({
@@ -1387,10 +1407,10 @@ requestAnimationFrame(frame)
 if (prefs.get('introSeen') !== '1') {
   const savedMode = prefs.get('mode')
   app.intro.open({ chooser: savedMode !== 'simple' && savedMode !== 'full' })
-} else if (linkBroken) {
-  // 不走引导的人（老窗口、回访）在这儿看到那个挡路框。
-  // 走引导的人由第三幕来说 —— 那句话同样挡路（他必须点「开始玩」才过得去）。
-  app.reportLinkFailure(linkBroken)
+} else {
+  // 没有引导 → 队里若还有那件事，就由挡路框呈现（引导那条路会先把它取走）
+  const n = app.takeNotice()
+  if (n && n.kind === 'linkFailed') app.reportLinkFailure(n.reason)
 }
 
 // 便于在浏览器控制台里做手工验证

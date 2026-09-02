@@ -1759,3 +1759,40 @@ input[type="range"] { touch-action: pan-y; }
   /* 窄屏挪到左下角：右下被主控排与缩放条占着；尺寸也收一档 */
   .minimap { width: 96px; height: 96px; right: auto; left: 10px; bottom: 10px; }
 }
+
+/* 看展横幅（D110 §14）。贴在画布上沿，属于"附着层"（D79：z-index 5，与小地图同层）。
+   横幅上那句"不记账"是**承诺**，records.setShowing(true) 是兑现 —— 同一个开关（D70/D110 §12）。 */
+.show-bar {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  z-index: 5; display: flex; align-items: center; gap: 10px;
+  max-width: calc(100% - 20px);
+  padding: 6px 8px 6px 12px; border-radius: 999px;
+  background: rgba(20, 22, 28, 0.82); border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+}
+.show-bar .show-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none;
+  animation: show-pulse 2.4s ease-in-out infinite;
+}
+@keyframes show-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+@media (prefers-reduced-motion: reduce) { .show-bar .show-dot { animation: none } }
+.show-bar .show-what { display: flex; flex-direction: column; min-width: 0; line-height: 1.25 }
+.show-bar .show-what b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.show-bar .show-note { font-size: 11px; color: var(--muted) }
+/* 44px 触控区，桌面也不缩水（D74 ③ 那条老账：不留例外） */
+.show-bar button {
+  min-width: 44px; min-height: 44px; padding: 0 12px; flex: none;
+  border-radius: 999px; font-size: 13px;
+}
+.show-bar button.danger { color: var(--danger) }
+/* 窄屏：挪到画布**下沿**。放上面会压住 HUD（"代数/存活"那一行被挡掉半截，实测截图为证），
+   而下沿那块地方本来就空着。文字一律不换行 —— 竖着挤成四行比没有还难认。 */
+@media (max-width: 767px) {
+  .show-bar {
+    top: auto; bottom: 10px; gap: 6px; padding: 4px 6px 4px 10px;
+    max-width: calc(100% - 16px);
+  }
+  .show-bar .show-what b, .show-bar .show-note { white-space: nowrap }
+  .show-bar .show-what b { max-width: 30vw; overflow: hidden; text-overflow: ellipsis }
+  .show-bar button { padding: 0 10px; font-size: 12px }
+}

@@ -20,6 +20,8 @@ import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MA
 import { shouldShow, viewBox, pickCenter, REDRAW_MS } from '../src/ui/minimap.js'
 import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup.js'
 import { SESSION_WRITERS, resizePlan, captureSession, pasteCells, cellBounds } from '../src/data/session.js'
+import { QUANTITY_PROMISES, unregisteredEstimates, ESTIMATE_MARKS } from '../src/data/promises.js'
+import { showPlaylist, nextShowIndex, shouldAutoStart, exitPlan, DWELL_MS, IDLE_MS, SHOW_MAX_BOARD } from '../src/data/show.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
 import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.js'
@@ -1167,8 +1169,11 @@ cases.push(
       // 白名单挡的是**游戏数据**，不是键的数量。新加一个要同时满足三条（D84 ③）：
       // 是界面偏好而非实验数据、丢了不损失用户劳动、只影响这台设备的这个浏览器。
       // zoomBar（缩放滑条开关）是照这三条收进来的第四个。
-      t.equal(PREF_KEYS.length, 6, '白名单里只有这几个')
-      t.equal(PREF_KEYS.slice().sort().join(','), 'introSeen,lang,mode,motionRay,stampTipSeen,zoomBar', '逐个点名')
+      // autoShow（自动看展开关）是照这三条收进来的第五个：
+      // 它只说"别自动开演"，丢了最多是某天空闲时多放了一次片，用户碰一下就退（D110 §14）。
+      t.equal(PREF_KEYS.length, 7, '白名单里只有这几个')
+      t.equal(PREF_KEYS.slice().sort().join(','),
+        'autoShow,introSeen,lang,mode,motionRay,stampTipSeen,zoomBar', '逐个点名')
       // 反面照旧：游戏数据一个都不许进（下面那条用真存储撞过一遍）
       for (const k of ['board', 'save', 'ledger', 'snapshots'])
         t.ok(!PREF_KEYS.includes(k), `${k} 不许进白名单`)
@@ -1569,6 +1574,17 @@ const DOM_SOURCES = [
  * 不剥的话误报能淹掉守卫：CSS 里的 rgb(、正则 /^B([0-8]*)\/S([0-8]*)$/ 里的 B( S(，
  * 都会被当成"调用了一个不存在的函数"。
  */
+/**
+ * 剥掉注释。有些守卫要问的是"**代码里**有没有出现这个名字" ——
+ * 注释里提它是正常的（那儿记着为什么不能用它）。不剥的话就是又一条假守卫：
+ * 它拦住的是文字，不是行为。（style.css 那条 slider-vertical 犯过同样的错。）
+ */
+function stripComments(src) {
+  return String(src)
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+}
+
 function stripLiterals(src) {
   let out = ''
   let i = 0
@@ -6403,6 +6419,28 @@ cases.push(
       t.ok(/cellBounds\(snap\.cells, snap\.w, snap\.h\)/.test(readSrc('src/main.js')),
         'resizeBoard 也用它 —— 问的和做的必须是同一套')
 
+      // **提示里的数与动作用的数同一处算**（D110 §12）：
+      // 按钮算一次 plan，既拿它问"会裁掉几个"，又把**同一个对象**交给动作
+      const withCount = resizePlan({ w: 4, h: 4 }, { w: 2, h: 2 },
+        { minX: 0, minY: 0, maxX: 3, maxY: 3 }, new Uint8Array([
+          1, 0, 0, 1,
+          0, 0, 0, 0,
+          0, 0, 0, 0,
+          1, 0, 0, 1]))
+      t.equal(withCount.lost, true, '四角的活格子装不进 2×2')
+      t.equal(withCount.lostCount, 4, '算得出**真正**会被裁掉几个')
+      t.ok(/resizePlan\(\{ w: e\.w, h: e\.h \}, \{ w: n, h: n \}, cellBounds\(e\.cur, e\.w, e\.h\), e\.cur\)/.test(ctlSrc),
+        '按钮那边把格子也传进去，才算得出那个数')
+      t.ok(/t\('size\.shrink\.body', \{ w: n, n: plan\.lostCount \}\)/.test(ctlSrc),
+        '提示里的数来自这个 plan')
+      // **两处都要传**：不丢那条路与确认之后那条路。只查一次的话，
+      // 删掉其中一处照样绿（自查时抓到的 —— 另一处的同名调用把它挡住了）
+      t.equal((ctlSrc.match(/app\.resizeBoard\(n, n, \{ plan \}\)/g) || []).length, 2,
+        '两条路的动作拿的都是**同一个** plan，都不重算')
+      t.ok(/const plan = opts\.plan \|\| resizePlan/.test(readSrc('src/main.js')),
+        'resizeBoard 收到现成的 plan 就用它')
+      for (const lang of ['zh', 'en']) t.ok(/\{n\}/.test(DICT[lang]['size.shrink.body']), `${lang} 那句要写出数量`)
+
       // 接线：resizeBoard 默认搬，换局的两条路明写不搬
       const main = readSrc('src/main.js')
       const rb = /app\.resizeBoard = function[\s\S]*?\n\}/.exec(main)
@@ -6415,13 +6453,174 @@ cases.push(
       // 变小要先问 —— 而且问在按钮那儿，不在 resizeBoard 里（换局/收链接不该弹框）
       t.ok(!/confirmAction/.test(rb[0]), 'resizeBoard 自己不弹框')
       const ctl = readSrc('src/ui/controls.js')
-      t.ok(/if \(!plan\.lost\) \{ app\.resizeBoard\(n, n\); return \}/.test(ctl), '不丢就直接换')
+      t.ok(/if \(!plan\.lost\) \{ app\.resizeBoard\(n, n, \{ plan \}\); return \}/.test(ctl),
+        '不丢就直接换（plan 照样传下去 —— 偏移也得是同一个）')
       t.ok(/app\.confirmAction\(\{[\s\S]{0,200}?size\.shrink\.title/.test(ctl), '会丢就先问一句')
       for (const lang of ['zh', 'en']) {
         for (const k of ['size.shrink.title', 'size.shrink.body', 'size.shrink.yes']) {
           t.ok(!!DICT[lang][k], `${lang} 缺 ${k}`)
         }
       }
+    }
+  },
+  {
+    name: '看展：自动进入只问意图，绝不自己读 hash（D110 §14）',
+    run(t) {
+      // **硬要求**（用户定）：抑制判断必须问 resolver 要意图。自己读 hash 的话，
+      // 压缩落地后 decodeShare 变异步，这一处会悄悄错，而且没人会红。
+      // 注释里提 decodeShare 是正常的（那儿记着为什么不能自己解）——
+      // 要问的是**代码**里有没有，所以先剥注释（自查时抓到的）
+      const data = stripComments(readSrc('src/data/show.js')), ui = stripComments(readSrc('src/ui/show.js'))
+      for (const bad of ['location.hash', 'location.search', 'decodeShare', 'window.location']) {
+        t.ok(data.indexOf(bad) < 0, `判据里不许出现 ${bad}`)
+        t.ok(ui.indexOf(bad) < 0, `运行时里也不许出现 ${bad}`)
+      }
+      t.ok(/shouldAutoStart\(app\.initialIntent,/.test(ui), '问的是开机那次裁决出来的意图')
+      // 有链接：**不启动**，不是"启动了再被盖过"（周期性写盘靠不启动，D110 §1）
+      t.equal(shouldAutoStart({ autoShowcase: false }, { enabled: true, idleMs: 1e9 }), false, '有链接不开演')
+      t.equal(shouldAutoStart({ autoShowcase: true }, { enabled: true, idleMs: 1e9 }), true, '没链接、闲够了才开演')
+      t.equal(shouldAutoStart({ autoShowcase: true }, { enabled: true, idleMs: 1000 }), false, '没闲够不开演')
+      t.equal(shouldAutoStart({ autoShowcase: true }, { enabled: true, idleMs: 1e9, running: true }), false,
+        '人家自己的局在跑，不许插进去')
+      t.equal(shouldAutoStart({ autoShowcase: true }, { enabled: true, idleMs: 1e9, boardTouched: true }), false,
+        '盘上有他自己的东西，不许开演')
+      t.equal(shouldAutoStart(null, { enabled: true, idleMs: 1e9 }), false, '没有意图就不开演')
+      // 开机那一句：autoShowcaseEnabled 从偏好来，交给裁决而不是让看展自己去查
+      t.ok(/autoShowcaseEnabled: prefs\.get\('autoShow'\) !== '0'/.test(readSrc('src/main.js')),
+        '开关在裁决那一步就定下来')
+    }
+  },
+  {
+    name: '看展：明说不记账，而且真的不记（D110 §14）',
+    run(t) {
+      // 横幅上那句是**承诺**，records.setShowing(true) 是**兑现** —— 同一个开关（D70/D110 §12）。
+      const rec = readSrc('src/ui/records.js')
+      t.ok(/function setShowing\(on\) \{ showing = !!on \}/.test(rec), '有这个开关')
+      t.ok(/function startRun\(\) \{\s*\n\s*if \(showing\) return/.test(rec), '看展不开新的一局')
+      t.ok(/function onGeneration\(stats\) \{\s*\n\s*if \(showing\) return null/.test(rec), '一代都不记')
+      t.ok(/setShowing, isShowing,/.test(rec), '外面问得到')
+      // 这与 replaying 不是一回事：那个只是不做终止判定，账照记
+      t.ok(/replaying[\s\S]{0,80}照常记账/.test(rec), 'replaying 的语义没被改掉')
+      const ui = readSrc('src/ui/show.js')
+      t.ok(/app\.records\.setShowing\(true\)/.test(ui) && /app\.records\.setShowing\(false\)/.test(ui),
+        '进出各拨一次')
+      // 界面上那句话必须真的存在，中英都有
+      for (const lang of ['zh', 'en']) {
+        t.ok(/不记账|not recorded/i.test(DICT[lang]['show.noRecord']), `${lang} 横幅那句要写明不记账`)
+      }
+      t.ok(/data-i18n="show\.noRecord"/.test(readSrc('index.html')), '横幅上挂着那句')
+    }
+  },
+  {
+    name: '看展：退出只有一种退法 —— 还原进入前那一刻（D110 §11/§14）',
+    run(t) {
+      // 不是退回空盘，也不是退回链接那一局。用户没动过时那一刻恰好就是链接那一局，
+      // 那是这条规则的**特例**，不是规则本身。
+      t.equal(exitPlan(null).restore, false, '没存快照就没得还')
+      t.equal(exitPlan({ w: 1 }).restore, true, '存了就还')
+      const ui = readSrc('src/ui/show.js')
+      t.ok(/snapshot = captureSession\(app\.engine, \{/.test(ui), '进来先存整份快照')
+      t.ok(/running: app\.running/.test(ui), '"那一刻"包含它在不在跑')
+      t.ok(/app\.restoreSession\(plan\.snapshot\)/.test(ui), '退出还原的是那一份')
+      t.equal((ui.match(/app\.restoreSession\(/g) || []).length, 1, '只有一处还原 —— 没有第二种退法')
+      const main = readSrc('src/main.js')
+      const rs = /app\.restoreSession = function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!rs, '找得到 restoreSession')
+      for (const bit of ['engine.cur.set(snap.cells)', 'setBoundary(snap.boundary)', 'setSpeed(snap.speed)',
+        'applyViewIntent(snap.view', 'setRunning(!!snap.running)']) {
+        t.ok(rs[0].indexOf(bit) > 0, `还原要包含 ${bit}`)
+      }
+      // 用户在看展期间自己动手：**先把他那一局还回来**，动作再落在自己的局上
+      t.ok(/if \(app\.show && app\.show\.isOn\(\) && !app\.show\.isLoading\(\)\) app\.show\.yieldToUser\(\)/.test(main),
+        '写盘入口先让位给用户自己的局')
+      t.ok(/function yieldToUser\(\)[\s\S]{0,220}?stop\('silent'\)/.test(ui), '让位就是退出并还原')
+    }
+  },
+  {
+    name: '看展：排片从收藏那同一个出口取，且不放大盘（D110 §14）',
+    run(t) {
+      const rows = [{ id: 'a', rle: 'x', board: 200 }, { id: 'b', rle: 'x', board: 2304 },
+        { id: 'c', rle: 'x' }, { id: 'd' }, { id: 'e', rle: 'x', board: 1024 }]
+      const list = showPlaylist(rows)
+      t.equal(list.map(x => x.id).join(','), 'a,c', '大盘的不放，没图案的不放')
+      t.equal(list[0].dwellMs, DWELL_MS, '每局停留有默认值')
+      t.ok(SHOW_MAX_BOARD <= 500, '上限是小盘 —— 大盘每代十几毫秒，放起来是幻灯片')
+      t.equal(nextShowIndex(2, 3), 0, '转一圈回到头')
+      t.equal(nextShowIndex(-1, 3), 0, '第一次从头开始')
+      t.ok(IDLE_MS >= 60000, '空闲阈值不能太短，否则像故障')
+      t.ok(/rowsForShow: \(\) => rowsNow\(\)\.filter\(r => r\.builtin\)/.test(readSrc('src/ui/favorites-view.js')),
+        '排片走收藏那同一个出口 —— 手抄名单迟早与卡片分叉')
+      t.ok(/showPlaylist\(app\.favorites \? app\.favorites\.rowsForShow\(\) : \[\]\)/.test(readSrc('src/ui/show.js')),
+        '看展从那个出口取行')
+      // 自动开演要能在**发生的那一刻**关掉，而不是让人去设置里翻
+      const html = readSrc('index.html')
+      t.ok(/id="show-never"/.test(html), '横幅上有"别自动开演"')
+      t.ok(/prefs\.set\('autoShow', '0'\)/.test(readSrc('src/ui/show.js')), '按了就记住')
+      t.ok(PREF_KEYS.indexOf('autoShow') >= 0, '这个开关在白名单里')
+      // 44px：老账不留例外（D74 ③）
+      const css = readSrc('src/style.css')
+      const bar = /\.show-bar button \{([^}]*)\}/.exec(css)
+      t.ok(!!bar && /min-width: 44px/.test(bar[1]) && /min-height: 44px/.test(bar[1]),
+        '横幅上的按钮 44×44，桌面也不缩水')
+      t.ok(/\.show-bar \{[^}]*z-index: 5/.test(css), '横幅在附着层（D79）')
+      // 窄屏挪到下沿：放上面会压住 HUD 那一行（实测截图为证）
+      t.ok(/@media \(max-width: 767px\) \{[\s\S]*?\.show-bar \{[^}]*bottom: 10px/.test(css),
+        '窄屏挪到画布下沿 —— 上面是 HUD 的地方')
+      t.ok(/@media \(max-width: 767px\) \{[\s\S]*?white-space: nowrap/.test(css),
+        '窄屏不许换行 —— 竖着挤成四行比没有还难认')
+    }
+  },
+  {
+    name: '启动闸：意图裁决完之前谁都不许写盘（D110 §13）',
+    run(t) {
+      // 现在"链接在任何人写盘之前参与裁决"靠的是**解码是同步的** —— 而没人保证过这件事。
+      // 压缩（pz=）一落地 decodeShare 变异步，这条地基就自己没了，**而且没人会红**。
+      // 闸把隐式的同步性变成显式的检查：写盘入口先问一句，开闸的只有 applyInitialBoard。
+      const main = readSrc('src/main.js')
+      t.ok(/app\.bootLocked = true/.test(main), '默认是关着的')
+      t.ok(/app\.unlockBoard = function \(\) \{ app\.bootLocked = false \}/.test(main), '有开闸的函数')
+      t.ok(/if \(app\.bootLocked\) \{\s*\n\s*throw new Error/.test(main), '闸没开就抛 —— 那是代码顺序错，不是用户干的')
+      // **只有一处开闸**，而且在裁决之后
+      t.equal((main.match(/app\.unlockBoard\(\)/g) || []).length, 1, '开闸只有一处')
+      const exec = /app\.applyInitialBoard = function[\s\S]*?\n\}/.exec(main)
+      t.ok(/app\.unlockBoard\(\)/.test(exec[0]), '开闸的是 applyInitialBoard')
+      t.ok(exec[0].indexOf('app.unlockBoard()') < exec[0].indexOf('app.engine.randomize('),
+        '先开闸再写盘 —— 否则它自己就被闸挡住了')
+      // **每个写盘入口都要问**。少一个，那条路就还是老样子
+      for (const [fn, who] of [['app.clear = function', 'clear'], ['app.randomize = function', 'randomize'],
+        ['app.adoptEngine = function', 'adoptEngine'], ['app.applyShareState = function', 'applyShareState'],
+        ['app.resizeBoard = function', 'resizeBoard']]) {
+        const at = main.indexOf(fn)
+        t.ok(at > 0, `找得到 ${who}`)
+        t.ok(main.slice(at, at + 260).indexOf(`app.assertBoardUnlocked('${who}')`) > 0, `${who} 要先问闸`)
+      }
+      const io = readSrc('src/ui/io.js')
+      t.ok(/app\.importRleText = function[\s\S]{0,120}?assertBoardUnlocked\('importRleText'\)/.test(io),
+        'importRleText 也要问')
+    }
+  },
+  {
+    name: '事前说的每个数都要登记，并说明与动作同源（D110 §12）',
+    run(t) {
+      // 通则：**任何给用户看的数字或承诺，必须与执行它的动作出自同一处计算。**
+      // 这是同一条原理第三次出现（D70 承诺与兑现同条件 / D110 §7 派生值不回写 / 这一条）。
+      // 可扫的形式：文案里"事前说了一个数"的词条必须在 promises.js 登记，
+      // 并写清那个数从哪儿来、动作用的是不是同一个。
+      for (const lang of ['zh', 'en']) {
+        const bad = unregisteredEstimates(DICT[lang])
+        t.equal(bad.length, 0, `${lang} 有没登记的事前数字：${bad.join(', ')}`)
+      }
+      t.ok(QUANTITY_PROMISES.length >= 3, '登记表不是空的')
+      for (const p of QUANTITY_PROMISES) {
+        t.ok(!!DICT.zh[p.key] || !!DICT.en[p.key], `登记了不存在的词条 ${p.key}`)
+        t.ok(p.holds.length > 0 && !!p.from && !!p.sameAs, `${p.key} 要写清数从哪儿来、动作用的是不是同一个`)
+        t.ok(p.ok === true, `${p.key} 还没对上同源要求`)
+        // 登记的占位符要真的在文案里
+        const text = DICT.zh[p.key] || DICT.en[p.key]
+        for (const h of p.holds) t.ok(text.indexOf('{' + h + '}') >= 0, `${p.key} 的文案里没有 {${h}}`)
+      }
+      t.ok(ESTIMATE_MARKS.indexOf('约') >= 0 && ESTIMATE_MARKS.indexOf('会没') >= 0,
+        '标记词里要有"约"和"会没"这两类')
     }
   },
   {

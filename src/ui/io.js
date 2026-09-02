@@ -195,6 +195,7 @@ export function setupIO(app) {
 
   /** 解析一段 RLE 并居中铺到棋盘上（收藏里的「复现」） */
   app.importRleText = function (text, opts = {}) {
+    app.assertBoardUnlocked('importRleText')
     let p
     try { p = parseRLE(text) } catch (e) { app.toast(t('io.rleFail', { reason: String(e.message) })); return false }
     if (p.w > app.engine.w || p.h > app.engine.h) { app.toast(t('io.rleTooBig', { w: p.w, h: p.h })); return false }

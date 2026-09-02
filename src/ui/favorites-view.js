@@ -52,7 +52,7 @@ export function createFavorites(app) {
    * 复现一条布局：清盘 → 按 RLE 头行切规则 → 居中铺上。
    * 顺序不能反：先切规则再铺格子，否则新规则的可达性钳制会把刚铺的格子削掉（见 board.setRule）。
    */
-  app.replayLayout = function (entry) {
+  app.replayLayout = function (entry, opts = {}) {
     const rule = ruleOf(entry.rle)
     // **这一局自带的环境**（D104）：边界、速度先切过去，用户原来的设置替他存着，
     // 清空 / 读档 / 换局时再还回去。这些局的生平都是在各自的环境里量出来的 ——
@@ -67,7 +67,8 @@ export function createFavorites(app) {
     app.clear({ silent: true, keepShowEnv: true })
     if (rule) app.applyNotation(rule)
     const ok = app.importRleText(entry.rle, { center: true })
-    if (ok) app.toast(t('fav.replayed', { name: entry.name || t(entry.nameKey) }))
+    // 看展换局时不弹这句：横幅上已经写着现在放的是哪一局，再弹一次是噪音
+    if (ok && !opts.silent) app.toast(t('fav.replayed', { name: entry.name || t(entry.nameKey) }))
     return ok
   }
 
@@ -443,6 +444,8 @@ export function createFavorites(app) {
   pump()      // 上次没跑完的、导入进来的，开机顺手补上
   return {
     render,
+    // 看展的排片从**这同一个出口**取行 —— 手抄一张名单迟早与卡片分叉（D83 §1）
+    rowsForShow: () => rowsNow().filter(r => r.builtin),
     renderShow: renderShowStrip,      // 拿起/放下图案时只重画卡片带，不动整个收藏面板
     syncShowHint,
     relocalize: render,

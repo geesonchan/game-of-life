@@ -44,6 +44,10 @@ export function setupRecords(app) {
   }
 
   let replaying = false     // 读档重放期间：照常记账，但不做终止判定
+  // 看展期间：**真的不记账**（D110 §14）。这与 replaying 不是一回事 ——
+  // 那个只是不做终止判定，账照记。看展放的是别人的局，记进用户的编年史与台账
+  // 就是把不属于他的东西塞进他的记录里；界面上也**明说**了不记（横幅那句）。
+  let showing = false
   let runSeq = 0
   let currentRun = null      // {runId, startedAt}
   let lastEnd = null         // 最近一次终止，供总结卡片的按钮用
@@ -52,6 +56,7 @@ export function setupRecords(app) {
   /* ---------------- 一局的生命周期 ---------------- */
 
   function startRun() {
+    if (showing) return       // 看展不开新的一局：那不是用户的局
     runSeq++
     currentRun = { runId: `run-${runSeq}-${Date.now().toString(36)}`, startedAt: new Date().toISOString() }
     lastEnd = null
@@ -78,6 +83,7 @@ export function setupRecords(app) {
    * @returns {object|null} 终止信息
    */
   function onGeneration(stats) {
+    if (showing) return null  // 一格都不记
     log.push(stats)
     chronicle.observe(stats)
     dirtyPanel = true
@@ -267,6 +273,16 @@ export function setupRecords(app) {
     if (e.key === 'Escape' && !el.modal.hidden) { closeSummary(); e.preventDefault() }
   })
 
+  /**
+   * 看展开关。**开着时一格都不记**：不开新局、不写编年史、不落台账。
+   * 关掉时不自动补记 —— 看展期间发生的事本来就不该进用户的记录；
+   * 退出看展会还原他自己那一局，那时由调用方重新 startRun。
+   */
+  function setShowing(on) { showing = !!on }
+
+  /** 现在在不在看展（守卫与界面都要问得到） */
+  function isShowing() { return showing }
+
   /** 读档重放开关；结束时把当前棋盘补进查重表，之后的循环检测才接得上 */
   function setReplaying(on) {
     replaying = !!on
@@ -282,6 +298,7 @@ export function setupRecords(app) {
 
   return {
     startRun, onGeneration, noteEdit, renderPanel, setReplaying, addExternalRun,
+    setShowing, isShowing,
     get needsPanel() { return dirtyPanel },
     relocalize() { renderPanel(); if (!el.modal.hidden && lastEnd) showSummary(lastEnd) },
     _internals: { log, detector, chronicle, ledger }

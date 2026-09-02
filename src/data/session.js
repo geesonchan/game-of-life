@@ -46,7 +46,7 @@ export const SESSION_WRITERS = Object.freeze([
  * @param {{w:number,h:number}} to   新盘
  * @param {{minX:number,minY:number,maxX:number,maxY:number}|null} bounds 活格子的包围盒
  */
-export function resizePlan(from, to, bounds) {
+export function resizePlan(from, to, bounds, cells) {
   let offsetX = Math.floor((to.w - from.w) / 2)
   let offsetY = Math.floor((to.h - from.h) / 2)
   let lost = false
@@ -60,7 +60,20 @@ export function resizePlan(from, to, bounds) {
     lost = bounds.minX + offsetX < 0 || bounds.minY + offsetY < 0 ||
            bounds.maxX + offsetX >= to.w || bounds.maxY + offsetY >= to.h
   }
-  return { offsetX, offsetY, lost }
+  // **要给用户看的那个数，就在这儿算**（D110 §12）：提示里说"会裁掉 N 个"，
+  // N 必须来自这同一个 plan —— 另算一遍就会出现"说的是一回事、做的是另一回事"。
+  let lostCount = 0
+  if (lost && cells) {
+    for (let y = 0; y < from.h; y++) {
+      const ty = y + offsetY
+      for (let x = 0; x < from.w; x++) {
+        if (!cells[y * from.w + x]) continue
+        const tx = x + offsetX
+        if (tx < 0 || ty < 0 || tx >= to.w || ty >= to.h) lostCount++
+      }
+    }
+  }
+  return { offsetX, offsetY, lost, lostCount }
 }
 
 /** 把偏移夹进"包围盒完整落在新盘里"的那段区间；装不下（区间为空）就原样返回 */
@@ -88,7 +101,10 @@ export function captureSession(engine, extra = {}) {
     rule: (engine.rule && engine.rule.notation) || 'B3/S23',
     speed: extra.speed,
     view: extra.view || null,
-    runDirty: !!extra.runDirty
+    runDirty: !!extra.runDirty,
+    // "进入前那一刻"包含**它在不在跑** —— 不存的话，退出之后用户那一局
+    // 会莫名其妙自己动起来（看展是开着跑的），那不是他离开时的样子
+    running: !!extra.running
   }
 }
 

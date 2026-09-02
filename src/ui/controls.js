@@ -107,14 +107,16 @@ export function setupControls(app) {
     // 问在这儿、不在 resizeBoard 里：那个函数还被换局/收链接调用，那些路不该弹框。
     const e = app.engine
     const plan = e.stats.alive > 0
-      ? resizePlan({ w: e.w, h: e.h }, { w: n, h: n }, cellBounds(e.cur, e.w, e.h))
+      ? resizePlan({ w: e.w, h: e.h }, { w: n, h: n }, cellBounds(e.cur, e.w, e.h), e.cur)
       : { lost: false }
-    if (!plan.lost) { app.resizeBoard(n, n); return }
+    if (!plan.lost) { app.resizeBoard(n, n, { plan }); return }
+    // 数字与动作**同一个 plan**（D110 §12）：说"会裁掉 {n} 个"，
+    // 裁的就是这个 plan 的偏移裁出来的那一批 —— 不是另算一遍的估计值
     app.confirmAction({
       title: t('size.shrink.title'),
-      body: t('size.shrink.body', { w: n }),
+      body: t('size.shrink.body', { w: n, n: plan.lostCount }),
       yes: t('size.shrink.yes')
-    }, () => app.resizeBoard(n, n))
+    }, () => app.resizeBoard(n, n, { plan }))
     el.size.set(String(e.w))     // 先把按钮弹回去；用户点了「继续」再跟着变
   })
 

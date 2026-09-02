@@ -8,6 +8,7 @@ import { visualFor, isBigBoard } from './data/board-sizes.js'
 import { encodeShare, decodeShare, shareVerdict } from './data/share.js'
 import { resolveInitialBoard } from './data/startup.js'
 import { resizePlan, captureSession, pasteCells, cellBounds } from './data/session.js'
+import { createShow } from './ui/show.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
 import { VisualState } from './render/visual-state.js'
@@ -178,7 +179,33 @@ app.exitShowEnv = function () {
   // 悄悄留着才是坑。
 }
 
+/**
+ * **启动闸**（D110 §13）：意图解析完之前，谁都不许写盘。
+ *
+ * 现在"链接在任何人写盘之前就参与裁决"靠的是**解码是同步的** —— 这条同步性
+ * 是启动正确性的地基，而它是隐式的：谁都没保证它，它只是碰巧成立。
+ * 压缩（`pz=`）一落地，`decodeShare` 变异步，这条地基就自己没了，而且**没人会红**。
+ *
+ * 闸把它变成显式的：写盘的入口先问一句"闸开了没"。开闸的只有 `applyInitialBoard`。
+ * 有闸就不在乎解码同步还是异步 —— 异步只是把开闸的时刻推后一点。
+ * 看展也踩在同一块地基上（"有链接就不启动"靠的正是此刻已经知道有没有链接）。
+ */
+app.bootLocked = true
+
+app.unlockBoard = function () { app.bootLocked = false }
+
+/** 写盘之前问一句。闸没开就是**代码顺序错了**，不是用户干的 —— 所以抛，不是提示 */
+app.assertBoardUnlocked = function (who) {
+  if (app.bootLocked) {
+    throw new Error(`启动意图还没裁决完，${who} 不许写盘（D110 §13）`)
+  }
+  // 看展期间用户自己动了手：**先把他那一局还回来**，他的动作再落在自己的局上（D110 §14）。
+  // 直接接管的话，他进看展之前摆的东西就没了 —— 那正是这条规矩要防的。
+  if (app.show && app.show.isOn() && !app.show.isLoading()) app.show.yieldToUser()
+}
+
 app.clear = function (opts = {}) {
+  app.assertBoardUnlocked('clear')
   app.setRunning(false)
   if (!opts.keepShowEnv) app.exitShowEnv()   // 清空 = 退出这一局（D104）
   app.cancelPending()               // 待放态整体退场，参照线一并清（D90 §4）
@@ -195,6 +222,7 @@ app.clear = function (opts = {}) {
 }
 
 app.randomize = function () {
+  app.assertBoardUnlocked('randomize')
   const seed = readSeedInput(app)
   app.engine.randomize(seed, app.density)
   app.visual.sync(app.engine)
@@ -265,6 +293,7 @@ app.updateRuleInfo = function () {
 }
 
 app.resizeBoard = function (w, h, opts = {}) {
+  app.assertBoardUnlocked('resizeBoard')
   app.setRunning(false)
   // **旧内容要搬过去**（D110 §10）。手机上那个 bug 就是这里：200→300 是变大，
   // 装不下的可能性为零，格子却全没了 —— `engine.resize` 重新分配数组，旧的一扔了之。
@@ -273,10 +302,11 @@ app.resizeBoard = function (w, h, opts = {}) {
   const snap = carry ? captureSession(app.engine) : null
   app.engine.resize(w, h)
   if (snap) {
-    // 包围盒要传进去：变小时它决定"能保住的尽量保住"。
-    // 不传的话按钮那边问的（会丢一点）与这里做的（按盘心硬裁）可能不是一回事。
-    const plan = resizePlan({ w: snap.w, h: snap.h }, { w, h },
-      cellBounds(snap.cells, snap.w, snap.h))
+    // **问的那句话与做的这件事，同一个 plan**（D110 §12）。
+    // 按钮那边算过一次（为了问"会裁掉几个"），就把那一个传进来，这里不重算 ——
+    // 重算就是两处各算一遍，那正是"说会丢一点、做出来全丢"的来源。
+    const plan = opts.plan || resizePlan({ w: snap.w, h: snap.h }, { w, h },
+      cellBounds(snap.cells, snap.w, snap.h), snap.cells)
     // 居中搬：变大时视觉上"四周长出来"，用户摆的东西留在原处
     pasteCells(snap.cells, { w: snap.w, h: snap.h }, app.engine.cur, { w, h }, plan.offsetX, plan.offsetY)
     app.engine.generation = snap.generation
@@ -559,6 +589,7 @@ app.clearSelection = function () {
 
 /** 读档后换上新引擎：所有跟棋盘尺寸/规则挂钩的东西都要重新对齐 */
 app.adoptEngine = function (engine) {
+  app.assertBoardUnlocked('adoptEngine')
   // 读档 / 换盘：整盘换掉，待放态与参照线一起退场（D90 §4）。
   // 放在这里而不是放在 io.js 的读档回调里 —— 凡是"整盘换掉"都走这个口，一处管住所有来路。
   app.cancelPending()
@@ -835,6 +866,7 @@ app.applyShareHash = function (hash) {
 
 /** 把一份已解码的链接局面落到棋盘上。开机走 applyInitialBoard，粘链接走 applyShareHash */
 app.applyShareState = function (st) {
+  app.assertBoardUnlocked('applyShareState')
   // 链接是"换成另一局"：不搬旧内容（D110 §10）。不写 carry:false 的话，
   // 一条只带环境、不带图案也不带种子的链接会把上一局的格子留在盘上。
   if (st.board !== app.engine.w) app.resizeBoard(st.board, st.board, { silent: true, carry: false })
@@ -865,8 +897,34 @@ app.applyShareState = function (st) {
  * fitView / applySharedView —— 有守卫盯着（tests/cases.js「启动写盘唯一入口」）。
  * 从前那三处各写各的，谁在前谁在后靠读代码才知道；D107 那张表也就只是一句约定。
  */
+/**
+ * 把一份会话快照原样还回去：**格子 + 环境 + 取景**（D110 §11）。
+ * 退看展走它；将来"撤销一次大动作"要是要做，也走它 —— 不做第二套。
+ */
+app.restoreSession = function (snap) {
+  if (!snap) return false
+  if (app.engine.w !== snap.w || app.engine.h !== snap.h) {
+    app.resizeBoard(snap.w, snap.h, { silent: true, carry: false })
+  }
+  if (app.engine.boundary !== snap.boundary) app.setBoundary(snap.boundary)
+  app.applyNotation(snap.rule)
+  app.engine.cur.set(snap.cells)
+  app.engine.generation = snap.generation
+  app.engine.stats.alive = app.engine.countAlive()
+  app.visual.sync(app.engine)
+  app.runDirty = !!snap.runDirty
+  if (Number.isFinite(snap.speed)) app.setSpeed(snap.speed)
+  if (snap.view) app.applyViewIntent(snap.view, 'exact')
+  app.setRunning(!!snap.running)
+  app.records.startRun()
+  app.dirty = true
+  app.updateHud()
+  return true
+}
+
 app.applyInitialBoard = function (intent) {
   app.initialIntent = intent
+  app.unlockBoard()          // 裁决完了，闸开（唯一开闸处，D110 §13）
   if (intent.source === 'link') {
     app.applyShareState(intent)
   } else if (intent.source === 'firstVisitDemo') {
@@ -960,6 +1018,9 @@ app.library = setupLibrary(app)
 app.library.render()
 app.intro = createIntro(app)
 app.minimap = createMinimap(app)   // 小地图（D109）：放大之后不至于迷路
+// 看展（D110 §14）：手动进入是用户的动作（排最后），自动进入被链接抑制（排链接之前）。
+// 建在 favorites 之后 —— 排片从收藏那同一个出口取行。
+app.show = createShow(app)
 // 点「?」总是带上第零幕，老用户也能在这里重选版本
 document.getElementById('btn-help').addEventListener('click', () => app.intro.open({ chooser: true }))
 // 顶栏分享钮（D107 ①）：编码当前这一局并复制，提示与另外两处同一套
@@ -1019,6 +1080,7 @@ onLangChange(() => {
   app.favorites.relocalize()
   app.critical.relocalize()
   app.zoomBar.relocalize()
+  app.show.relocalize()
   app.refreshTabHint()
 })
 function trailLabelOf(v) {
@@ -1043,7 +1105,10 @@ if (location.hash && !bootShare.ok && bootShare.reason !== 'empty') {
 app.applyInitialBoard(resolveInitialBoard({
   share: bootShare.ok ? bootShare.state : null,
   firstVisit,
-  density: app.density
+  density: app.density,
+  // 自动看展开着没，在**裁决**里就定下来（D110 §14）：看展自己不许去读 hash，
+  // 它只问意图。压缩落地那天 decodeShare 变异步，这条也不会悄悄错。
+  autoShowcaseEnabled: prefs.get('autoShow') !== '0'
 }))
 if (app.shareApplied) app.toast(t('share.opened'))
 app.setRunning(false)
@@ -1105,6 +1170,7 @@ function frame(now) {
 
   // 小地图：每帧问一次，真正重画由它自己节流（250ms，且只在真变了时画）
   app.minimap.tick(now)
+  app.show.tick(now)         // 看展：该换下一局了吗；没在看展时它数空闲时间
 
   // 帧率统计（无论是否在跑都记，方便观察渲染负载）
   app.framesInWindow++

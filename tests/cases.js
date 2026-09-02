@@ -21,6 +21,7 @@ import { shouldShow, viewBox, pickCenter, REDRAW_MS } from '../src/ui/minimap.js
 import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup.js'
 import { SESSION_WRITERS, resizePlan, captureSession, pasteCells, cellBounds } from '../src/data/session.js'
 import { QUANTITY_PROMISES, unregisteredEstimates, ESTIMATE_MARKS } from '../src/data/promises.js'
+import { STRUCTURE_CLAIMS, SCANNED_FILES, CLAIM_PATTERN, unregisteredClaims } from '../src/data/structure-claims.js'
 import { runReplay, etaSeconds } from '../src/ui/replay-driver.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
@@ -6676,6 +6677,51 @@ cases.push(
       }
       t.ok(ESTIMATE_MARKS.indexOf('约') >= 0 && ESTIMATE_MARKS.indexOf('会没') >= 0,
         '标记词里要有"约"和"会没"这两类')
+    }
+  },
+  {
+    name: '描述结构的注释与它描述的结构，必须一起改或者一起红（D110 §12 第五面）',
+    run(t) {
+      // 前四面管"产品对用户说的话"，这一面管**文档对代码**。形状是同一个：
+      // 两处各写一遍，迟早分叉 —— 代码那侧有守卫，注释那侧没有，于是只有注释会烂。
+      // 逼出这一面的实例：B 案落地后只剩一个呈现者，注释还写着"两个呈现者二选一"。
+      //
+      // **能扫的只是一个子集**（见 structure-claims.js 开头那段）：
+      // 对代码位置计数的断言可扫，讲道理的散文不可扫。
+      const files = SCANNED_FILES.map(path => ({ path, text: readSrc(path) }))
+
+      // ① 正向：登记的每一句，注释那侧还在，代码那侧的数还对 —— 两边只能一起改
+      for (const c of STRUCTURE_CLAIMS) {
+        const text = files.find(f => f.path === c.file)
+        t.ok(!!text, `登记表指着没在扫的文件 ${c.file}`)
+        t.ok(text.text.indexOf(c.says) >= 0,
+          `${c.file} 里找不到登记的那句「${c.says}」—— 注释改了就得回来改这张表`)
+        if (c.kind === 'pins') {
+          const src = readSrc(c.scan.file)
+          const hit = (src.match(c.scan.re) || []).length
+          t.equal(hit, c.is,
+            `「${c.says}」说的是 ${c.is}，${c.scan.file} 里实际 ${hit} 处 —— 注释与结构已分叉`)
+        } else {
+          t.ok(!!c.why, `${c.file}「${c.says}」判定不钉，就得写明理由`)
+        }
+      }
+
+      // ② 反向：新写的计数断言没登记，当场红（与 promises.js 同一招）
+      const bad = unregisteredClaims(files)
+      t.equal(bad.length, 0,
+        '有没登记的结构计数断言：' + bad.map(b => `${b.path}:${b.line}「${b.claim}」`).join('；'))
+
+      // ③ 自证：把那句烂掉的旧注释喂回去，它必须被抓住
+      const stale = '/** 现在只有一处判断，两个呈现者**二选一**地消费它 */'
+      const caught = unregisteredClaims([{ path: 'src/main.js', text: stale }])
+      t.ok(caught.some(c => c.claim === '两个呈现者'),
+        '扫描器抓不住当初那句烂注释 —— 这条守卫就是假的')
+
+      // ④ 登记表指到的文件都真的在扫
+      for (const c of STRUCTURE_CLAIMS) {
+        t.ok(SCANNED_FILES.indexOf(c.file) >= 0, `${c.file} 登记了却不在扫描清单里`)
+      }
+      t.ok(STRUCTURE_CLAIMS.some(c => c.kind === 'pins'), '至少得钉住一条，不能整表都是"不钉"')
     }
   },
   {

@@ -1031,7 +1031,7 @@ function replayTo(gen) {
 app.recoverToEmptyBoard = function (err) {
   console.error('[启动] 裁决或落盘出错，已退到空盘：', err)
   app.bootFailed = err
-  app.unlockBoard()          // 后面那些写盘入口得能用，否则连空盘都开不出来
+  app.unlockBoard()          // 兜底那条路的开闸处：不开闸连空盘都写不出来（§13 两处开闸之二）
   app.engine.clear()
   app.visual.sync(app.engine)
   app.records.startRun()
@@ -1042,7 +1042,7 @@ app.recoverToEmptyBoard = function (err) {
 
 app.applyInitialBoard = function (intent) {
   app.initialIntent = intent
-  app.unlockBoard()          // 裁决完了，闸开（唯一开闸处，D110 §13）
+  app.unlockBoard()          // 裁决完了，闸开（正常那条路的开闸处，D110 §13）
   if (intent.source === 'link') {
     app.applyShareState(intent)
   } else if (intent.source === 'firstVisitDemo') {
@@ -1206,8 +1206,8 @@ function trailLabelOf(v) {
  *
  * 从前是两处各判一次"该我说吗"：开机那儿判"引导会不会出现"，第三幕自己判"要不要说"。
  * 两处判断迟早分叉 —— 而分叉的表现恰好是"谁都以为对方说了，于是没人说"。
- * 现在只有一处判断（有没有这件事），两个呈现者**二选一**地消费它：
- * 引导开着 → 第三幕那一页说（那一页本身就挡路）；没有引导 → 挡路框说。
+ * 现在只有一处判断（有没有这件事），**也只有一个呈现者**（`presentNotice`，D110 §31）：
+ * 引导一个字都不说，走完引导（或开机时本来就没有引导）之后，挡路框独立弹一次。
  */
 app.pendingNotice = null
 
@@ -1223,7 +1223,7 @@ app.takeNotice = function () {
 // 开局状态：棋盘从哪儿来，由 resolveInitialBoard 一处裁决（D110）。
 // 从前这里是三处各写各的（首访随机盘 / 链接 / 引导收尾），顺序全靠读代码才看得出来 ——
 // D107 那张优先级表也就只是文档里的一句话。现在表在 src/data/startup.js 里是数据，
-// 写盘只有 applyInitialBoard 一个出口，想绕也绕不过去。
+// 写盘只有 applyInitialBoard 一个出口，想绕也绕不过去（开闸有两处：它 + 兜底的 recoverToEmptyBoard）。
 //
 // 首访给"导演场"，回访给"空场"（D69）：回访者的实际动作是"先清空再开始"，
 // 那说明满盘随机不是他要的开场，是他每次都要先撤掉的东西。

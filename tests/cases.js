@@ -16,7 +16,7 @@ import { BIG_LAYOUTS } from '../src/data/big-layouts.js'
 import { MACHINE_LAYOUTS } from '../src/data/machine-layouts.js'
 import { METAPIXEL_LAYOUT } from '../src/data/metapixel-layout.js'
 import { shouldCount } from '../src/analytics.js'
-import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MAX_URL } from '../src/data/share.js'
+import { encodeShare, decodeShare, toBase64url, fromBase64url, SHARE_VERSION, MAX_URL, shareVerdict, seedCanTell } from '../src/data/share.js'
 import { shouldShow, viewBox, pickCenter, REDRAW_MS } from '../src/ui/minimap.js'
 import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
@@ -6366,6 +6366,40 @@ cases.push(
     }
   },
   {
+    name: '三条路全断时不生成链接：失败要发生在分享的人这边（D110 §8）',
+    run(t) {
+      // 最坏组合：稠密随机盘 → 手改过几格 → 又跑了 500 代 → 分享。
+      // 种子指向的是另一局，RLE 六万字符装不下，现在的降级只会给对方一张第 0 代/空盘。
+      t.equal(shareVerdict({ droppedPattern: false, alive: 999, initType: 'random', runDirty: true, generation: 500 }),
+        'ok', '图案带得下就没这回事')
+      t.equal(shareVerdict({ droppedPattern: true, alive: 0, initType: 'empty', runDirty: false, generation: 0 }),
+        'ok', '盘上没东西，本来也不用带')
+      t.equal(shareVerdict({ droppedPattern: true, alive: 31513, initType: 'random', runDirty: false, generation: 0 }),
+        'seedOnly', '干净的种子局：种子 + 密度足以完整复现')
+      t.equal(shareVerdict({ droppedPattern: true, alive: 31513, initType: 'random', runDirty: true, generation: 500 }),
+        'refuse', '手改过 + 跑过代 + 图案太大 —— 拒绝生成')
+      t.equal(shareVerdict({ droppedPattern: true, alive: 31513, initType: 'random', runDirty: true, generation: 0 }),
+        'refuse', '只手改过也一样：种子指向的是另一局')
+      // **跑过代也要拒**：那时收的人拿到的是第 0 代，而且看不出来。
+      // `g=` 字段落地后这一条会变回 seedOnly（见 acceptance 第 4 节）。
+      t.equal(shareVerdict({ droppedPattern: true, alive: 31513, initType: 'random', runDirty: false, generation: 500 }),
+        'refuse', '跑过代也拒 —— 否则收的人静默看到第 0 代')
+      t.ok(!seedCanTell({ initType: 'pattern', runDirty: false, generation: 0 }), '不是种子来的，种子就说不清')
+
+      // 接线：拒绝时**不复制**，并且说出来
+      const main = readSrc('src/main.js')
+      const copy = /app\.copyShareLink = async function[\s\S]*?\n\}/.exec(main)
+      t.ok(!!copy, '找得到 copyShareLink')
+      const head = copy[0].slice(0, copy[0].indexOf('clipboard'))
+      t.ok(/if \(verdict === 'refuse'\)[\s\S]*?return null/.test(head), '拒绝要发生在写剪贴板之前')
+      t.ok(/app\.toast\(t\('share\.refuse'\)\)/.test(head), '要说一句为什么，并给出路（导出文件）')
+      for (const lang of ['zh', 'en']) {
+        t.ok(!!DICT[lang]['share.refuse'], `${lang} 缺 share.refuse`)
+        t.ok(/导出|Export|文件|file/i.test(DICT[lang]['share.refuse']), `${lang} 那句话要指向"导出文件"这条出路`)
+      }
+    }
+  },
+  {
     name: '启动写盘唯一入口：启动段里除 applyInitialBoard 外不许有人碰盘（D110 §2）',
     run(t) {
       // 从前启动段有三处各写各的（首访随机盘 / 链接 / 引导收尾），D107 那张优先级表
@@ -6478,7 +6512,14 @@ cases.push(
       const main = readSrc('src/main.js')   // 'atLeast'/'exact' 是字面量，得扫原文（D88 §3）
       const hr = /app\.handleResize = function[\s\S]*?\n\}/.exec(main)
       t.ok(!!hr, '找得到 handleResize')
-      t.ok(/const before = app\.viewIntentNow\(\)/.test(hr[0]), '先取改动之前的取景意图')
+      t.ok(/app\.syncViewIntent\(\)/.test(hr[0]) && /const before = app\.viewIntent\b/.test(hr[0]),
+        '先认一次"中间有人动过没有"，再取用户自己决定的那次取景')
+      t.ok(/app\.viewDerived = \{ scale: vp\.scale/.test(hr[0]),
+        '记下自己派生成什么样 —— 下次才认得出用户动没动过')
+      // 棘轮的来源就是"拿当前倍率当参照"。参照必须是意图里的那一档。
+      t.ok(/const ref = Number\.isFinite\(intent\.scale\) \? intent\.scale : vp\.scale/.test(main),
+        'atLeast 的参照是意图里的倍率，不是当前倍率')
+      t.ok(!/Math\.min\(vp\.scale, wanted\)/.test(main), '不许再拿当前倍率当参照（那是棘轮）')
       t.ok(/app\.applyViewIntent\(before, 'atLeast'\)/.test(hr[0]), '再从意图重算，不保像素倍率')
       t.ok(!/vp\.originX = cx -/.test(hr[0]), '不许再手搓一套挪中心的算法')
       // 三处用的必须是同一个意图，不是各算各的（D110 §2 修正 2）
@@ -6491,7 +6532,7 @@ cases.push(
       t.equal((main.match(/app\.viewIntentNow = function/g) || []).length, 1, '取景意图只有一处定义')
       // atLeast 的含义：只保证不少看。窗口变大保留原倍率，多出来的地方多看一点
       const av = /app\.applyViewIntent = function[\s\S]*?\n\}/.exec(main)
-      t.ok(/mode === 'atLeast' \? Math\.min\(vp\.scale, wanted\) : wanted/.test(av[0]),
+      t.ok(/mode === 'atLeast' \? Math\.min\(ref, wanted\) : wanted/.test(av[0]),
         'atLeast 取 min —— 变窄要退倍率，变大不跟着放大')
     }
   },

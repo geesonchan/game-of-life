@@ -162,3 +162,27 @@ export function decodeShare(hash) {
   }
   return { ok: true, state }
 }
+
+/**
+ * 图案带不下时，**种子还能不能替它把这一局说清楚**。
+ * 三条都成立才算：这一局是种子随机来的、没被手改过、还停在第 0 代。
+ * 少一条，收的人看到的就不是发的人那一局 —— 而且没有任何迹象。
+ */
+export function seedCanTell(ctx) {
+  return !!ctx && ctx.initType === 'random' && !ctx.runDirty && (ctx.generation | 0) === 0
+}
+
+/**
+ * 这一局到底能不能用链接分享（D110 §8）。
+ *
+ * `'ok'`      —— 图案带得下，或者盘上本来就没东西
+ * `'seedOnly'` —— 图案带不下，但种子 + 密度足以完整复现（稠密随机局的正常路）
+ * `'refuse'`  —— 三条路全断：种子说不清、图案又装不进链接。
+ *   **这时不生成链接**。降级给一张空盘或第 0 代，等于把失败推给收的人，
+ *   而且他看不出来 —— 失败必须发生在分享的人这边，看得见（用户定的原则）。
+ */
+export function shareVerdict(ctx) {
+  if (!ctx || !ctx.droppedPattern) return 'ok'
+  if ((ctx.alive | 0) <= 0) return 'ok'
+  return seedCanTell(ctx) ? 'seedOnly' : 'refuse'
+}

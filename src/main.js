@@ -5,7 +5,7 @@ import { lifeRule, compileNotation } from './engine/rules.js'
 import { createFavorites } from './ui/favorites-view.js'
 import { createConfirm } from './ui/confirm.js'
 import { visualFor, isBigBoard } from './data/board-sizes.js'
-import { encodeShare, decodeShare } from './data/share.js'
+import { encodeShare, decodeShare, shareVerdict } from './data/share.js'
 import { resolveInitialBoard } from './data/startup.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
@@ -66,6 +66,8 @@ const app = {
   fps: 0,
   needsFit: false,
   pendingView: null,      // 画布还没尺寸时欠着的取景意图（D110 §3）
+  viewIntent: null,       // 用户最后一次自己决定的取景 { cx, cy, span, scale }（D110 §7）
+  viewDerived: null,      // resize 上次把视口派生成什么样，用来认出"中间有人动过"
   chartGen: -1,
   mode: 'full',       // 'simple' | 'full'
   stamp: null,        // 当前选中的图案（跟随鼠标待放置）
@@ -586,11 +588,15 @@ app.handleResize = function () {
   // 从前这里保的是像素倍率（scale 原样留着，只挪中心），于是 D108 那句
   // "w×w 方格在任何屏幕上完整可见"只在链接落地那一瞬成立：
   // 之后窗口一窄、工具条一收，画布小了而倍率没动，框里的东西就少了一圈，没人会发现。
-  const before = app.viewIntentNow()
+  app.syncViewIntent()                     // 中间有人动过的话，先把新意图记下来
+  const before = app.viewIntent
   const oldW = app.canvas.width, oldH = app.canvas.height
   const { w, h } = app.renderer.resize()
   if (app.needsFit) { app.settleView(); return }
   if (oldW > 1 && oldH > 1 && w > 1 && h > 1) app.applyViewIntent(before, 'atLeast')
+  // 记下"这次是我派生成这样的"。下次进来若对不上，就是用户自己动过（见 syncViewIntent）
+  const vp = app.viewport
+  app.viewDerived = { scale: vp.scale, originX: vp.originX, originY: vp.originY }
   app.dirty = true
 }
 
@@ -654,8 +660,18 @@ app.shareState = function (opts = {}) {
 /** 生成整条链接（页面地址 + hash）。上层拿去复制 */
 app.shareLink = function (opts = {}) {
   const base = location.origin + location.pathname
+  const e = app.engine
   const { hash, droppedPattern } = encodeShare(app.shareState(opts), base.length)
-  return { url: base + hash, droppedPattern }
+  // 图案带不下时，种子未必替得了它 —— 手改过、或跑过代，种子指向的是另一局。
+  // 那种情况下**不生成链接**（D110 §8）。
+  const verdict = shareVerdict({
+    droppedPattern,
+    alive: opts.rle !== undefined ? 1 : e.stats.alive,
+    initType: e.initType,
+    runDirty: app.runDirty,
+    generation: e.generation
+  })
+  return { url: base + hash, droppedPattern, verdict }
 }
 
 /**
@@ -698,13 +714,41 @@ app.applyViewIntent = function (intent, mode = 'exact') {
     return
   }
   const wanted = Math.min(cw, ch) / Math.max(1e-6, intent.span)
-  const next = mode === 'atLeast' ? Math.min(vp.scale, wanted) : wanted
+  // atLeast 的参照是**意图里的倍率**（用户自己选的那一档），不是当前倍率 ——
+  // 拿当前倍率当参照，就等于把上一次 resize 的结果当成新意图，那正是棘轮的来源。
+  const ref = Number.isFinite(intent.scale) ? intent.scale : vp.scale
+  const next = mode === 'atLeast' ? Math.min(ref, wanted) : wanted
   vp.scale = Math.max(vp.minScale, Math.min(vp.maxScale, next))
   vp.originX = intent.cx - cw / (2 * vp.scale)
   vp.originY = intent.cy - ch / (2 * vp.scale)
   if (mode === 'exact') app.pendingView = null
   app.needsFit = false
   app.dirty = true
+}
+
+/**
+ * **用户自己决定的那次取景**（手势缩放、平移、适配整盘、按链接取景），
+ * 与 resize 派生出来的结果分开存。
+ *
+ * resize 只能**从**它派生，不许**写回**它 —— 写回就是棘轮：
+ * 拉窄一次倍率退一档，拉回来时那一档已经被当成新意图，于是视野只出不进。
+ * 实测（改之前）：40 格的框拉窄再拉回，两个来回变成 160 格，且不回头。
+ */
+app.noteViewIntent = function () {
+  const vi = app.viewIntentNow()
+  app.viewIntent = { cx: vi.cx, cy: vi.cy, span: vi.span, scale: app.viewport.scale }
+}
+
+/**
+ * 视口若不是 resize 上次留下的样子，说明这中间有人动过（手势、取景、适配）——
+ * 那才是新的意图。这样就不必在六处手势代码里各插一句"记一下"，也就漏不掉。
+ */
+app.syncViewIntent = function () {
+  const vp = app.viewport, d = app.viewDerived
+  if (!d || Math.abs(vp.scale - d.scale) > 1e-9 ||
+      Math.abs(vp.originX - d.originX) > 1e-6 || Math.abs(vp.originY - d.originY) > 1e-6) {
+    app.noteViewIntent()
+  }
 }
 
 /**
@@ -723,7 +767,13 @@ app.applySharedView = function (view) {
 
 /** 复制到剪贴板；剪贴板用不了时把链接摆出来让用户自己复制 */
 app.copyShareLink = async function (opts = {}) {
-  const { url, droppedPattern } = app.shareLink(opts)
+  const { url, droppedPattern, verdict } = app.shareLink(opts)
+  if (verdict === 'refuse') {
+    // 三条路全断：种子说不清、图案装不下。**失败发生在这一边，而且看得见** ——
+    // 复制一条会给对方开出空盘/第 0 代的链接，是把失败悄悄转嫁出去。
+    app.toast(t('share.refuse'))
+    return null
+  }
   try {
     await navigator.clipboard.writeText(url)
     app.toast(droppedPattern ? t('share.copiedNoPattern') : t('share.copied'))

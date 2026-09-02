@@ -6,7 +6,9 @@
        在出问题的那个平台上它根本不生效；而在生效的平台（Android Chrome）上，
        它关掉的是一项真实的无障碍能力（WCAG 1.4.4）。病因是双击/捏合落在控件上，
        用 touch-action 精确治，见 docs/decisions.md D85 ②。 -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- viewport-fit=cover 是 env(safe-area-inset-*) 生效的**前提** ——
+       没有它，iOS 上那几个值恒为 0，样式里写得再对也是空转（D112）。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <!-- 图标：相对路径，跟 vite 的 base:'./' 一致，放子目录也能找到 -->
   <!-- 版本印记（D92 ②）：构建时由 vite 填进来。
        它存在的唯一理由是"一眼核对线上是哪一版" —— 上一轮真机验的是上一版，
@@ -41,12 +43,16 @@
       <div class="tb-seg tb-left">
         <!-- 窄屏专用的「适配视图」：桌面那颗在侧栏原位不动，两颗共用同一批词条。
              双指操作后棋盘容易飞出视野，找回视图是高频救援动作（外部用户反馈） -->
-        <!-- 配角排：单步 / 适配 / 擦掉，三等分等宽。纯文案，不用 emoji ——
+        <!-- 配角排：单步 / 适配 / 撤销 / 清空，四等分等宽。纯文案，不用 emoji ——
              emoji 跨机型渲染不一致，为一个按钮引入那种不确定性不值当。
              单步和适配是窄屏专用的复本（桌面那两颗各在原位不动），
              这样两行各自是一个独立的 flex 容器，不必去动已验收的桌面顶栏结构。 -->
         <button id="btn-step-m" data-i18n="ctrl.step" data-i18n-title="tip.step">单步</button>
         <button id="btn-fit-m" class="rescue" data-i18n="ctrl.fitShort" data-i18n-title="tip.fit">适配</button>
+        <!-- 撤销：救援蓝（与「适配」同一类 —— 都是"我搞砸了，帮我弄回去"）。
+             它是常驻入口；清空/随机之后画布下沿那条临时条是第二个入口，
+             两处共用同一个 token，消费一次两处都消失。 -->
+        <button id="btn-undo" class="rescue" data-i18n="undo.label" data-i18n-title="undo.tip" disabled>撤销</button>
         <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
       </div>
 
@@ -139,6 +145,14 @@
         <div class="replay-note" id="replay-note" hidden>
           <span>—</span>
           <div class="replay-track"><i id="replay-bar"></i></div>
+        </div>
+        <!-- 撤销的**第二个入口**：清空/随机之后画布下沿的临时条（8 秒）。
+             常驻按钮在配角排，这一条是"刚出事的那一刻就在手边" ——
+             清空/随机没有确认框，所以后悔药必须自己凑上来。
+             **同一个 token**：消费一次两处都消失（`app.refreshUndo` 一处决定）。 -->
+        <div class="undo-bar" id="undo-bar" hidden>
+          <span data-i18n="undo.bar">刚才那一步可以撤销</span>
+          <button id="btn-undo-bar" class="rescue" data-i18n="undo.barAction">撤销</button>
         </div>
         <div class="sel-menu" id="sel-menu" hidden>
           <span class="sel-size" id="sel-size"></span>

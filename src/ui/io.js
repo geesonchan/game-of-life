@@ -179,6 +179,10 @@ export function setupIO(app) {
     let p
     try { p = parseRLE(text) } catch (e) { app.toast(t('io.rleFail', { reason: String(e.message) })); return false }
     if (p.w > app.engine.w || p.h > app.engine.h) { app.toast(t('io.rleTooBig', { w: p.w, h: p.h })); return false }
+    // **压栈放在两处拒绝之后**：解析失败 / 装不下的时候什么都没发生，
+    // 压一条进去就等于给了一颗撤不出东西的后悔药（§12 第三面那一族：亮着但点了没反应）。
+    // `undo: false` 是复合流程用的（载入内置局那条路自己压过一次了）。
+    if (opts.undo !== false) app.pushUndoSnapshot('loadFile', { dropPatches: true })
     const ox = opts.center ? ((app.engine.w - p.w) >> 1) : 0
     const oy = opts.center ? ((app.engine.h - p.h) >> 1) : 0
     for (const [x, y] of p.cells) app.engine.set(ox + x, oy + y, 1)

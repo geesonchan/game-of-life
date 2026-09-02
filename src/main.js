@@ -8,6 +8,7 @@ import { visualFor, isBigBoard } from './data/board-sizes.js'
 import { encodeShare, decodeShare, shareVerdict } from './data/share.js'
 import { resolveInitialBoard } from './data/startup.js'
 import { resizePlan, captureSession, pasteCells, cellBounds } from './data/session.js'
+import { createUndoStack, staleReason, MAX_UNDO_BYTES } from './data/undo.js'
 import { runReplay, etaSeconds } from './ui/replay-driver.js'
 import { Viewport } from './render/viewport.js'
 import { Renderer } from './render/renderer.js'
@@ -101,6 +102,9 @@ const app = {
 app.visualNow = function () { return visualFor(app.visualOpts, app.engine.w) }
 
 app.tick = function () {
+  // **跑一代作废整栈**（见 `app.invalidateUndoOnStep` 那段说明）。
+  // `engine.step()` 不过闸，所以世代戳保护不到它 —— 这是它自己的守卫。
+  app.invalidateUndoOnStep()
   const s = app.engine.step()
   app.visual.advance(app.engine, app.visualNow().glow ? app.renderer.glowFrames : 0)
   app.series.push(s.alive)
@@ -195,15 +199,207 @@ app.bootLocked = true
 
 app.unlockBoard = function () { app.bootLocked = false }
 
-/** 写盘之前问一句。闸没开就是**代码顺序错了**，不是用户干的 —— 所以抛，不是提示 */
+/**
+ * 写盘之前问一句。闸没开就是**代码顺序错了**，不是用户干的 —— 所以抛，不是提示。
+ *
+ * **世代戳也打在这一处**（撤销那一批的主判据，见 `src/data/undo.js`）。
+ * 打在闸上而不是打在各个写盘入口里，是因为闸是**唯一必经之路**：
+ * 将来新增的写盘路径必须先过闸，于是自动被戳覆盖，**不必记得回来加一行**。
+ * 这与 §12 第五面同一个道理 —— 靠记性维护的一致性迟早会烂，靠必经之路的不会。
+ *
+ * 补丁记下压栈那一刻的戳；戳变了就说明整盘被人换过，补丁的坐标已经没有前提了。
+ */
+app.boardStamp = 0
+
 app.assertBoardUnlocked = function (who) {
   if (app.bootLocked) {
     throw new Error(`启动意图还没裁决完，${who} 不许写盘（D110 §13）`)
   }
+  app.boardStamp++
+}
+
+/* ==================== 撤销 / 后悔药（方案见 handoff 第五节） ====================
+ *
+ * 范围：橡皮擦、画笔、清空、随机填充、改尺寸、载入图案、载入内置局、读档。
+ * 这八件事的共同点是**用户点一下就没了一盘东西**，而其中一半没有确认框 ——
+ * 后悔药是那半边的安全网。
+ */
+app.undoStack = createUndoStack(MAX_UNDO_BYTES)
+
+/** 现在的棋盘长什么样 —— 补丁的前提就对着它查（`staleReason`） */
+app.boardNow = function () {
+  return {
+    w: app.engine.w,
+    h: app.engine.h,
+    rule: (app.engine.rule && app.engine.rule.notation) || 'B3/S23',
+    stamp: app.boardStamp
+  }
+}
+
+/**
+ * **`canUndo()` 是单一判断源**（D110 §12 第三面：判据落在布尔值上）。
+ * 按钮 `disabled`、临时条出不出现、撤销入口本身，三处都问它 ——
+ * 三处各判一次的话，迟早出现"按钮亮着、点下去没反应"。
+ */
+app.canUndo = function () {
+  return app.undoStack.canUndo() && !staleReason(app.undoStack.peek(), app.boardNow())
+}
+
+/**
+ * 两个入口的**唯一**刷新处（常驻按钮 + 临时条）。
+ *
+ * `canUndo()` 是单一判断源（D110 §12 第三面）：按钮的 `disabled` **就是** `!app.canUndo()`，
+ * 临时条出不出现也问它。守卫钉住的正是这个赋值表达式 ——
+ * 日后有人改成"栈非空"就红，因为那会漏掉"前提已经对不上"的那一半，
+ * 于是按钮亮着、点下去只弹一句"退不回去了"。
+ *
+ * 放在 main.js 而不是 controls.js：压栈从启动段就开始了，那时 `setupControls` 还没跑。
+ * 放那边就得先垫一个空函数占位 —— 那又成了"同一件事两份实现"。
+ */
+app.refreshUndo = function () {
+  const el = app.el
+  if (!el || !el.undo) return          // 接线之前压的栈照样算数，只是还没有东西可刷新
+  el.undo.disabled = !app.canUndo()
+  if (!app.canUndo()) app.hideUndoBar()
+}
+
+/**
+ * 临时条：清空/随机之后画布下沿那一条，8 秒后自己走。
+ *
+ * **同一个 token**：它与常驻按钮消费的是同一个栈顶，撤销一次两处一起没 ——
+ * `app.undo()` 末尾那句 `refreshUndo()` 就是"一起没"的落实处。
+ */
+app.undoBarTimer = null
+
+app.showUndoBar = function () {
+  if (!app.canUndo() || !app.el || !app.el.undoBar) return
+  app.el.undoBar.parentNode.hidden = false
+  if (app.undoBarTimer) clearTimeout(app.undoBarTimer)
+  app.undoBarTimer = setTimeout(() => app.hideUndoBar(), 8000)
+}
+
+app.hideUndoBar = function () {
+  if (app.undoBarTimer) { clearTimeout(app.undoBarTimer); app.undoBarTimer = null }
+  if (app.el && app.el.undoBar) app.el.undoBar.parentNode.hidden = true
+}
+
+/**
+ * 整盘改动压栈：存 `captureSession` 整份快照。
+ *
+ * **必须在写盘之前叫**，存的是"这一步之前那一刻"。
+ * `dropPatches` 那一档给 A 类（改尺寸/读档/载入）：盘要换了，之前的补丁坐标失去前提。
+ */
+app.pushUndoSnapshot = function (label, opts = {}) {
+  app.undoStack.push({
+    kind: 'snapshot',
+    label,
+    session: captureSession(app.engine, {
+      speed: app.speed,
+      view: app.viewport ? app.viewport.capture() : null,
+      runDirty: app.runDirty,
+      running: app.running
+    }),
+    // 还原要连这两样（定稿点名）：`currentShowId` 不还，`id=` 就会指错那一局；
+    // "在不在跑"不还，用户会看着自己那一局莫名其妙动起来。
+    showId: app.currentShowId,
+    pre: app.boardNow()
+  }, opts)
+  app.refreshUndo()
+}
+
+/** 一笔画完压栈：存补丁（input.js 收笔时叫，D67 那个数组白捡） */
+app.pushUndoPatch = function (cells, runDirtyBefore) {
+  if (!cells || !cells.length) return
+  app.undoStack.push({
+    kind: 'patch',
+    label: 'draw',
+    cells,
+    runDirtyBefore,
+    showId: app.currentShowId,
+    pre: app.boardNow()
+  })
+  app.refreshUndo()
+}
+
+/**
+ * **跑一代作废整栈** —— 这一条落在别处，说明写在这儿。
+ *
+ * `engine.step()` **不过闸**（热路径不为一致性买单：每代加一次检查，
+ * 2048² 那一档本来就 15.5ms/代，不值当）。所以它拿不到世代戳的保护，
+ * 得有自己的守卫：跑过一代，补丁记的那个棋盘就不存在了，整栈作废。
+ */
+app.invalidateUndoOnStep = function () {
+  if (app.undoStack.size()) { app.undoStack.clear(); app.refreshUndo() }
+}
+
+/**
+ * 撤销。**撤销自己不压栈**（守卫钉住）—— 否则撤销之后再撤销就在两个状态之间打转，
+ * 用户永远回不到更早的地方。
+ */
+app.undo = function () {
+  const top = app.undoStack.peek()
+  if (!top) return false
+  // **先说再丢**：前提对不上就说清为什么，然后把其余栈一并丢掉 ——
+  // 绝不按错坐标回滚（那是在用户没要求的地方改棋盘，比不给撤销坏得多）。
+  const stale = staleReason(top, app.boardNow())
+  if (stale) {
+    app.toast(t('undo.stale.' + stale))
+    app.undoStack.clear()
+    app.refreshUndo()
+    return false
+  }
+  app.undoStack.pop()
+  if (top.kind === 'patch') {
+    for (let i = top.cells.length - 1; i >= 0; i--) {
+      const c = top.cells[i]
+      app.engine.set(c[0], c[1], c[2])
+    }
+    app.engine.stats.alive = app.engine.countAlive()
+    app.visual.reconcile(app.engine)
+    app.runDirty = top.runDirtyBefore
+  } else {
+    app.restoreSession(top.session)
+  }
+  app.currentShowId = top.showId
+  app.cancelPending()
+  app.dirty = true
+  app.updateHud()
+  app.refreshUndo()
+  app.toast(t('undo.done'))
+  return true
+}
+
+/**
+ * 把一份快照还回棋盘。
+ *
+ * 这个函数**随看展一起撤掉过**（v1.19.0），定稿里说它会在撤销这一批原样回来 —— 就是这里。
+ * 与 `captureSession` 是一对：那边存什么，这边就还什么，不多不少。
+ */
+app.restoreSession = function (snap) {
+  app.assertBoardUnlocked('restoreSession')
+  app.setRunning(false)
+  if (app.engine.w !== snap.w || app.engine.h !== snap.h) app.engine.resize(snap.w, snap.h)
+  app.engine.cur.set(snap.cells)
+  app.engine.stats.alive = app.engine.countAlive()
+  app.engine.generation = snap.generation
+  app.engine.boundary = snap.boundary
+  if (snap.rule) app.applyNotation(snap.rule)   // 已经是这个规则时它自己就跳过了
+  if (typeof snap.speed === 'number') app.setSpeed(snap.speed)
+  if (snap.view && app.viewport) app.viewport.restore(snap.view)
+  app.visual.sync(app.engine)
+  app.runDirty = !!snap.runDirty
+  app.series.clear()
+  app.series.push(app.engine.stats.alive)
+  app.records.startRun()
+  // "在不在跑"也是那一刻的一部分（captureSession 存它就是为了这里）
+  if (snap.running) app.setRunning(true)
 }
 
 app.clear = function (opts = {}) {
   app.assertBoardUnlocked('clear')
+  // `undo: false` 是给**复合流程**用的：载入内置局那条路自己会先压一份整的，
+  // 里面顺带调的 resize/clear 不该各压一条 —— 用户点的是一件事，撤销也该是一步。
+  if (opts.undo !== false) app.pushUndoSnapshot('clear')
   app.currentShowId = null
   app.setRunning(false)
   if (!opts.keepShowEnv) app.exitShowEnv()   // 清空 = 退出这一局（D104）
@@ -217,11 +413,17 @@ app.clear = function (opts = {}) {
   app.dirty = true
   app.updateHud()
   // 介绍卡收尾时要静默清盘 —— 用户刚点的是「开始玩」，弹一句「已清空」是答非所问
-  if (!opts.silent) app.toast(t('toast.cleared'))
+  if (!opts.silent) {
+    app.toast(t('toast.cleared'))
+    // 清空没有确认框，所以后悔药得自己凑上来（临时条，8 秒）。
+    // 静默那条路不出：用户没点清空，弹一条"可以撤销"是答非所问，同上一句
+    app.showUndoBar()
+  }
 }
 
-app.randomize = function () {
+app.randomize = function (opts = {}) {
   app.assertBoardUnlocked('randomize')
+  if (opts.undo !== false) app.pushUndoSnapshot('randomize')
   app.currentShowId = null
   const seed = readSeedInput(app)
   app.engine.randomize(seed, app.density)
@@ -234,6 +436,8 @@ app.randomize = function () {
   app.dirty = true
   app.updateHud()
   app.toast(t('toast.randomized', { seed, density: app.density.toFixed(2) }))
+  // 随机填充同样没有确认框，且它盖掉的常常是用户刚摆好的东西 —— 临时条更要出
+  app.showUndoBar()
 }
 
 /** 应用一条新编译的规则（引擎会把不可达状态的细胞清成死亡，见 D18） */
@@ -294,6 +498,8 @@ app.updateRuleInfo = function () {
 
 app.resizeBoard = function (w, h, opts = {}) {
   app.assertBoardUnlocked('resizeBoard')
+  // **A 类**：盘要换了，之前那些补丁的坐标失去前提 —— 压栈即作废它们（第二道兜底）
+  if (opts.undo !== false) app.pushUndoSnapshot('resizeBoard', { dropPatches: true })
   app.setRunning(false)
   // **旧内容要搬过去**（D110 §10）。手机上那个 bug 就是这里：200→300 是变大，
   // 装不下的可能性为零，格子却全没了 —— `engine.resize` 重新分配数组，旧的一扔了之。
@@ -533,6 +739,17 @@ app.placeStampAt = function (cell) {
     if (m && seq === app.refSeq) app.setRefRay(refFromPlacement(p, o, m))
   }
   applyRef()
+  // 撤销：图案只盖住一块矩形，记那一块的旧值就够 —— 比整盘快照便宜得多。
+  // 与画笔走的是同一种补丁，于是"载入图案"与"画一笔"在撤销那边是同一件事。
+  const before = []
+  for (let y = 0; y < p.h; y++) {
+    for (let x = 0; x < p.w; x++) {
+      const bx = o.x + x, by = o.y + y
+      if (bx < 0 || by < 0 || bx >= app.engine.w || by >= app.engine.h) continue
+      before.push([bx, by, app.engine.get(bx, by)])
+    }
+  }
+  app.pushUndoPatch(before, app.runDirty)
   placePattern(app.engine, p, o.x, o.y)
   app.engine.stats.alive = app.engine.countAlive()
   app.visual.reconcile(app.engine)
@@ -563,6 +780,7 @@ app.captureBaseline = function () {
 /** 重放期间的一代：与正常运行走同一条流水线，只是年龄数组按需推进 */
 const VISUAL_WARMUP = AGE_MAX + 16   // 年龄色阶在 AGE_MAX 代就饱和了，更早的推进对画面没有影响
 app.replayStep = function (remaining) {
+  app.invalidateUndoOnStep()
   const s = app.engine.step()
   app.series.push(s.alive)
   app.records.onGeneration(s)
@@ -975,6 +1193,8 @@ function replayTo(gen) {
     if (note) note.hidden = true
   }
   app.records.setReplaying(true)
+  // 重放也是在跑代 —— 整栈作废。放在循环外叫一次就够（热路径不为它买单）
+  app.invalidateUndoOnStep()
   const handle = runReplay({
     total,
     step: () => { app.engine.step(); app.visual.advance(app.engine) },

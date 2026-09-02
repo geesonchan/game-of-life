@@ -487,6 +487,21 @@ export const DICT = {
 
     /* ---- 提示条 ---- */
     'toast.cleared': '已清空',
+    // 撤销 / 后悔药。**三种失效原因共用一个句式**（定稿点名）——
+    // 三句各写各的，迟早有一句读起来像是出了故障。它们说的是同一件事：
+    // 补丁按坐标回滚，而坐标的前提没了。句子要**具体**，不能只说"撤不了"。
+    'undo.done': '已撤销',
+    'undo.stale.size': '换了棋盘尺寸之后，之前的改动就退不回去了',
+    'undo.stale.rule': '换了规则之后，之前的改动就退不回去了',
+    'undo.stale.replaced': '换过整盘之后，之前的改动就退不回去了',
+    'undo.label': '撤销',
+    // **撤销与「点一下熄灭」的分工，就靠这一句划开**（D112）：
+    // 撤销管的是「指不回去」的那些 —— 清空之后没东西可点、随机之后一万多格点不完；
+    // 单个格子指得到，点一下就改回来，不必动用撤销。
+    // 一句话说清两边各管什么，它们就不再互相解释。
+    'undo.tip': '撤销一整步（一笔 / 清空 / 随机 / 载入）。单个格子点一下就能改回来',
+    'undo.bar': '刚才那一步可以撤销',
+    'undo.barAction': '撤销',
     'toast.randomized': '已用种子 {seed} · 密度 {density} 初始化',
     'toast.resized': '棋盘 {w} × {h}',
     'toast.boundaryTorus': '边界：环形',
@@ -1499,6 +1514,14 @@ export const DICT = {
     'preset.daynight': 'Life and death are symmetric',
 
     'toast.cleared': 'Board cleared',
+    'undo.done': 'Undone',
+    'undo.stale.size': 'After changing the board size, earlier edits can no longer be undone',
+    'undo.stale.rule': 'After changing the rule, earlier edits can no longer be undone',
+    'undo.stale.replaced': 'After replacing the whole board, earlier edits can no longer be undone',
+    'undo.label': 'Undo',
+    'undo.tip': 'Undo a whole step (a stroke, clear, randomize, load). For one cell, just tap it again',
+    'undo.bar': 'That last step can be undone',
+    'undo.barAction': 'Undo',
     'toast.randomized': 'Seeded with {seed} at density {density}',
     'toast.resized': 'Board {w} × {h}',
     'toast.boundaryTorus': 'Boundary: torus',

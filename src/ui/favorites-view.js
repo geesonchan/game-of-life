@@ -54,6 +54,11 @@ export function createFavorites(app) {
    */
   app.replayLayout = function (entry) {
     const rule = ruleOf(entry.rle)
+    // **撤销：整条路只压一次**（A 类，作废之前的补丁）。
+    // 下面顺带调的 resizeBoard / clear / importRleText 各自都会压 —— 所以它们一律传
+    // `undo: false`。用户点的是"载入这一局"一件事，撤销也必须是一步，
+    // 否则他得连点四下才回得去，而中间那三下每一下都是半个局面。
+    app.pushUndoSnapshot('showcase', { dropPatches: true })
     // **这一局自带的环境**（D104）：边界、速度先切过去，用户原来的设置替他存着，
     // 清空 / 读档 / 换局时再还回去。这些局的生平都是在各自的环境里量出来的 ——
     // 繁殖者那几个数是 2048² 死边界上的数，摆到 200 环形盘上，卡片那行字就成了假话。
@@ -62,11 +67,11 @@ export function createFavorites(app) {
     // 所以明写 carry: false —— 改尺寸默认会把旧内容搬过去（D110 §10），这里不要搬，
     // 下一行本来就要清盘。而且这一步之前必须已经问过用户 —— 问在 openShowEntry 那里。
     const need = boardNeededBy(entry)
-    if (need && app.engine.w < need) app.resizeBoard(need, need, { silent: true, carry: false })
+    if (need && app.engine.w < need) app.resizeBoard(need, need, { silent: true, carry: false, undo: false })
     // keepShowEnv：这次清空是"铺这一局"的一部分，不是"退出这一局"（D104）
-    app.clear({ silent: true, keepShowEnv: true })
+    app.clear({ silent: true, keepShowEnv: true, undo: false })
     if (rule) app.applyNotation(rule)
-    const ok = app.importRleText(entry.rle, { center: true })
+    const ok = app.importRleText(entry.rle, { center: true, undo: false })
     // 记下"现在盘上是哪一局" —— 分享时按名字走（D110 §19）。
     // 用户一动手（画、清、随机、读档）就作废，那时盘上已经不是这一局了。
     app.currentShowId = ok ? (entry.id || null) : null

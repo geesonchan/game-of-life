@@ -104,6 +104,9 @@ export function setupCanvasInput(app) {
   function commitStroke() {
     if (!stroke) return
     if (stroke.cells.length) {
+      // **撤销：收笔时压栈**（D67 那个数组白捡 —— 它本来就是为整笔回滚攒的）。
+      // 压在这儿而不是落笔时：画到一半还不算"一步"，用户要撤的是**一整笔**。
+      app.pushUndoPatch(stroke.cells, stroke.runDirtyBefore)
       app.records.noteEdit()   // 轨迹变了，之前攒的哈希作废
       app.markDirtyRun()       // 手绘过的局不能再靠种子重放
       // 画笔也是"落子"：它把参照线替换掉 —— 画笔没有方向，于是等于清掉（D91）。

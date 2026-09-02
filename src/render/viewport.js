@@ -10,6 +10,24 @@ export class Viewport {
     this.maxScale = 40
   }
 
+  /**
+   * 存下/还原"看哪儿"。撤销要连取景一起还（`captureSession` 的 `view` 那一格）——
+   * 只还格子不还取景的话，撤销之后棋盘对了、视野却停在别处，用户会以为没撤成。
+   *
+   * 只有这三个数是**意图**（用户拖出来的）；`minScale`/`maxScale` 是派生的钳位，
+   * 由盘尺寸和画布算出来，不许回写（D110 §7 那条棘轮）。
+   */
+  capture() {
+    return { originX: this.originX, originY: this.originY, scale: this.scale }
+  }
+
+  restore(v) {
+    if (!v) return
+    this.originX = v.originX
+    this.originY = v.originY
+    this.scale = v.scale
+  }
+
   /** 让整块棋盘居中铺满画布 */
   fit(canvasW, canvasH, boardW, boardH, margin = 0.98) {
     this.scale = fitScaleOf(canvasW, canvasH, boardW, boardH, margin)

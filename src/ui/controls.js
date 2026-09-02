@@ -39,6 +39,7 @@ export function setupControls(app) {
   const el = {
     play: $('btn-play'), step: $('btn-step'), random: $('btn-random'), clear: $('btn-clear'),
     fit: $('btn-fit'), speed: $('in-speed'), density: $('in-density'), seed: $('in-seed'),
+    undo: $('btn-undo'), undoBar: $('btn-undo-bar'),
     lblSpeed: $('lbl-speed'), lblDensity: $('lbl-density'),
     lblNotation: $('lbl-notation'), lblFingerprint: $('lbl-fingerprint'),
     age: $('in-age'), glow: $('in-glow'),
@@ -51,6 +52,16 @@ export function setupControls(app) {
   el.play.addEventListener('click', () => app.setRunning(!app.running))
   el.step.addEventListener('click', () => { app.setRunning(false); app.stepOnce() })
   el.clear.addEventListener('click', () => app.clear())
+  // **两个入口，一次撤销**：常驻按钮 + 清空/随机之后的临时条。
+  // 两处都调同一个 `app.undo()`，也都由同一个 `app.refreshUndo()` 决定长什么样 ——
+  // 各写各的话，迟早出现"条还在、按钮已经灰了"。
+  el.undo.addEventListener('click', () => app.undo())
+  el.undoBar.addEventListener('click', () => app.undo())
+
+  // 刷新与临时条的实现都在 main.js（`app.refreshUndo` 那一处）——
+  // 压栈发生在启动段，那时 setupControls 还没跑，实现放这儿就得先垫一个空函数，
+  // 那又是"同一件事两份实现"。这里只接线。
+  app.refreshUndo()
   el.fit.addEventListener('click', () => app.fitView())
   // 窄屏那两颗复本走同一个动作，不另写逻辑
   $('btn-fit-m').addEventListener('click', () => app.fitView())

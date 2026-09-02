@@ -32,8 +32,18 @@ export const SESSION_WRITERS = Object.freeze([
   { name: 'enterShow', writes: 'cells+env+view', keeps: 'replace', asks: false, desc: '进看展：进之前先存整份快照' },
   { name: 'exitShow', writes: 'cells+env+view', keeps: 'replace', asks: false, desc: '退看展：还原进入前那一刻的快照' },
   { name: 'minimapJump', writes: 'view', keeps: 'keep', asks: false, desc: '点小地图跳视野' },
-  { name: 'gesture', writes: 'view', keeps: 'keep', asks: false, desc: '缩放/平移手势、适配整盘' }
+  { name: 'gesture', writes: 'view', keeps: 'keep', asks: false, desc: '缩放/平移手势、适配整盘' },
+  { name: 'undo', writes: 'cells+env+view', keeps: 'replace', asks: false, desc: '撤销：还回上一步之前那一刻（格子+环境+取景+在不在跑）' }
 ])
+
+// **`engine.step()` 不在这张表里，这是有意的**（撤销那一批定稿点名要留这行注释）。
+//
+// 表管的是"谁能改棋盘与环境"，而这些人都得过启动闸（`assertBoardUnlocked`），
+// 世代戳也就打在那一处 —— 将来新增的写盘路径自动被覆盖。
+// `step()` **不过闸**：热路径不为一致性买单（2048² 那一档本来就 15.5ms/代）。
+// 于是它拿不到戳的保护，得有**自己的**守卫：`app.invalidateUndoOnStep()` ——
+// 跑一代就作废整栈，因为补丁记的那个棋盘已经不存在了。
+// 两条路各有各的机制，这件事不写下来，下一个人只会看到表里少了一行。
 
 /**
  * 改盘尺寸时旧内容往哪儿搬：**居中**。

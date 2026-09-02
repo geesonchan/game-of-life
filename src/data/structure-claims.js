@@ -146,6 +146,27 @@ export const STRUCTURE_CLAIMS = Object.freeze([
       '代码是对的 —— 兜底不开闸连空盘都写不出来；假的是注释。第五面的第二个实例。'
   },
   {
+    kind: 'pins',
+    file: 'src/ui/controls.js',
+    says: '**两个入口，一次撤销**',
+    what: '撤销的入口',
+    // 数的是**接线**那一句，不是 app.undo() 这几个字 —— 后者在上面那段注释里也出现一次，
+    // 连注释一起数就是 3。守卫要数的是结构，不是文字（§30：匹配式得唯一命中它想命中的东西）。
+    scan: { file: 'src/ui/controls.js', re: /addEventListener\('click', \(\) => app\.undo\(\)\)/g },
+    is: 2,
+    note: '常驻按钮 + 临时条。两处都调同一个 app.undo() —— 加第三个入口就得回来改这句话。'
+  },
+  {
+    kind: 'pins',
+    file: 'src/main.js',
+    says: '两个入口的**唯一**刷新处',
+    what: 'refreshUndo 的实现',
+    scan: { file: 'src/main.js', re: /app\.refreshUndo = function/g },
+    is: 1,
+    note: '"唯一"那两个字就是这条钉的。controls.js 里曾经也有一份，' +
+      '因为启动段要用而搬到了 main.js —— 搬完得只剩一份，不能两处都留。'
+  },
+  {
     kind: 'prose',
     file: 'src/main.js',
     says: '从前是两处各判一次',

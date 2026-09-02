@@ -22,6 +22,7 @@ import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup
 import { SESSION_WRITERS, resizePlan, captureSession, pasteCells, cellBounds } from '../src/data/session.js'
 import { QUANTITY_PROMISES, unregisteredEstimates, ESTIMATE_MARKS } from '../src/data/promises.js'
 import { STRUCTURE_CLAIMS, SCANNED_FILES, CLAIM_PATTERN, unregisteredClaims } from '../src/data/structure-claims.js'
+import { createUndoStack, staleReason, patchBytes, snapshotBytes, MAX_UNDO_BYTES, STALE_REASONS } from '../src/data/undo.js'
 import { runReplay, etaSeconds } from '../src/ui/replay-driver.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
@@ -5377,8 +5378,19 @@ cases.push(
       const src = stripLiterals(readSrc('src/ui/favorites-view.js'))
       // carry: false 是明写的"这条路是换局，不搬旧内容"（D110 §10）——
       // 改尺寸默认搬，这里不写就会先把旧格子搬进新盘、下一行再清掉，白做一趟
-      t.ok(/resizeBoard\(need, need, \{ silent: true, carry: false \}\)/.test(src),
+      t.ok(/resizeBoard\(need, need, \{ silent: true, carry: false, undo: false \}\)/.test(src),
         '复现时先把盘换到够大再铺，且明写不搬旧内容')
+      // `undo: false`：载入内置局是**一件事**，整条路只压一次栈（在 replayLayout 开头）。
+      // 里面顺带调的三个写盘入口各压一条的话，用户得连点四下才回得去。
+      // 词条名是字符串字面量 —— stripLiterals 的输出里查不到，得用**原文**（D88 §3）
+      const rawFav = readSrc('src/ui/favorites-view.js')
+      t.ok(/pushUndoSnapshot\('showcase', \{ dropPatches: true \}\)/.test(rawFav),
+        '载入内置局压一份整快照，并作废之前的补丁（A 类）')
+      for (const call of ['resizeBoard(need, need, { silent: true, carry: false, undo: false })',
+        'clear({ silent: true, keepShowEnv: true, undo: false })',
+        'importRleText(entry.rle, { center: true, undo: false })']) {
+        t.ok(src.indexOf(call) >= 0, `复合流程里这一步要明写 undo: false —— ${call}`)
+      }
       // 三种理由三句话，不拼字符串
       for (const which of ['needRule', 'needEnv', 'needBoth']) {
         for (const lang of ['zh', 'en']) {
@@ -7127,7 +7139,193 @@ cases.push(
       t.equal(DEFAULTS.genCap, 2000, '每局默认代数上限 2000')
       t.equal(DEFAULTS.quickDeathGens, 50, '速死界限 50 代')
     }
+  },
+  {
+    name: '撤销：栈按字节封顶，超了丢最旧的（不按步数）',
+    run(t) {
+      // **按字节不按步数**：一步在橡皮擦场景下等于没有；按步数又会让 2304² 攒到几百 MiB。
+      t.equal(MAX_UNDO_BYTES, 32 * 1024 * 1024, '封顶 32 MiB')
+      // 口径对得上定稿里那三个实测数字
+      t.equal(snapshotBytes(2304, 2304), 5308416, '2304² 一份 5.06 MiB')
+      t.equal(Math.round(snapshotBytes(1024, 1024) / 1048576), 1, '1024² 约 1.00 MiB')
+      t.equal(Math.round(snapshotBytes(200, 200) / 1024), 39, '200² 约 39 KB')
+      t.equal(patchBytes(270), 2160, '一笔涂抹约 270 条 ≈ 2 KB')
+
+      const pre = { w: 8, h: 8, rule: 'B3/S23', stamp: 0 }
+      const s = createUndoStack(200)      // 只装得下 200 字节
+      for (let i = 0; i < 5; i++) {
+        s.push({ kind: 'snapshot', label: 'n' + i, session: { w: 10, h: 10, cells: [] }, pre })
+      }
+      t.ok(s.bytes() <= 200, `丢完之后要在封顶之内（实际 ${s.bytes()}）`)
+      t.equal(s.peek().label, 'n4', '丢的是最旧的，栈顶还是最新那一步')
+      t.ok(s.size() < 5, '确实丢掉了几条')
+
+      // 一条比封顶还大的，也得留着 —— 否则刚压进去的自己被挤掉，等于压了个寂寞
+      const one = createUndoStack(10)
+      one.push({ kind: 'snapshot', label: 'big', session: { w: 100, h: 100, cells: [] }, pre })
+      t.equal(one.size(), 1, '装不下也要留最后一条')
+      t.ok(one.canUndo(), '留着就得能撤')
+    }
+  },
+  {
+    name: '撤销：补丁自带前提，对不上就先说再丢（绝不按错坐标回滚）',
+    run(t) {
+      const now = { w: 8, h: 8, rule: 'B3/S23', stamp: 3 }
+      const patch = { kind: 'patch', cells: [[1, 1, 0]], pre: { w: 8, h: 8, rule: 'B3/S23', stamp: 3 } }
+      t.equal(staleReason(patch, now), null, '四样都对上就能用')
+
+      // **三种失效原因**，一种一条路
+      t.equal(staleReason({ ...patch, pre: { ...patch.pre, w: 9 } }, now), 'size', '尺寸变了')
+      t.equal(staleReason({ ...patch, pre: { ...patch.pre, h: 9 } }, now), 'size', '高变了也是尺寸')
+      t.equal(staleReason({ ...patch, pre: { ...patch.pre, rule: 'B36/S23' } }, now), 'rule', '规则变了')
+      t.equal(staleReason({ ...patch, pre: { ...patch.pre, stamp: 2 } }, now), 'replaced', '整盘被换过')
+      for (const r of STALE_REASONS) t.ok(!!DICT.zh['undo.stale.' + r] && !!DICT.en['undo.stale.' + r],
+        `三种原因都要有词条：undo.stale.${r}`)
+
+      // 快照不查前提：它整份都带着，换过盘也还得回去
+      const snap = { kind: 'snapshot', session: { w: 4, h: 4, cells: [] }, pre: { w: 99, h: 99, rule: 'X', stamp: 0 } }
+      t.equal(staleReason(snap, now), null, '快照不依赖现在长什么样')
+
+      // **兜底那句话要具体**：三种共用一个句式，且不许只说"撤不了"
+      for (const r of STALE_REASONS) {
+        const zh = DICT.zh['undo.stale.' + r]
+        t.ok(zh.indexOf('之前的改动就退不回去了') >= 0, `${r} 要与另外两条同一个句式`)
+        t.ok(zh.indexOf('换') === 0 || zh.indexOf('换了') >= 0, `${r} 要说清是哪一种变化`)
+      }
+    }
+  },
+  {
+    name: '撤销：世代戳打在闸那一处，新增写盘路径自动被覆盖',
+    run(t) {
+      const main = readSrc('src/main.js')
+      // 戳打在闸里 —— 不是打在各个写盘入口里（那样每加一条路就得记得回来加一行）
+      const gate = locate(main, /app\.assertBoardUnlocked = function[\s\S]*?\n\}/g, '闸的定位')[0]
+      t.ok(/app\.boardStamp\+\+/.test(gate), '世代戳要打在闸那一处')
+      t.equal((main.match(/app\.boardStamp\+\+/g) || []).length, 1, '而且只有这一处打戳')
+
+      // **engine.step() 不过闸**（热路径不买单），所以它有自己的守卫
+      const tick = locate(main, /app\.tick = function[\s\S]*?\n\}/g, 'tick 的定位')[0]
+      t.ok(/app\.invalidateUndoOnStep\(\)/.test(tick), '跑一代要作废整栈')
+      t.ok(!/assertBoardUnlocked/.test(tick), 'step 不许过闸 —— 热路径不为一致性买单')
+      const replayStep = locate(main, /app\.replayStep = function[\s\S]*?\n\}/g, 'replayStep 的定位')[0]
+      t.ok(/app\.invalidateUndoOnStep\(\)/.test(replayStep), '重放的每一代同理')
+
+      // 表旁边要留一行说明这件事（定稿点名）
+      const sess = readSrc('src/data/session.js')
+      t.ok(/engine\.step\(\)\*?\*? ?不在这张表里/.test(sess.replace(/`/g, '')),
+        'SESSION_WRITERS 旁边要写明 step 为什么不在表里')
+      t.ok(SESSION_WRITERS.some(w => w.name === 'undo' && w.writes === 'cells+env+view' &&
+        w.keeps === 'replace' && w.asks === false), '撤销要进下半张表，且四栏与定稿一致')
+    }
+  },
+  {
+    name: '撤销：canUndo() 是单一判断源，两个入口一个 token',
+    run(t) {
+      const main = readSrc('src/main.js')
+      const controls = readSrc('src/ui/controls.js')
+      // **守卫钉住的就是这个赋值表达式**（§12 第一次落在布尔值上）
+      t.ok(/el\.undo\.disabled = !app\.canUndo\(\)/.test(main),
+        '按钮的 disabled 必须就是 !canUndo() —— 改成"栈非空"会漏掉前提已失效的那一半')
+      t.equal((main.match(/el\.undo\.disabled =/g) || []).length, 1, 'disabled 只许在一处赋值')
+      // 临时条出不出现也问它
+      const bar = locate(main, /app\.showUndoBar = function[\s\S]*?\n\}/g, 'showUndoBar 的定位')[0]
+      t.ok(/app\.canUndo\(\)/.test(bar), '临时条出不出现也问 canUndo()')
+      // 两个入口，同一个动作
+      t.equal((controls.match(/addEventListener\('click', \(\) => app\.undo\(\)\)/g) || []).length, 2,
+        '两个入口都调同一个 app.undo()')
+      // **撤销自己不压栈**：否则撤销之后再撤销就在两个状态之间打转
+      const undoFn = locate(main, /app\.undo = function[\s\S]*?\n\}/g, 'undo 的定位')[0]
+      t.ok(!/pushUndo/.test(undoFn), '撤销自己不许压栈')
+      // 还原要连 currentShowId 与"在不在跑"（定稿点名的两样）
+      t.ok(/app\.currentShowId = top\.showId/.test(undoFn), '还原要连 currentShowId，否则 id= 指错')
+      const restore = locate(main, /app\.restoreSession = function[\s\S]*?\n\}/g, 'restoreSession 的定位')[0]
+      t.ok(/snap\.running/.test(restore), '还原要连"在不在跑"')
+      t.ok(/snap\.view/.test(restore), '还原要连取景')
+
+      // **临时条只在"指不回去"的时候出声**（D112）：清空 / 随机。
+      // 画笔之后不许弹 —— 单个格子点一下就改回来了，那时弹条就是在跟"点一下"抢活干，
+      // 于是两件事互相解释，用户反而不知道该用哪个。
+      t.equal((main.match(/app\.showUndoBar\(\)/g) || []).length, 2, '临时条只有两处出声')
+      const clearFn = locate(main, /app\.clear = function[\s\S]*?\n\}/g, 'clear 的定位')[0]
+      const randFn = locate(main, /app\.randomize = function[\s\S]*?\n\}/g, 'randomize 的定位')[0]
+      t.ok(/app\.showUndoBar\(\)/.test(clearFn) && /app\.showUndoBar\(\)/.test(randFn),
+        '那两处就是清空与随机')
+      const commit = locate(readSrc('src/ui/input.js'), /function commitStroke\(\)[\s\S]*?\n  \}/g, 'commitStroke 的定位')[0]
+      t.ok(!/showUndoBar/.test(commit), '画笔收笔不许弹临时条 —— 那一格点一下就能改回来')
+      // 提示那句话要**划线**，不是枚举 —— 枚举会让人问"那我点一下算什么"
+      t.ok(/单个格子/.test(DICT.zh['undo.tip']),
+        '按钮提示要说清"单个格子点一下就能改回来"，把两件事的界划开')
+    }
+  },
+  {
+    name: '撤销：八件事都压栈，A 类还要作废之前的补丁',
+    run(t) {
+      const main = readSrc('src/main.js')
+      const io = readSrc('src/ui/io.js')
+      const input = readSrc('src/ui/input.js')
+      const fav = readSrc('src/ui/favorites-view.js')
+      // 定稿的范围：橡皮擦、画笔、清空、随机填充、改尺寸、载入图案、载入内置局、读档
+      t.ok(/pushUndoPatch\(stroke\.cells, stroke\.runDirtyBefore\)/.test(input), '画笔/橡皮擦：收笔时压补丁')
+      t.ok(/app\.pushUndoPatch\(before, app\.runDirty\)/.test(main), '载入图案：只记它盖住那块矩形')
+      for (const [src, label, name] of [[main, 'clear', '清空'], [main, 'randomize', '随机填充']]) {
+        t.ok(new RegExp("pushUndoSnapshot\\('" + label + "'\\)").test(src), `${name}：压整份快照`)
+      }
+      // **A 类**（改尺寸/读档/载入）压栈即作废之前的补丁 —— 第二道兜底
+      for (const [src, label, name] of [[main, 'resizeBoard', '改尺寸'], [io, 'loadFile', '读档'],
+        [fav, 'showcase', '载入内置局']]) {
+        t.ok(new RegExp("pushUndoSnapshot\\('" + label + "', \\{ dropPatches: true \\}\\)").test(src),
+          `${name} 是 A 类：压栈即作废之前的补丁`)
+      }
+      // A 类清补丁但**留快照** —— 快照整份都带着，换过盘也还得回去
+      const pre = { w: 8, h: 8, rule: 'B3/S23', stamp: 0 }
+      const st = createUndoStack()
+      st.push({ kind: 'snapshot', label: 'a', session: { w: 4, h: 4, cells: [] }, pre })
+      st.push({ kind: 'patch', label: 'b', cells: [[0, 0, 0]], pre })
+      st.push({ kind: 'snapshot', label: 'c', session: { w: 4, h: 4, cells: [] }, pre }, { dropPatches: true })
+      t.equal(st.size(), 2, '补丁被清掉，快照留着')
+      t.equal(st.peek().label, 'c', '栈顶是刚压的那一条')
+      // 读档：两处拒绝之后才压 —— 什么都没发生就压，等于给了颗撤不出东西的后悔药
+      const imp = locate(io, /app\.importRleText = function[\s\S]*?\n  \}/g, 'importRleText 的定位')[0]
+      t.ok(imp.indexOf('rleTooBig') < imp.indexOf('pushUndoSnapshot'),
+        '压栈要在"装不下"那条拒绝之后')
+      t.ok(imp.indexOf('rleFail') < imp.indexOf('pushUndoSnapshot'),
+        '压栈要在"解析失败"那条拒绝之后')
+    }
   }
+,
+  {
+    name: '底部安全区：横条之上才算可点（D112）',
+    run(t) {
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+
+      // **前提**：没有 viewport-fit=cover，iOS 上 env(safe-area-inset-*) 恒为 0 ——
+      // 下面那些 CSS 写得再对也是空转。这一条最容易在改 meta 时被顺手删掉，所以单独钉。
+      const vp = locate(html, /<meta name="viewport"[^>]*>/g, 'viewport meta 的定位')[0]
+      t.ok(/viewport-fit=cover/.test(vp),
+        'viewport meta 必须带 viewport-fit=cover —— 少了它，安全区的值恒为 0，整条修法空转')
+
+      // **一处定义**：新增底部浮层引它，不必各写各的 env()
+      t.equal((css.match(/--safe-b:\s*env\(safe-area-inset-bottom, 0px\)/g) || []).length, 1,
+        '--safe-b 只在一处定义，且带 0px 兜底（非 iOS 本来就该是 0）')
+
+      // **不许写死**：34px 是某一代机型的数，机型换了就错（作者定）
+      const decls = (css.match(/^[^\n/*]*(?:padding-bottom|bottom|height|transform)\s*:[^;]*;/gm) || [])
+      const hard = decls.filter(d => /safe|inset/i.test(d) && /\d+px/.test(d) && !/var\(--safe-b\)|env\(/.test(d))
+      t.equal(hard.length, 0, `安全区不许写死像素：${hard.join(' | ')}`)
+
+      // 三处落实：流式布局整体让开 + 抽屉抬高 + 把手自己盖满露出来那一带
+      t.ok(/padding-bottom: calc\(46px \+ var\(--safe-b\)\)/.test(css),
+        '#app 要把安全区一起让出来 —— 它是必经之路，棋盘/临时条/控制排/卡片带全在它的流里')
+      t.ok(/transform: translateY\(calc\(100% - 46px - var\(--safe-b\)\)\)/.test(css),
+        '抽屉是 position:fixed，不在流里，要自己抬')
+      t.ok(/height: calc\(46px \+ var\(--safe-b\)\)/.test(css) &&
+        /padding-bottom: var\(--safe-b\)/.test(css),
+        '把手要长到盖满露出来那一带 —— 否则横条里露出的是面板正文，' +
+        '第一条分组标题正好落在那儿，等于把一个危险目标换成另一个')
+    }
+  }
+
 )
 
 function now() {

@@ -735,7 +735,6 @@ export const DICT = {
     'intro.act3.title': '你定好开局，剩下的世界自己决定。',
     'intro.act3.body': '按下播放，就没人能插手了 —— 它们只会照那三条规矩一步步走下去。',
     'intro.act3.caption': '这就是好玩的地方：你只决定第一步。',
-    'intro.act3.badLink': '你点开的那条链接没能打开 —— 这一局不是它。',
     'intro.act3.gift': '这就给你放一个「会走路的小家伙」，按开始看看它往哪爬。',
     // 从别人的链接进来时换这一句（D107 ③）：棋盘上已经有他要看的那一局，
     // 这时候再承诺"给你放个小家伙"就是说话不算数（D70）
@@ -1748,7 +1747,6 @@ export const DICT = {
     'intro.act3.title': 'You set up the start. The world decides the rest.',
     'intro.act3.body': 'Once you press play nobody can interfere — they just follow those three rules, step after step.',
     'intro.act3.caption': 'That is the fun of it: you only decide the first move.',
-    'intro.act3.badLink': "The link you opened could not be loaded — this board is not the one it pointed at.",
     'intro.act3.gift': 'Here is a little guy that walks, ready to go. Press start and see where he crawls.',
     'intro.act3.shared': 'The board already holds the run someone shared with you — close this card and press start to watch it move.',
     'intro.appendix.entry': 'More if you are curious: colours and rules →',

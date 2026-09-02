@@ -323,7 +323,11 @@ export function createIntro(app) {
       // 队里那件事由**第三幕或挡路框二选一**呈现（D110 §24 修订）：
       // 取到了就由我说，取不到说明别处已经说了。
       if (app.takeNotice) app.takeNotice()
-      return { cls: 'mishap', key: 'intro.act3.badLink', reasonKey: 'share.bad.' + intent.brokenLink }
+      // **两个渲染者的文案取自同一处**（D110 §29，作者定）：这里与挡路框用的是
+      // 同一对词条 —— 标题 `share.failed.title` + 理由 `share.bad.<reason>`。
+      // 各写各的话，措辞与分量迟早分叉，而分叉正是"谁都以为对方说了"的病根换了个位置。
+      // 这也顺带去掉了"同一件事说两遍"：引导原先那句自有文案与理由重复。
+      return { cls: 'mishap', key: 'share.failed.title', reasonKey: 'share.bad.' + intent.brokenLink }
     }
     if (intent.starterGift === false) return { cls: 'gift', key: 'intro.act3.shared' }
     return { cls: 'gift', key: 'intro.act3.gift' }

@@ -1689,6 +1689,27 @@ const JS_KEYWORDS = ('async if for while switch catch return typeof function of 
   'throw case super this import export instanceof let const var class extends try finally break continue default ' +
   'null true false undefined').split(' ')
 
+/**
+ * **在源码里定位一段代码：必须唯一命中**（D110 §30）。
+ *
+ * 四次假守卫里有三次栽在同一件事上：**匹配式匹到了别的东西** ——
+ * `resize` 在正文里到处都是、函数改名就绕过去、`'function act3'` 先匹到 `act3Notice`。
+ * 所以定位一律走这里：命中数不等于预期就抛，**"匹错了"和"什么都没匹到"一起被抓**，
+ * 不靠人想起来。
+ *
+ * @param {string} src 源码 @param {RegExp} re 必须带 g 标志 @param {string} what 报错时说人话
+ * @param {number} [expect] 预期命中几处（默认 1）
+ * @returns {string[]} 命中的那些段
+ */
+function locate(src, re, what, expect = 1) {
+  const all = String(src).match(re) || []
+  if (all.length !== expect) {
+    throw new Error(`${what}：预期命中 ${expect} 处，实际 ${all.length} 处` +
+      (all.length ? `（第一处：${JSON.stringify(all[0].slice(0, 60))}）` : ''))
+  }
+  return all
+}
+
 function readSrc(path) {
   if (typeof readTextFile !== 'function') throw new Error('运行器没有提供 readTextFile')
   return readTextFile(path)
@@ -1757,11 +1778,11 @@ cases.push(
       // 那样下面那条**否定**断言会假通过 —— 比漏掉更糟。
       const raw = readSrc('src/ui/input.js')
       const src = stripLiterals(raw)
+      // 定位一律走"唯一命中"（D110 §30）：不带左括号会匹到同前缀的另一个函数
       const fn = name => {
-        const i = src.indexOf('function ' + name)
-        t.ok(i >= 0, `input.js 里应有 ${name}()`)
-        // 粗略取到下一个顶层 function 之前
-        const next = src.indexOf('\n  function ', i + 1)
+        locate(src, new RegExp('function ' + name + '\\(', 'g'), `input.js 里 ${name}() 的定位`)
+        const i = src.indexOf('function ' + name + '(')
+        const next = src.indexOf('\n  function ', i + 1)   // 粗略取到下一个顶层 function 之前
         return src.slice(i, next < 0 ? src.length : next)
       }
       const paint = fn('paintLine')
@@ -1872,7 +1893,7 @@ cases.push(
       // 引导照常清盘送礼，而"链接坏了"这件事恰恰对最需要知道的那个人隐藏了：
       // 第一次点开、正在走引导的人。老窗口反而看得到，因为它不走引导。
       // 三条路：有效链接 / 坏链接 / 没链接，**说的那句与做的那件事必须用同一组判据**。
-      const LINE_KEYS = ['intro.act3.gift', 'intro.act3.shared', 'intro.act3.badLink']
+      const LINE_KEYS = ['intro.act3.gift', 'intro.act3.shared']
       const PREDICATES = ['app.shareApplied', 'intent.starterGift === false', 'intent.brokenLink']
       // **拒绝的理由可以有 N 种，走的路只有一条**（D110 §23 修订，作者定）：
       // 按理由挑路注定要漏（v1.18.1 那次就漏了"id 认不出"这条理由的呈现样式），
@@ -1901,12 +1922,15 @@ cases.push(
         }
       }
       const src = stripLiterals(readSrc('src/ui/intro.js'))
-      const bodyOf = name => {
-        const i = src.indexOf('function ' + name)
-        t.ok(i >= 0, `intro.js 里应有 ${name}()`)
-        const next = src.indexOf('\n  function ', i + 1)
-        return src.slice(i, next < 0 ? src.length : next)
+      // 定位函数体：**加左括号 + 唯一命中**（D110 §30）。
+      // 不加左括号，'act3' 会先匹到 act3Notice；不数命中数，重名函数悄悄挑错一个。
+      const cut = (text, name) => {
+        locate(text, new RegExp('function ' + name + '\\(', 'g'), `${name}() 的定位`)
+        const i = text.indexOf('function ' + name + '(')
+        const next = text.indexOf('\n  function ', i + 1)
+        return text.slice(i, next < 0 ? text.length : next)
       }
+      const bodyOf = name => cut(src, name)
       const raw = readSrc('src/ui/intro.js')
       for (const key of LINE_KEYS) {
         t.ok(raw.indexOf(key) >= 0, `第三幕要挑得到 ${key}`)
@@ -1914,13 +1938,7 @@ cases.push(
       }
       // 三句话由**一处**挑（giftLineKey），而不是散在几个三元表达式里。
       // 词条名是字符串字面量：bodyOf 拿的是 stripLiterals 的输出，查它得用**原文**（D88 §3）
-      const rawBodyOf = name => {
-        // 加上左括号再找：不然 'act3' 会先匹配到 act3Notice（前缀相同，自查时抓到的）
-        const i = raw.indexOf('function ' + name + '(')
-        t.ok(i >= 0, `intro.js 里应有 ${name}()`)
-        const next = raw.indexOf('\n  function ', i + 1)
-        return raw.slice(i, next < 0 ? raw.length : next)
-      }
+      const rawBodyOf = name => cut(raw, name)
       const picker = rawBodyOf('act3Notice')
       for (const key of LINE_KEYS) t.ok(picker.indexOf(key) >= 0, `giftLineKey 里要挑得到 ${key}`)
       t.ok(/const n = act3Notice\(\)/.test(raw), '第三幕那一块就是它挑出来的')
@@ -1939,7 +1957,15 @@ cases.push(
       // 兜底：认不出的理由也要说得出话
       t.ok(!!DICT.zh['share.bad.other'] && !!DICT.en['share.bad.other'], '没有对应词条时有兜底那句')
       t.ok(/\.intro-body \.mishap \{/.test(readSrc('src/style.css')), 'mishap 有自己的样式')
-      t.ok(!/\*\*/.test(DICT.zh['intro.act3.badLink']), '文案里不许留渲染不了的 ** 标记')
+      // **两个渲染者的文案取自同一处**（D110 §29，作者定）：引导第三幕与挡路框
+      // 用的必须是同一对词条，不许各写各的 —— 各写各的，措辞与分量迟早分叉。
+      t.ok(/key: 'share\.failed\.title'/.test(picker), '引导用的是挡路框那句标题')
+      t.ok(/reasonKey: 'share\.bad\.' \+ intent\.brokenLink/.test(picker), '理由也来自同一族词条')
+      t.ok(!('intro.act3.badLink' in DICT.zh) && !('intro.act3.badLink' in DICT.en),
+        '引导不许再有自己那份坏消息文案')
+      const mainSrc = readSrc('src/main.js')
+      t.ok(/title: t\('share\.failed\.title'\)/.test(mainSrc), '挡路框用的也是它')
+      t.ok(/body: t\(key\) \|\| t\('share\.bad\.other'\)/.test(mainSrc), '挡路框的正文同样来自 share.bad.*')
       // 队列：拒绝一发生就入队，第三幕与挡路框**二选一**消费（D110 §24 修订）
       t.ok(/if \(app\.takeNotice\) app\.takeNotice\(\)/.test(picker), '第三幕说了就把那件事取走')
       const main = readSrc('src/main.js')
@@ -6566,6 +6592,31 @@ cases.push(
         t.ok(!!DICT[lang]['board.bigNoteMeasured'], `${lang} 缺实测那句`)
         t.ok(/你这台|your machine/i.test(DICT[lang]['board.bigNoteMeasured']), `${lang} 要说清是"你这台"`)
       }
+    }
+  },
+  {
+    name: '守卫自己的守卫：文本定位必须唯一命中（D110 §30）',
+    run(t) {
+      // 四次假守卫里有三次是同一个形状：**匹配式匹到了别的东西**。
+      // 这条把那件事变成机器查得出来的：定位函数体一律带左括号，并且数命中数。
+      const self = readSrc('tests/cases.js')
+      // ① 定位器本身在，而且会因"命中数不对"而抛
+      t.ok(/function locate\(src, re, what, expect = 1\)/.test(self), '有 locate 这个定位器')
+      t.ok(/if \(all\.length !== expect\)/.test(self), '命中数不等于预期就抛')
+      let threw = 0
+      try { locate('function a() {} function ab() {}', /function a\(/g, '测试', 1) } catch (e) { threw++ }
+      t.equal(threw, 0, '唯一命中时不该抛')
+      try { locate('xx yy xx', /xx/g, '测试', 1) } catch (e) { threw++ }
+      t.equal(threw, 1, '命中两处时必须抛 —— "匹错了"和"没匹到"一样红')
+      try { locate('nothing here', /zzz/g, '测试', 1) } catch (e) { threw++ }
+      t.equal(threw, 2, '一处都没命中也必须抛')
+      // ② 不许再出现"不带左括号找函数名"这种定位方式（act3 匹到 act3Notice 就是它）
+      const bad = self.match(/indexOf\('function ' \+ \w+\)/g) || []
+      t.equal(bad.length, 0, `不许用不带左括号的函数名定位（有 ${bad.length} 处）`)
+      // ③ 抽样自证：把左括号去掉，act3 会先命中 act3Notice
+      const intro = readSrc('src/ui/intro.js')
+      t.ok(intro.indexOf('function act3(') !== intro.indexOf('function act3'),
+        'act3 与 act3Notice 前缀相同 —— 这正是那条规矩的由来')
     }
   },
   {

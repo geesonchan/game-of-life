@@ -7219,7 +7219,7 @@ cases.push(
     }
   },
   {
-    name: '撤销：canUndo() 是单一判断源，两个入口一个 token',
+    name: '撤销：canUndo() 是单一判断源（临时条已撤销，D116）',
     run(t) {
       const main = readSrc('src/main.js')
       const controls = readSrc('src/ui/controls.js')
@@ -7232,22 +7232,38 @@ cases.push(
       t.ok(/el\.undo\.disabled = !can\b/.test(refresh), '按钮的 disabled 就是它的反面')
       t.ok(!/undoStack\.canUndo\(\)/.test(refresh), 'refreshUndo 不许绕过 canUndo() 直接问栈')
       t.equal((main.match(/el\.undo\.disabled =/g) || []).length, 1, 'disabled 只许在一处赋值')
-      // **条子的出现与消失也归这一处**（D114）：不许出现一处、消失另外三处
-      t.ok(/el\.undoBar\.parentNode\.hidden = !alive/.test(refresh),
-        '条子的显隐只许在 refreshUndo 里落一次')
-      t.equal((main.match(/undoBar\.parentNode\.hidden =/g) || []).length, 1,
-        '条子的 hidden 只许在一处赋值 —— 出现与消失同一处判断')
-      const bar = locate(main, /app\.showUndoBar = function[\s\S]*?\n\}/g, 'showUndoBar 的定位')[0]
-      t.ok(/app\.refreshUndo\(\)/.test(bar), '出现也走那一处，不自己动 DOM')
-      // **一个撤销，一个颜色，两个位置**（D114）：控制排那颗与条子上那颗必须同色，一处定义
+      // **临时条已撤销**（D116）：它压在画布下沿，挡视线也挡操作。
+      // 撤销只剩控制排那一个入口 —— 于是"两个入口一个 token"那一批守卫跟着退休，
+      // 判据留在 decisions.md（标"已撤销"，不删）。这里改钉"只有一个入口"。
+      const controlsSrc = readSrc('src/ui/controls.js')
+      t.equal((controlsSrc.match(/addEventListener\('click', \(\) => app\.undo\(\)\)/g) || []).length, 1,
+        '撤销只有一个入口 —— 临时条已撤销（D116）')
+      // **压了栈的人必须说一声"我做完了"**（D116）：否则按钮停在旧状态，
+      // 而临时条撤掉之后按钮是唯一入口 —— 一帧的旧状态就是"点了没反应"。
+      for (const [f, fn, re] of [
+        ['src/main.js', 'clear', /app\.clear = function[\s\S]*?\n\}/g],
+        ['src/main.js', 'randomize', /app\.randomize = function[\s\S]*?\n\}/g],
+        ['src/main.js', 'resizeBoard', /app\.resizeBoard = function[\s\S]*?\n\}/g],
+        ['src/main.js', 'placeStampAt', /app\.placeStampAt = function[\s\S]*?\n\}/g],
+        ['src/ui/io.js', 'importRleText', /app\.importRleText = function[\s\S]*?\n  \}/g],
+        ['src/ui/input.js', 'commitStroke', /function commitStroke\(\)[\s\S]*?\n  \}/g]
+      ]) {
+        const body = locate(readSrc(f), re, fn + ' 的定位')[0]
+        t.ok(/pushUndo/.test(body), `${fn} 应该压栈`)
+        t.ok(/app\.endStep\(\)/.test(body), `${fn} 压了栈就得叫 endStep() 说一声做完了`)
+      }
+      t.ok(!/undoBar|showUndoBar|hideUndoBar|barToken|undoToken/.test(main),
+        'main.js 里不许再有临时条的残留 —— 撤了就撤干净（撤看展那次的规矩）')
+      t.ok(!/undo-bar|undo\.bar/.test(readSrc('index.html') + readSrc('src/style.css')),
+        'HTML 与样式里也不许有临时条的残留')
+      t.ok(!('undo.bar' in DICT.zh) && !('undo.barAction' in DICT.zh),
+        '临时条的词条已删 —— 没有使用者的词条就是死文案')
       const html = readSrc('index.html')
       const cls = (id) => {
         const tag = locate(html, new RegExp('<button id="' + id + '"[^>]*>', 'g'), id + ' 的定位')[0]
         const m = tag.match(/class="([^"]*)"/)
         return m ? m[1].trim() : ''
       }
-      t.equal(cls('btn-undo'), cls('btn-undo-bar'),
-        '两处撤销必须同色 —— 一个动作、两个位置，颜色不许各写各的')
       t.equal(cls('btn-undo'), 'recover',
         '撤销走后悔药档（D72 第七档），不与「适配」共用救援蓝：' +
         '救援档的定义是"无损、只改看的方式"，而撤销要改棋盘内容')
@@ -7260,35 +7276,18 @@ cases.push(
       t.ok(bg(recoverRule) && bg(runRule) && bg(recoverRule) !== bg(runRule),
         `后悔药档与进行中档不许同色（recover ${bg(recoverRule)} / running ${bg(runRule)}）`)
 
-      const hide = locate(main, /app\.hideUndoBar = function[\s\S]*?\n\}/g, 'hideUndoBar 的定位')[0]
-      t.ok(/app\.barToken = null/.test(hide) && /app\.refreshUndo\(\)/.test(hide),
-        '消失也走那一处：清 token + 刷新')
-      // 两个入口，同一个动作
-      t.equal((controls.match(/addEventListener\('click', \(\) => app\.undo\(\)\)/g) || []).length, 2,
-        '两个入口都调同一个 app.undo()')
       // **撤销自己不压栈**：否则撤销之后再撤销就在两个状态之间打转
       const undoFn = locate(main, /app\.undo = function[\s\S]*?\n\}/g, 'undo 的定位')[0]
       t.ok(!/pushUndo/.test(undoFn), '撤销自己不许压栈')
-      // **双向**：不管从哪个入口消费，这一次撤销都用掉了
-      t.ok(/app\.barToken = null/.test(undoFn),
-        '撤销一旦发生就清掉条子的 token —— 两个入口是一次撤销的两个按钮，不是两次机会')
       // 还原要连 currentShowId 与"在不在跑"（定稿点名的两样）
       t.ok(/app\.currentShowId = top\.showId/.test(undoFn), '还原要连 currentShowId，否则 id= 指错')
       const restore = locate(main, /app\.restoreSession = function[\s\S]*?\n\}/g, 'restoreSession 的定位')[0]
       t.ok(/snap\.running/.test(restore), '还原要连"在不在跑"')
       t.ok(/snap\.view/.test(restore), '还原要连取景')
 
-      // **临时条只在"指不回去"的时候出声**（D112）：清空 / 随机。
-      // 画笔之后不许弹 —— 单个格子点一下就改回来了，那时弹条就是在跟"点一下"抢活干，
-      // 于是两件事互相解释，用户反而不知道该用哪个。
-      t.equal((main.match(/app\.showUndoBar\(\)/g) || []).length, 2, '临时条只有两处出声')
-      const clearFn = locate(main, /app\.clear = function[\s\S]*?\n\}/g, 'clear 的定位')[0]
-      const randFn = locate(main, /app\.randomize = function[\s\S]*?\n\}/g, 'randomize 的定位')[0]
-      t.ok(/app\.showUndoBar\(\)/.test(clearFn) && /app\.showUndoBar\(\)/.test(randFn),
-        '那两处就是清空与随机')
-      const commit = locate(readSrc('src/ui/input.js'), /function commitStroke\(\)[\s\S]*?\n  \}/g, 'commitStroke 的定位')[0]
-      t.ok(!/showUndoBar/.test(commit), '画笔收笔不许弹临时条 —— 那一格点一下就能改回来')
-      // 提示那句话要**划线**，不是枚举 —— 枚举会让人问"那我点一下算什么"
+      // **撤销与「点一下熄灭」的分工判据留着**（D112）：临时条撤销了，
+      // 但"撤销管整步、点一下管一格"这条线还在，靠的是按钮那句提示。
+      // 提示要**划线**，不是枚举 —— 枚举会让人问"那我点一下算什么"。
       t.ok(/单个格子/.test(DICT.zh['undo.tip']),
         '按钮提示要说清"单个格子点一下就能改回来"，把两件事的界划开')
     }
@@ -7360,6 +7359,22 @@ cases.push(
         '把手要长到盖满露出来那一带 —— 否则横条里露出的是面板正文，' +
         '第一条分组标题正好落在那儿，等于把一个危险目标换成另一个')
 
+      // **满屏高度一律用 dvh，不许用裸 vh**（D115）。
+      // iOS Safari 上 `vh` / `inset:0` 量的都是"工具栏收起时"的最大高度 ——
+      // 工具栏一露出来，按它算出来的下缘就跑到工具栏底下去了。
+      // 这一条与安全区是**两件事**：工具栏 vs home indicator，各让各的。
+      // 注释里也会写到 `inset: 0`（正是在解释为什么不能用它）——
+      // 连注释一起查就会误判。查结构就得先把注释剥掉（§30 那条的同一个道理）。
+      const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
+      const bareVh = (cssCode.match(/[^-a-z0-9](\d+)vh\b/g) || [])
+      t.equal(bareVh.length, 0,
+        `满屏高度要用 dvh，不许用裸 vh（还剩：${bareVh.join(' ')}）—— vh 量的是工具栏收起时的高度`)
+      for (const [sel, what] of [['\\.modal \\{', '弹层容器'], ['\\.tower-view \\{', '全屏视图']]) {
+        const rule = locate(cssCode, new RegExp(sel + '[^}]*\\}', 'g'), what + '规则的定位')[0]
+        t.ok(/height: 100dvh/.test(rule), `${what}要用 100dvh 定高，不能靠 inset:0 拉到布局视口底边`)
+        t.ok(!/inset:\s*0/.test(rule), `${what}不许再用 inset:0 —— 那条边量的是工具栏收起时的位置`)
+      }
+
       // **每一个够得着底边的 fixed 层，都得自己让开**（D113）。
       // `#app` 那句 padding-bottom 罩不住它们 —— 它们不在 #app 的流里。
       // 这条是**结构性**的：新加一个触底的浮层而忘了让开，当场红，不必靠记性。
@@ -7399,6 +7414,40 @@ cases.push(
       const more = locate(css, /\.tb-more-group \{[^}]*position: fixed[^}]*\}/g, '「更多」浮层规则的定位')[0]
       t.ok(/top: 54px/.test(more) && /max-height/.test(more),
         '「更多」是顶部下拉且封了高度，够不着底边；它变成触底浮层时，上面那条守卫会红')
+    }
+  }
+,
+  {
+    name: '假守卫的第二种形状：钉对了赋值，钉错了元素（D116）',
+    run(t) {
+      // **来历**：临时条那段代码是 `el.undoBar.parentNode.hidden = !alive` ——
+      // 而 `el.undoBar` 取的是**按钮**（`btn-undo-bar`），真正要藏的是它的父节点 `#undo-bar`。
+      // 守卫钉住了那个**赋值表达式**，也数了"只许赋值一处"，看上去很严 ——
+      // 但它从没钉过"`parentNode` 到底是不是那个元素"。
+      // 有人把按钮包一层 <span>，`parentNode` 就悄悄变成 span：
+      // 代码藏错了东西、条子照样显示，**而守卫的文本一个字没变，照样绿**。
+      //
+      // 这与 §30 不是同一条：§30 是**匹配式**匹到了别的代码；
+      // 这一条是代码文本完全正确，**运行时指向的对象**是错的。
+      //
+      // **判据**：状态要落在"用 id 直接取到的元素"上，
+      // 不要落在靠相对导航（parentNode / parentElement / children[n] / closest）走到的元素上 ——
+      // 相对导航的结果由 DOM 结构决定，结构一变它就换了目标，而守卫看的是代码文本。
+      //
+      // **验法**：① 结构上 —— 扫"改显隐/可用性"的赋值，目标里不许出现相对导航（下面这条）；
+      // ② 运行时 —— 若能跑 DOM，断言"取到的元素.id === 期望的 id"
+      //    （JSC 运行器没有 DOM，那一层只能在浏览器实测里做，已在真机复验清单里）。
+      const files = ['src/main.js', 'src/ui/controls.js', 'src/ui/io.js', 'src/ui/intro.js',
+        'src/ui/favorites-view.js', 'src/ui/library.js', 'src/ui/records.js']
+      const bad = []
+      for (const f of files) {
+        const src = readSrc(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+        for (const m of src.match(/[\w.[\]()']*\.(?:hidden|disabled)\s*=[^=]/g) || []) {
+          if (/parentNode|parentElement|children\[|closest\(/.test(m)) bad.push(`${f}: ${m.trim()}`)
+        }
+      }
+      t.equal(bad.length, 0,
+        '改显隐/可用性时不许靠相对导航取元素（钉对赋值、钉错元素）：' + bad.join(' ／ '))
     }
   }
 

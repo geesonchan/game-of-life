@@ -51,9 +51,8 @@
         <button id="btn-fit-m" class="rescue" data-i18n="ctrl.fitShort" data-i18n-title="tip.fit">适配</button>
         <!-- 撤销：**后悔药档**琥珀（D72 第七档）。不与「适配」同色 ——
              那一档是"无损、只改看的方式"，而撤销要改棋盘内容；它和「清空」才是一对。
-             它是常驻入口；清空/随机之后画布下沿那条临时条是第二个入口，
-             **两颗必须同色**（同一个动作、两个位置），所以共用 .recover 这一处定义。
-             两处共用同一个 token，消费一次两处都消失。 -->
+             **撤销只有这一个入口**（D116）：画布下沿那条临时条已撤销 ——
+             它压在棋盘上，挡视线也挡操作。碍事的东西留着是负分。 -->
         <button id="btn-undo" class="recover" data-i18n="undo.label" data-i18n-title="undo.tip" disabled>撤销</button>
         <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
       </div>
@@ -147,14 +146,6 @@
         <div class="replay-note" id="replay-note" hidden>
           <span>—</span>
           <div class="replay-track"><i id="replay-bar"></i></div>
-        </div>
-        <!-- 撤销的**第二个入口**：清空/随机之后画布下沿的临时条（8 秒）。
-             常驻按钮在配角排，这一条是"刚出事的那一刻就在手边" ——
-             清空/随机没有确认框，所以后悔药必须自己凑上来。
-             **同一个 token**：消费一次两处都消失（`app.refreshUndo` 一处决定）。 -->
-        <div class="undo-bar" id="undo-bar" hidden>
-          <span data-i18n="undo.bar">刚才那一步可以撤销</span>
-          <button id="btn-undo-bar" class="recover" data-i18n="undo.barAction">撤销</button>
         </div>
         <div class="sel-menu" id="sel-menu" hidden>
           <span class="sel-size" id="sel-size"></span>

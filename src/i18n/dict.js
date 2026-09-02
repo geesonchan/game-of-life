@@ -503,8 +503,6 @@ export const DICT = {
     // 单个格子指得到，点一下就改回来，不必动用撤销。
     // 一句话说清两边各管什么，它们就不再互相解释。
     'undo.tip': '撤销一整步（一笔 / 清空 / 随机 / 载入）。单个格子点一下就能改回来',
-    'undo.bar': '刚才那一步可以撤销',
-    'undo.barAction': '撤销',
     'toast.randomized': '已用种子 {seed} · 密度 {density} 初始化',
     'toast.resized': '棋盘 {w} × {h}',
     'toast.boundaryTorus': '边界：环形',
@@ -1524,8 +1522,6 @@ export const DICT = {
     'undo.stale.replaced': 'After replacing the whole board, earlier edits can no longer be undone',
     'undo.label': 'Undo',
     'undo.tip': 'Undo a whole step (a stroke, clear, randomize, load). For one cell, just tap it again',
-    'undo.bar': 'That last step can be undone',
-    'undo.barAction': 'Undo',
     'toast.randomized': 'Seeded with {seed} at density {density}',
     'toast.resized': 'Board {w} × {h}',
     'toast.boundaryTorus': 'Boundary: torus',

@@ -148,47 +148,27 @@ export const STRUCTURE_CLAIMS = Object.freeze([
   {
     kind: 'pins',
     file: 'src/ui/controls.js',
-    says: '**两个入口，一次撤销**',
+    says: '撤销只有这一个入口',
     what: '撤销的入口',
-    // 数的是**接线**那一句，不是 app.undo() 这几个字 —— 后者在上面那段注释里也出现一次，
-    // 连注释一起数就是 3。守卫要数的是结构，不是文字（§30：匹配式得唯一命中它想命中的东西）。
     scan: { file: 'src/ui/controls.js', re: /addEventListener\('click', \(\) => app\.undo\(\)\)/g },
-    is: 2,
-    note: '常驻按钮 + 临时条。两处都调同一个 app.undo() —— 加第三个入口就得回来改这句话。'
+    is: 1,
+    note: '临时条撤销之后（D116），撤销只剩控制排那一颗。再加入口就得回来改这句话。'
+  },
+  {
+    kind: 'prose',
+    file: 'src/main.js',
+    says: '临时条撤掉之后这条路成了唯一入口',
+    why: '与 controls.js 那条"撤销只有这一个入口"是同一个事实，钉一次就够。'
   },
   {
     kind: 'pins',
     file: 'src/main.js',
-    says: '两个入口的**唯一**刷新处',
+    says: '撤销按钮的**唯一**刷新处',
     what: 'refreshUndo 的实现',
     scan: { file: 'src/main.js', re: /app\.refreshUndo = function/g },
     is: 1,
     note: '"唯一"那两个字就是这条钉的。controls.js 里曾经也有一份，' +
       '因为启动段要用而搬到了 main.js —— 搬完得只剩一份，不能两处都留。'
-  },
-  {
-    kind: 'prose',
-    file: 'src/main.js',
-    says: '**条子的出现与消失由这一处决定**',
-    why: '与 refreshUndo 那条"唯一刷新处"是同一个事实的另一面，钉一次就够。'
-  },
-  {
-    kind: 'prose',
-    file: 'src/main.js',
-    says: '现在只有一个判断',
-    why: '说的是"条子的死活只由一个条件决定"，与上面那条同一个事实。'
-  },
-  {
-    kind: 'prose',
-    file: 'src/main.js',
-    says: '**同一个 token 的两半**',
-    why: '说的是 undoToken / barToken 这一对变量，不是在数代码位置。'
-  },
-  {
-    kind: 'prose',
-    file: 'src/main.js',
-    says: '**撤销的两个入口在这里刷新**',
-    why: '引用上面 controls.js 那条已钉住的"两个入口"，说的是同一件事，不另钉。'
   },
   {
     kind: 'prose',

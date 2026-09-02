@@ -282,47 +282,58 @@ app.settleStep = function () {
   if (!step) return app.lastStepAdded
   app.pendingStep = null
   app.lastStepAdded = stepChangedAnything(step.entry, app.boardSnapshotNow())
-  if (app.lastStepAdded) {
-    app.undoStack.push(step.entry, step.opts)
-    app.undoToken++             // 新的一步 = 新的 token，旧条子自动过期
-  }
+  if (app.lastStepAdded) app.undoStack.push(step.entry, step.opts)
   return app.lastStepAdded
 }
 
 /**
  * 上一次结算收下了没有。
  *
- * 临时条问的是"**刚才那一步**"，不是"栈里还有东西吗" —— 两者不是一回事：
+ * 保留它是因为"**刚才那一次操作有没有产生一步**"与"栈里还有东西吗"**不是一回事**：
  * 同种子连按两次随机填充，第二次什么都没变，可栈里还留着第一次那一步。
- * 那时弹条就是在说谎（"刚才那一步可以撤销"，而刚才那一步根本不存在）。
+ * 临时条曾经就是分不清这两者才说了谎（D113 / D116 已撤销）；
+ * 将来任何"要向用户报告刚才这一下"的东西，都得问它，不能问 `canUndo()`。
  * 结算是幂等的，所以这个答案在同一拍里问几次都一样。
  */
 app.lastStepAdded = false
 
 /**
- * 两个入口的**唯一**刷新处（常驻按钮 + 临时条）。
+ * **一步做完了** —— 结算 + 刷新，写盘入口在自己做完之后叫一次。
  *
- * `canUndo()` 是单一判断源（D110 §12 第三面）：按钮的 `disabled` **就是** `!app.canUndo()`，
- * 临时条出不出现也问它。守卫钉住的正是这个赋值表达式 ——
- * 日后有人改成"栈非空"就红，因为那会漏掉"前提已经对不上"的那一半，
- * 于是按钮亮着、点下去只弹一句"退不回去了"。
+ * 它**不判断"算不算一步"**（那是 `settleStep` 的事，判断只在那一处）；
+ * 它只负责说一句"我做完了，可以看了"。
+ *
+ * 为什么必须由调用方叫、不能挂在 `updateHud()` 上：结算要比对**操作之后**的棋盘，
+ * 而 `clear()` 会在中途经 `setRunning(false)` 叫一次 `updateHud()` ——
+ * 那一刻棋盘还没清，在那儿结算会把刚压的那一步当空步丢掉（D113 踩过）。
+ * 只有调用方知道自己什么时候真的做完了。
+ *
+ * 也不能只靠帧回调：那样按钮会有一帧是旧的，而**面板隐藏时 rAF 根本不跑**
+ * —— 临时条撤掉之后这条路成了唯一入口，一帧的旧状态就是"点了没反应"。
+ */
+app.endStep = function () {
+  app.settleStep()
+  app.refreshUndo()
+}
+
+/**
+ * 撤销按钮的**唯一**刷新处。
+ *
+ * `canUndo()` 是单一判断源（D110 §12 第三面）：按钮的 `disabled` **就是** `!app.canUndo()`。
+ * 守卫钉住的正是这个赋值表达式 —— 日后有人改成"栈非空"就红，
+ * 因为那会漏掉"前提已经对不上"的那一半，于是按钮亮着、点下去只弹一句"退不回去了"。
  *
  * 放在 main.js 而不是 controls.js：压栈从启动段就开始了，那时 `setupControls` 还没跑。
  * 放那边就得先垫一个空函数占位 —— 那又成了"同一件事两份实现"。
+ *
+ * **临时条已撤销**（D116）：它压在画布下沿，挡视线也挡操作。
+ * 撤销现在只有控制排那一个入口。
  */
 app.refreshUndo = function () {
   const el = app.el
   if (!el || !el.undo) return          // 接线之前压的栈照样算数，只是还没有东西可刷新
   const can = app.canUndo()
   el.undo.disabled = !can
-  // **条子的出现与消失由这一处决定**（D114）。
-  // 从前是"出现在一处、消失在另外三处"，于是新增一条显示路径时，
-  // 那三条隐藏路径没跟着接上 —— 条子就只出不进了。
-  // 现在只有一个判断：这次撤销还挂着吗（`barToken`）、它还撤得动吗（`can`）。
-  // 三条退路（8 秒到、被消费掉、变得不可撤销）全都归结成"把 barToken 清掉"或"can 变 false"。
-  const alive = can && app.barToken !== null && app.barToken === app.undoToken
-  if (!alive && app.undoBarTimer) { clearTimeout(app.undoBarTimer); app.undoBarTimer = null }
-  if (el.undoBar) el.undoBar.parentNode.hidden = !alive
 }
 
 /**
@@ -331,32 +342,6 @@ app.refreshUndo = function () {
  * **同一个 token**：它与常驻按钮消费的是同一个栈顶，撤销一次两处一起没 ——
  * `app.undo()` 末尾那句 `refreshUndo()` 就是"一起没"的落实处。
  */
-app.undoBarTimer = null
-
-/**
- * **同一个 token 的两半**（D114）。
- *
- * `undoToken` 每收下一步 +1；`barToken` 记的是条子当初挂的是**哪一次**撤销。
- * 两者相等，条子说的才是"刚才那一步"。撤销一被消费（不管从哪个入口进来），
- * `barToken` 清掉 —— 于是两个按钮同时熄灭。**两个入口是一次撤销的两个按钮，不是两次机会。**
- */
-app.undoToken = 0
-app.barToken = null
-
-app.showUndoBar = function () {
-  // **这一次操作真的产生了一步，才出声**（D113）—— 不是"栈里还有东西"
-  if (!app.settleStep()) return
-  app.barToken = app.undoToken
-  if (app.undoBarTimer) clearTimeout(app.undoBarTimer)
-  app.undoBarTimer = setTimeout(() => app.hideUndoBar(), 8000)
-  app.refreshUndo()             // 出现也走那一处，不自己动 DOM
-}
-
-app.hideUndoBar = function () {
-  app.barToken = null           // 三条退路都归结成这一句
-  app.refreshUndo()
-}
-
 /**
  * 整盘改动压栈：存 `captureSession` 整份快照。
  *
@@ -442,9 +427,6 @@ app.undo = function () {
   app.cancelPending()
   app.dirty = true
   app.updateHud()
-  // **消费一次，两处都消失**（定稿那条是双向的）：不管用户点的是控制排那颗
-  // 还是条子上那颗，这一次撤销都用掉了 —— 条子不该留着说"还能再撤一次刚才那步"。
-  app.barToken = null
   app.refreshUndo()
   app.toast(t('undo.done'))
   return true
@@ -494,12 +476,8 @@ app.clear = function (opts = {}) {
   app.dirty = true
   app.updateHud()
   // 介绍卡收尾时要静默清盘 —— 用户刚点的是「开始玩」，弹一句「已清空」是答非所问
-  if (!opts.silent) {
-    app.toast(t('toast.cleared'))
-    // 清空没有确认框，所以后悔药得自己凑上来（临时条，8 秒）。
-    // 静默那条路不出：用户没点清空，弹一条"可以撤销"是答非所问，同上一句
-    app.showUndoBar()
-  }
+  if (!opts.silent) app.toast(t('toast.cleared'))
+  app.endStep()
 }
 
 app.randomize = function (opts = {}) {
@@ -517,8 +495,7 @@ app.randomize = function (opts = {}) {
   app.dirty = true
   app.updateHud()
   app.toast(t('toast.randomized', { seed, density: app.density.toFixed(2) }))
-  // 随机填充同样没有确认框，且它盖掉的常常是用户刚摆好的东西 —— 临时条更要出
-  app.showUndoBar()
+  app.endStep()
 }
 
 /** 应用一条新编译的规则（引擎会把不可达状态的细胞清成死亡，见 D18） */
@@ -614,6 +591,7 @@ app.resizeBoard = function (w, h, opts = {}) {
   if (app.el && app.el.size && app.el.size.set) app.el.size.set(String(w))   // 按钮组跟着变
   // 复现一局时换盘是"这一步的一部分"，那一刻会另有一句话说明整件事，别抢在它前面
   if (!opts.silent) app.toast(isBigBoard(w) ? t('toast.resizedBig', { w, h }) : t('toast.resized', { w, h }))
+  app.endStep()
 }
 
 /** 简洁 / 完整模式切换：只改 body 上的 class，具体哪些区块显示由 CSS 的 data-mode 决定 */
@@ -865,6 +843,7 @@ app.placeStampAt = function (cell) {
   app.dirty = true
   app.updateHud()
   app.toast(t('pattern.placed', { name: label }))
+  app.endStep()
 }
 
 /**
@@ -1737,13 +1716,6 @@ function frame(now) {
     app.records.renderPanel()
     app.recAt = now
   }
-
-  // **撤销的两个入口在这里刷新**（D113）。
-  // 为什么在帧里、不在 `updateHud()` 里：`clear()` 开头压栈，随后调 `setRunning(false)`，
-  // 而它自己会叫一次 `updateHud()` —— 那一刻棋盘**还没清**，
-  // 在那里结算就会把刚压的那一步当成"什么都没改"给丢掉（写的时候真踩到了）。
-  // 帧回调跑在整段同步操作**之后**，是唯一不会撞上半截状态的时刻。
-  app.refreshUndo()
 
   requestAnimationFrame(frame)
 }

@@ -114,6 +114,7 @@ export function setupCanvasInput(app) {
       app.setRefRay(null)
     }
     stroke = null
+    app.endStep()
   }
   function now() {
     return (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()

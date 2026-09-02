@@ -193,6 +193,7 @@ export function setupIO(app) {
     app.captureBaseline()
     app.dirty = true
     app.updateHud()
+    app.endStep()
     return true
   }
 

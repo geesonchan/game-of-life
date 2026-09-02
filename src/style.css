@@ -769,6 +769,30 @@ button.rescue {
 }
 button.rescue:hover { background: #26497a; border-color: #3a72ad; color: #f0f7ff; }
 
+/* 「撤销」是**后悔药**档（D72 第七档，D114）。
+   它不能和「适配」共用救援蓝 —— 那一档的定义是"**无损**：只改看的方式，不改被看的东西"，
+   而撤销**要改棋盘内容**。它和「清空」才是一对（解药与毒药），却不该也是红的。
+
+   选琥珀：全站已经用琥珀说"出事了，看这里"（`.note.warn` 是 #e3b341），
+   而撤销出现的时刻正是"刚才那下不对劲"，色系连得上。
+
+   **和「暂停」的橙分得开**：`.running` 是 #6d4d16（暗橙），两者会同屏
+   （暂停在主控排、撤销在配角排 + 临时条），必须一眼分得出。
+   两者色相几乎相同（38° / 43°），**只能靠亮度拉开** —— 实测过：
+   第一版 #8a6510 与暂停的对比度只有 **1.45**，相邻色块在这个数上读起来是同一种颜色
+   （真机截图上确实糊成一片）。改用 #a3780f，对比度 **1.93**。
+   没有取更亮的 #ba8a12（2.47）：那个亮度会开始和「播放」的绿抢主动作的位置，
+   而撤销是补救不是主动作。
+   撤销没得撤时是灰的，所以这抹琥珀只在"真有一步可退"的时候亮起来。 */
+button.recover {
+  background: #a3780f;
+  border-color: #d1a01f;
+  color: #fff6e0;
+  font-weight: 600;
+}
+button.recover:hover { background: #bb8b16; border-color: #e0b132; color: #fffaf0; }
+button.recover:disabled { background: var(--panel-2); border-color: var(--line); color: var(--muted); font-weight: 400; }
+
 /* 所有"一组里选一个"的控件统一：未选中灰底、选中高亮。
    涉及三处 —— 侧栏按钮组、顶栏分段开关、顶栏标签，之前三者样式各写各的。 */
 .btn-group button,

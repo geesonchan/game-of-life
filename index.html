@@ -49,10 +49,12 @@
              这样两行各自是一个独立的 flex 容器，不必去动已验收的桌面顶栏结构。 -->
         <button id="btn-step-m" data-i18n="ctrl.step" data-i18n-title="tip.step">单步</button>
         <button id="btn-fit-m" class="rescue" data-i18n="ctrl.fitShort" data-i18n-title="tip.fit">适配</button>
-        <!-- 撤销：救援蓝（与「适配」同一类 —— 都是"我搞砸了，帮我弄回去"）。
+        <!-- 撤销：**后悔药档**琥珀（D72 第七档）。不与「适配」同色 ——
+             那一档是"无损、只改看的方式"，而撤销要改棋盘内容；它和「清空」才是一对。
              它是常驻入口；清空/随机之后画布下沿那条临时条是第二个入口，
+             **两颗必须同色**（同一个动作、两个位置），所以共用 .recover 这一处定义。
              两处共用同一个 token，消费一次两处都消失。 -->
-        <button id="btn-undo" class="rescue" data-i18n="undo.label" data-i18n-title="undo.tip" disabled>撤销</button>
+        <button id="btn-undo" class="recover" data-i18n="undo.label" data-i18n-title="undo.tip" disabled>撤销</button>
         <button id="btn-clear" class="danger" data-i18n="ctrl.clear" data-i18n-title="tip.clear">清空</button>
       </div>
 
@@ -152,7 +154,7 @@
              **同一个 token**：消费一次两处都消失（`app.refreshUndo` 一处决定）。 -->
         <div class="undo-bar" id="undo-bar" hidden>
           <span data-i18n="undo.bar">刚才那一步可以撤销</span>
-          <button id="btn-undo-bar" class="rescue" data-i18n="undo.barAction">撤销</button>
+          <button id="btn-undo-bar" class="recover" data-i18n="undo.barAction">撤销</button>
         </div>
         <div class="sel-menu" id="sel-menu" hidden>
           <span class="sel-size" id="sel-size"></span>

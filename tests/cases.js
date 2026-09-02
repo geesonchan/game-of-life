@@ -7224,18 +7224,54 @@ cases.push(
       const main = readSrc('src/main.js')
       const controls = readSrc('src/ui/controls.js')
       // **守卫钉住的就是这个赋值表达式**（§12 第一次落在布尔值上）
-      t.ok(/el\.undo\.disabled = !app\.canUndo\(\)/.test(main),
-        '按钮的 disabled 必须就是 !canUndo() —— 改成"栈非空"会漏掉前提已失效的那一半')
+      // **按钮的 disabled 与条子的死活，都由 canUndo() 那一个布尔驱动**（§12 第三面）。
+      // 允许先落到局部变量再用（`const can = app.canUndo()`），但那个值必须来自 canUndo()——
+      // 改成"栈非空"会漏掉"前提已失效"的那一半，于是按钮亮着、按下去只弹一句"退不回去了"。
+      const refresh = locate(main, /app\.refreshUndo = function[\s\S]*?\n\}/g, 'refreshUndo 的定位')[0]
+      t.ok(/const can = app\.canUndo\(\)/.test(refresh), 'refreshUndo 里那个布尔要来自 canUndo()')
+      t.ok(/el\.undo\.disabled = !can\b/.test(refresh), '按钮的 disabled 就是它的反面')
+      t.ok(!/undoStack\.canUndo\(\)/.test(refresh), 'refreshUndo 不许绕过 canUndo() 直接问栈')
       t.equal((main.match(/el\.undo\.disabled =/g) || []).length, 1, 'disabled 只许在一处赋值')
-      // 临时条出不出现也问它
+      // **条子的出现与消失也归这一处**（D114）：不许出现一处、消失另外三处
+      t.ok(/el\.undoBar\.parentNode\.hidden = !alive/.test(refresh),
+        '条子的显隐只许在 refreshUndo 里落一次')
+      t.equal((main.match(/undoBar\.parentNode\.hidden =/g) || []).length, 1,
+        '条子的 hidden 只许在一处赋值 —— 出现与消失同一处判断')
       const bar = locate(main, /app\.showUndoBar = function[\s\S]*?\n\}/g, 'showUndoBar 的定位')[0]
-      t.ok(/app\.canUndo\(\)/.test(bar), '临时条出不出现也问 canUndo()')
+      t.ok(/app\.refreshUndo\(\)/.test(bar), '出现也走那一处，不自己动 DOM')
+      // **一个撤销，一个颜色，两个位置**（D114）：控制排那颗与条子上那颗必须同色，一处定义
+      const html = readSrc('index.html')
+      const cls = (id) => {
+        const tag = locate(html, new RegExp('<button id="' + id + '"[^>]*>', 'g'), id + ' 的定位')[0]
+        const m = tag.match(/class="([^"]*)"/)
+        return m ? m[1].trim() : ''
+      }
+      t.equal(cls('btn-undo'), cls('btn-undo-bar'),
+        '两处撤销必须同色 —— 一个动作、两个位置，颜色不许各写各的')
+      t.equal(cls('btn-undo'), 'recover',
+        '撤销走后悔药档（D72 第七档），不与「适配」共用救援蓝：' +
+        '救援档的定义是"无损、只改看的方式"，而撤销要改棋盘内容')
+      const css2 = readSrc('src/style.css')
+      t.equal((css2.match(/button\.recover \{/g) || []).length, 1, '.recover 只在一处定义')
+      // 和「暂停」的橙必须分得开 —— 两者会同屏（暂停在主控排、撤销在配角排）
+      const recoverRule = locate(css2, /button\.recover \{[^}]*\}/g, '.recover 规则的定位')[0]
+      const runRule = locate(css2, /button\.running \{[^}]*\}/g, '.running 规则的定位')[0]
+      const bg = (r) => (r.match(/background: (#[0-9a-f]{6})/) || [])[1]
+      t.ok(bg(recoverRule) && bg(runRule) && bg(recoverRule) !== bg(runRule),
+        `后悔药档与进行中档不许同色（recover ${bg(recoverRule)} / running ${bg(runRule)}）`)
+
+      const hide = locate(main, /app\.hideUndoBar = function[\s\S]*?\n\}/g, 'hideUndoBar 的定位')[0]
+      t.ok(/app\.barToken = null/.test(hide) && /app\.refreshUndo\(\)/.test(hide),
+        '消失也走那一处：清 token + 刷新')
       // 两个入口，同一个动作
       t.equal((controls.match(/addEventListener\('click', \(\) => app\.undo\(\)\)/g) || []).length, 2,
         '两个入口都调同一个 app.undo()')
       // **撤销自己不压栈**：否则撤销之后再撤销就在两个状态之间打转
       const undoFn = locate(main, /app\.undo = function[\s\S]*?\n\}/g, 'undo 的定位')[0]
       t.ok(!/pushUndo/.test(undoFn), '撤销自己不许压栈')
+      // **双向**：不管从哪个入口消费，这一次撤销都用掉了
+      t.ok(/app\.barToken = null/.test(undoFn),
+        '撤销一旦发生就清掉条子的 token —— 两个入口是一次撤销的两个按钮，不是两次机会')
       // 还原要连 currentShowId 与"在不在跑"（定稿点名的两样）
       t.ok(/app\.currentShowId = top\.showId/.test(undoFn), '还原要连 currentShowId，否则 id= 指错')
       const restore = locate(main, /app\.restoreSession = function[\s\S]*?\n\}/g, 'restoreSession 的定位')[0]

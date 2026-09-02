@@ -169,6 +169,24 @@ export const STRUCTURE_CLAIMS = Object.freeze([
   {
     kind: 'prose',
     file: 'src/main.js',
+    says: '**条子的出现与消失由这一处决定**',
+    why: '与 refreshUndo 那条"唯一刷新处"是同一个事实的另一面，钉一次就够。'
+  },
+  {
+    kind: 'prose',
+    file: 'src/main.js',
+    says: '现在只有一个判断',
+    why: '说的是"条子的死活只由一个条件决定"，与上面那条同一个事实。'
+  },
+  {
+    kind: 'prose',
+    file: 'src/main.js',
+    says: '**同一个 token 的两半**',
+    why: '说的是 undoToken / barToken 这一对变量，不是在数代码位置。'
+  },
+  {
+    kind: 'prose',
+    file: 'src/main.js',
     says: '**撤销的两个入口在这里刷新**',
     why: '引用上面 controls.js 那条已钉住的"两个入口"，说的是同一件事，不另钉。'
   },

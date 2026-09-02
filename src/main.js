@@ -282,7 +282,10 @@ app.settleStep = function () {
   if (!step) return app.lastStepAdded
   app.pendingStep = null
   app.lastStepAdded = stepChangedAnything(step.entry, app.boardSnapshotNow())
-  if (app.lastStepAdded) app.undoStack.push(step.entry, step.opts)
+  if (app.lastStepAdded) {
+    app.undoStack.push(step.entry, step.opts)
+    app.undoToken++             // 新的一步 = 新的 token，旧条子自动过期
+  }
   return app.lastStepAdded
 }
 
@@ -310,8 +313,16 @@ app.lastStepAdded = false
 app.refreshUndo = function () {
   const el = app.el
   if (!el || !el.undo) return          // 接线之前压的栈照样算数，只是还没有东西可刷新
-  el.undo.disabled = !app.canUndo()
-  if (!app.canUndo()) app.hideUndoBar()
+  const can = app.canUndo()
+  el.undo.disabled = !can
+  // **条子的出现与消失由这一处决定**（D114）。
+  // 从前是"出现在一处、消失在另外三处"，于是新增一条显示路径时，
+  // 那三条隐藏路径没跟着接上 —— 条子就只出不进了。
+  // 现在只有一个判断：这次撤销还挂着吗（`barToken`）、它还撤得动吗（`can`）。
+  // 三条退路（8 秒到、被消费掉、变得不可撤销）全都归结成"把 barToken 清掉"或"can 变 false"。
+  const alive = can && app.barToken !== null && app.barToken === app.undoToken
+  if (!alive && app.undoBarTimer) { clearTimeout(app.undoBarTimer); app.undoBarTimer = null }
+  if (el.undoBar) el.undoBar.parentNode.hidden = !alive
 }
 
 /**
@@ -322,18 +333,28 @@ app.refreshUndo = function () {
  */
 app.undoBarTimer = null
 
+/**
+ * **同一个 token 的两半**（D114）。
+ *
+ * `undoToken` 每收下一步 +1；`barToken` 记的是条子当初挂的是**哪一次**撤销。
+ * 两者相等，条子说的才是"刚才那一步"。撤销一被消费（不管从哪个入口进来），
+ * `barToken` 清掉 —— 于是两个按钮同时熄灭。**两个入口是一次撤销的两个按钮，不是两次机会。**
+ */
+app.undoToken = 0
+app.barToken = null
+
 app.showUndoBar = function () {
   // **这一次操作真的产生了一步，才出声**（D113）—— 不是"栈里还有东西"
   if (!app.settleStep()) return
-  if (!app.canUndo() || !app.el || !app.el.undoBar) return
-  app.el.undoBar.parentNode.hidden = false
+  app.barToken = app.undoToken
   if (app.undoBarTimer) clearTimeout(app.undoBarTimer)
   app.undoBarTimer = setTimeout(() => app.hideUndoBar(), 8000)
+  app.refreshUndo()             // 出现也走那一处，不自己动 DOM
 }
 
 app.hideUndoBar = function () {
-  if (app.undoBarTimer) { clearTimeout(app.undoBarTimer); app.undoBarTimer = null }
-  if (app.el && app.el.undoBar) app.el.undoBar.parentNode.hidden = true
+  app.barToken = null           // 三条退路都归结成这一句
+  app.refreshUndo()
 }
 
 /**
@@ -421,6 +442,9 @@ app.undo = function () {
   app.cancelPending()
   app.dirty = true
   app.updateHud()
+  // **消费一次，两处都消失**（定稿那条是双向的）：不管用户点的是控制排那颗
+  // 还是条子上那颗，这一次撤销都用掉了 —— 条子不该留着说"还能再撤一次刚才那步"。
+  app.barToken = null
   app.refreshUndo()
   app.toast(t('undo.done'))
   return true

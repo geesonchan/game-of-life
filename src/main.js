@@ -334,6 +334,13 @@ app.refreshUndo = function () {
   if (!el || !el.undo) return          // 接线之前压的栈照样算数，只是还没有东西可刷新
   const can = app.canUndo()
   el.undo.disabled = !can
+  // **按钮要说清它会撤掉什么**（D119）。
+  // 一颗只写"撤销"的按钮在**空盘上无法自证**：用户刚清空，盘上什么都没有，
+  // 按钮却亮着 —— 他看不到自己在撤销什么，于是"亮着"读起来像故障。
+  // 撤的是哪一步，栈顶自己知道（压栈时那个 label），拿来直接说。
+  const top = can ? app.undoStack.peek() : null
+  const what = top && t('undo.step.' + top.label)
+  el.undo.title = what ? t('undo.what', { what }) : t('undo.tip')
 }
 
 /**
@@ -1499,6 +1506,9 @@ onLangChange(() => {
   app.explorer.relocalize()
   app.favorites.relocalize()
   app.critical.relocalize()
+  // applyStatic 会按 data-i18n-title 把撤销那颗的 title 刷回静态词条，
+  // 把"撤销：清空"这种动态提示冲掉 —— 换完语言重算一次（D119）
+  app.refreshUndo()
   app.zoomBar.relocalize()
   app.refreshTabHint()
 })

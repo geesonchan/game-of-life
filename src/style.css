@@ -482,6 +482,14 @@ body.mode-full [data-mode="simple"] { display: none !important; }
 .linkish:hover { color: var(--text); }
 
 .intro-body { flex: 1; overflow-y: auto; padding: 8px 24px 16px; min-height: 0; }
+
+/* **还没滚到底就在下沿淡出一段**（D118）——「下面还有东西」这个信号要明说，
+   不能靠"页脚恰好没盖住半张卡"这种巧合。mask 作用在盒子上、不跟着内容滚，
+   所以它永远停在下沿。到底了 `.more-below` 就摘掉，淡出随之消失。 */
+.more-below {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent 100%);
+}
 .intro-body h3 { margin: 6px 0 8px; font-size: 19px; line-height: 1.4; }
 .intro-body .lead { margin: 0 0 12px; font-size: 14px; line-height: 1.75; color: #c4ccd9; }
 .intro-body .caption { margin: 10px 0 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
@@ -1240,18 +1248,29 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
   /* ---- 抽屉：底部推拉板，收起时只露把手 ---- */
   .panel {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;   /* 常驻浮层（D79） */
+    /* **锚点用 dvh，不用 bottom: 0**（D117）。
+       `position: fixed` 的 `bottom: 0` 贴的是**布局视口**的下边 ——
+       在 iOS 上那等于"工具栏收起时"的位置，工具栏一露出来，把手就压到它底下去了。
+       `top: 100dvh` 是把上边**显式钉在动态视口的下边**，再往上平移，
+       于是工具栏收放时它自己跟着走。
+
+       **注意 `max-height: 76dvh` 顶不了事**：那是"多高"，不是"贴在哪儿"。
+       这一处漏了三次（安全区一次、dvh 一次、这次），三次都漏在贴底的固定定位上，
+       而这一版的 .panel 恰好"提到过 dvh"—— 只查有没有 dvh 的守卫会被它骗过去。
+       所以守卫查的是**锚点**（见 tests 里那条）。 */
+    position: fixed; left: 0; right: 0; top: 100dvh; z-index: 40;   /* 常驻浮层（D79） */
     width: auto; max-height: 76dvh;
     border-left: none; border-top: 1px solid var(--line);
     border-radius: 14px 14px 0 0;
-    /* 只露出把手，并且把它整个抬到安全区之上 ——
-       不抬的话 46px 的把手有 34px 落在横条里，只剩顶上十几px 点得中（真机实测的症状）。 */
-    transform: translateY(calc(100% - 46px - var(--safe-b)));
+    /* 收起：只露把手，并且把它整个抬到安全区之上 ——
+       不抬的话 46px 的把手有 34px 落在横条里，只剩顶上十几px 点得中（真机实测的症状）。
+       上边已经钉在 100dvh，所以这里从那儿**往上**移，不再是"往下移自己的高度"。 */
+    transform: translateY(calc(-46px - var(--safe-b)));
     transition: transform .22s ease;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
     padding-bottom: calc(24px + var(--safe-b));   /* 拉开时，最下面那颗按钮也要在横条之上 */
   }
-  body.drawer-open .panel { transform: translateY(0); }
+  body.drawer-open .panel { transform: translateY(-100%); }   /* 拉开：下缘对齐动态视口的底边 */
   /* 把手自己长到**盖满**露出来那一带（46px + 安全区）。
      不这么做的话，抬高抽屉之后露在横条那 34px 里的是面板正文 ——
      第一条分组标题正好落在那儿，而它也是可点的：等于把一个危险目标换成了另一个（实测抓到）。

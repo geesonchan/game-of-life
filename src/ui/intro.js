@@ -9,6 +9,7 @@ import { VisualState } from '../render/visual-state.js'
 import { getPattern, placePattern, centerOrigin } from '../engine/patterns.js'
 import { t, setLang, getLang } from '../i18n/index.js'
 import { prefs } from './prefs.js'
+import { attachScrollHint } from './scroll-hint.js'
 
 /** 一块可点、可走一步的迷你棋盘 */
 class MiniBoard {
@@ -132,6 +133,8 @@ export function placeStarterGift(engine) {
 export function createIntro(app) {
   const modal = document.getElementById('intro-modal')
   const bodyEl = document.getElementById('intro-body')
+  // 「下面还有东西」的提示（D118）：换幕之后要手动 refresh —— 换内容不触发滚动事件
+  const bodyHint = attachScrollHint(bodyEl)
   const act0El = document.getElementById('intro-act0')
   const pickKid = document.getElementById('intro-pick-kid')
   const pickStd = document.getElementById('intro-pick-std')
@@ -241,6 +244,10 @@ export function createIntro(app) {
 
     bodyEl.innerHTML = ''
     if (!onAct0) RENDERERS[cur]()
+    // 换幕之后重算"下面还有没有"（D118）—— 换内容不会触发滚动事件。
+    // **同步算，不等 rAF**：读 scrollHeight 本来就会把待办的布局结算掉，所以此刻量得准；
+    // 而"面板隐藏时 rAF 不跑"是这个项目踩过的坑，提示不该押在它身上。
+    bodyHint.refresh()
     // 画布要等布局算完才有尺寸
     requestAnimationFrame(() => { for (const b of miniBoards) b.draw() })
   }

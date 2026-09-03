@@ -22,7 +22,7 @@ import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup
 import { SESSION_WRITERS, resizePlan, captureSession, pasteCells, cellBounds } from '../src/data/session.js'
 import { QUANTITY_PROMISES, unregisteredEstimates, ESTIMATE_MARKS } from '../src/data/promises.js'
 import { STRUCTURE_CLAIMS, SCANNED_FILES, CLAIM_PATTERN, unregisteredClaims } from '../src/data/structure-claims.js'
-import { createUndoStack, staleReason, patchBytes, snapshotBytes, MAX_UNDO_BYTES, STALE_REASONS } from '../src/data/undo.js'
+import { createUndoStack, staleReason, stepChangedAnything, patchBytes, snapshotBytes, MAX_UNDO_BYTES, STALE_REASONS } from '../src/data/undo.js'
 import { runReplay, etaSeconds } from '../src/ui/replay-driver.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
@@ -7285,6 +7285,27 @@ cases.push(
       t.ok(/snap\.running/.test(restore), '还原要连"在不在跑"')
       t.ok(/snap\.view/.test(restore), '还原要连取景')
 
+      // **按钮要说清它会撤掉什么**（D119）：压栈时那个 label 必须有对应词条，
+      // 否则空盘上按钮亮着却说不出撤的是什么 —— 一颗只写"撤销"的按钮无法自证。
+      const labels = ['clear', 'randomize', 'resizeBoard', 'showcase', 'loadFile', 'draw']
+      for (const f of ['src/main.js', 'src/ui/io.js', 'src/ui/favorites-view.js', 'src/ui/input.js']) {
+        const src = readSrc(f)
+        for (const m of src.matchAll(/pushUndoSnapshot\('(\w+)'/g)) {
+          t.ok(labels.indexOf(m[1]) >= 0, `${f} 压了个没登记的 label：${m[1]}`)
+        }
+      }
+      for (const k of labels) {
+        for (const lang of ['zh', 'en']) {
+          t.ok(!!DICT[lang]['undo.step.' + k], `${lang} 缺 undo.step.${k} —— 那一步撤销时说不出名字`)
+        }
+      }
+      t.ok(/el\.undo\.title = what \? t\('undo\.what'/.test(main),
+        '按钮的 title 要说撤的是哪一步')
+      // 换语言之后要重算 —— applyStatic 会按 data-i18n-title 把动态提示冲掉
+      const onLang = locate(main, /onLangChange\(\(\) => \{[\s\S]*?\n\}\)/g, '切语言回调的定位')[0]
+      t.ok(/app\.refreshUndo\(\)/.test(onLang),
+        '换完语言要重算撤销按钮的提示 —— 否则 applyStatic 把"撤销：清空"冲回静态词条')
+
       // **撤销与「点一下熄灭」的分工判据留着**（D112）：临时条撤销了，
       // 但"撤销管整步、点一下管一格"这条线还在，靠的是按钮那句提示。
       // 提示要**划线**，不是枚举 —— 枚举会让人问"那我点一下算什么"。
@@ -7333,6 +7354,9 @@ cases.push(
     run(t) {
       const html = readSrc('index.html')
       const css = readSrc('src/style.css')
+      // 注释里也会写到 `inset: 0` / `bottom: 0`（正是在解释为什么不能用它们）——
+      // 连注释一起查就会误判。查结构就得先把注释剥掉（§30 那条的同一个道理）。
+      const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
       // **前提**：没有 viewport-fit=cover，iOS 上 env(safe-area-inset-*) 恒为 0 ——
       // 下面那些 CSS 写得再对也是空转。这一条最容易在改 meta 时被顺手删掉，所以单独钉。
@@ -7352,8 +7376,37 @@ cases.push(
       // 三处落实：流式布局整体让开 + 抽屉抬高 + 把手自己盖满露出来那一带
       t.ok(/padding-bottom: calc\(46px \+ var\(--safe-b\)\)/.test(css),
         '#app 要把安全区一起让出来 —— 它是必经之路，棋盘/临时条/控制排/卡片带全在它的流里')
-      t.ok(/transform: translateY\(calc\(100% - 46px - var\(--safe-b\)\)\)/.test(css),
-        '抽屉是 position:fixed，不在流里，要自己抬')
+      t.ok(/transform: translateY\(calc\(-46px - var\(--safe-b\)\)\)/.test(css),
+        '抽屉是 position:fixed，不在流里，要自己抬（从 100dvh 往上移）')
+
+      // **贴底的固定定位元素，必须同时管住两样东西**（D117）：
+      //   · home indicator —— `var(--safe-b)`（`env(safe-area-inset-bottom)`）
+      //   · 浏览器工具栏   —— 锚点走 **dvh**
+      // 两样是两回事，而且此消彼长：工具栏露出来时盖住横条，工具栏收起时横条露出来。
+      //
+      // **查的是"贴在哪儿"，不是"提没提过 dvh"**：抽屉那一版写着 `max-height: 76dvh`，
+      // 提过 dvh，可锚点是 `bottom: 0` —— 贴的仍是布局视口。
+      // 只查"有没有 dvh"的守卫会被它骗过去，而这一处已经漏了三次。
+      const fixedRules = []
+      for (const m of cssCode.matchAll(/([^{}]+)\{([^{}]*position:\s*fixed[^{}]*)\}/g)) {
+        fixedRules.push({ sel: m[1].trim().split('\n').pop().trim(), body: m[2].replace(/\s+/g, ' ') })
+      }
+      t.ok(fixedRules.length >= 4, `固定定位的规则至少四条，实际 ${fixedRules.length}`)
+      const offenders = []
+      for (const r of fixedRules) {
+        // 够得着底边吗：写了 bottom / inset，或者用 top+高度撑满
+        const anchored = /(^|[;{ ])bottom:/.test(r.body) || /inset:/.test(r.body) ||
+          /height:\s*100dvh/.test(r.body) || /top:\s*100dvh/.test(r.body)
+        if (!anchored) continue                       // 只挂在顶上、又没撑满的，够不着底
+        const okSafe = /var\(--safe-b\)/.test(r.body)
+        // **锚点**必须由 dvh 决定：撑满(height:100dvh) 或显式钉在 100dvh
+        const okAnchor = /height:\s*100dvh/.test(r.body) || /top:\s*100dvh/.test(r.body)
+        if (!okSafe || !okAnchor) {
+          offenders.push(`${r.sel}（${okSafe ? '' : '缺 --safe-b '}${okAnchor ? '' : '锚点没走 dvh'}）`)
+        }
+      }
+      t.equal(offenders.length, 0,
+        '贴底的 fixed 元素必须同时管住横条(--safe-b)与工具栏(dvh 锚点)，缺一不可：' + offenders.join(' ／ '))
       t.ok(/height: calc\(46px \+ var\(--safe-b\)\)/.test(css) &&
         /padding-bottom: var\(--safe-b\)/.test(css),
         '把手要长到盖满露出来那一带 —— 否则横条里露出的是面板正文，' +
@@ -7363,9 +7416,6 @@ cases.push(
       // iOS Safari 上 `vh` / `inset:0` 量的都是"工具栏收起时"的最大高度 ——
       // 工具栏一露出来，按它算出来的下缘就跑到工具栏底下去了。
       // 这一条与安全区是**两件事**：工具栏 vs home indicator，各让各的。
-      // 注释里也会写到 `inset: 0`（正是在解释为什么不能用它）——
-      // 连注释一起查就会误判。查结构就得先把注释剥掉（§30 那条的同一个道理）。
-      const cssCode = css.replace(/\/\*[\s\S]*?\*\//g, '')
       const bareVh = (cssCode.match(/[^-a-z0-9](\d+)vh\b/g) || [])
       t.equal(bareVh.length, 0,
         `满屏高度要用 dvh，不许用裸 vh（还剩：${bareVh.join(' ')}）—— vh 量的是工具栏收起时的高度`)
@@ -7448,6 +7498,48 @@ cases.push(
       }
       t.equal(bad.length, 0,
         '改显隐/可用性时不许靠相对导航取元素（钉对赋值、钉错元素）：' + bad.join(' ／ '))
+    }
+  }
+,
+  {
+    name: '空操作不是一步：判据本身要有守卫（D113 / D120）',
+    run(t) {
+      // **这条守卫是"判据扫荡"扫出来的**（D120）：「没有改变任何东西的操作，不是一步」
+      // 写进了 D113、也写进了代码，**却一直没有守卫** —— 而它正是这一批的头等判据。
+      // 一条教训只写成判据等于没写完，配上守卫才算写完。
+      const board = (cells, extra = {}) => ({
+        w: 4, h: 4, rule: 'B3/S23', generation: 0, boundary: 'torus', cells,
+        get: (x, y) => cells[y * 4 + x], ...extra
+      })
+      const same = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      const snapOf = (cells, extra = {}) => ({
+        kind: 'snapshot',
+        session: { w: 4, h: 4, cells, generation: 0, boundary: 'torus', rule: 'B3/S23', ...extra }
+      })
+      // 快照：一个比特都没动 → 不是一步
+      t.equal(stepChangedAnything(snapOf(same.slice()), board(same.slice())), false,
+        '棋盘一个比特都没动，就不是一步')
+      const changed = same.slice(); changed[5] = 1
+      t.equal(stepChangedAnything(snapOf(same.slice()), board(changed)), true, '格子变了就是一步')
+      t.equal(stepChangedAnything(snapOf(same.slice()), board(same.slice(), { generation: 3 })), true,
+        '代数变了也算')
+      t.equal(stepChangedAnything(snapOf(same.slice()), board(same.slice(), { rule: 'B36/S23' })), true,
+        '规则变了也算')
+      t.equal(stepChangedAnything(snapOf(same.slice(), { w: 8 }), board(same.slice())), true,
+        '尺寸变了也算')
+      // 补丁：记的旧值与现值一样 → 什么都没改
+      const patch = old => ({ kind: 'patch', cells: [[1, 0, old]] })
+      t.equal(stepChangedAnything(patch(1), board(same.slice())), false, '补丁记的旧值就是现值 → 没改')
+      t.equal(stepChangedAnything(patch(0), board(same.slice())), true, '旧值与现值不同 → 真改了')
+
+      // **判断只在一处**：写盘入口不许自己判"我这次算不算数"
+      const main = readSrc('src/main.js')
+      t.equal((main.match(/stepChangedAnything\(/g) || []).length, 1,
+        '"变了没有"只许判一处（settleStep 里），写盘入口不许各判一遍')
+      const settle = locate(main, /app\.settleStep = function[\s\S]*?\n\}/g, 'settleStep 的定位')[0]
+      t.ok(/stepChangedAnything\(step\.entry, app\.boardSnapshotNow\(\)\)/.test(settle),
+        '结算就是拿这一步与"现在的棋盘"比一比')
+      t.ok(/app\.pendingStep = null/.test(settle), '结算完待定位要清空 —— 幂等，谁先问谁触发')
     }
   }
 

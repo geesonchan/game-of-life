@@ -503,6 +503,16 @@ export const DICT = {
     // 单个格子指得到，点一下就改回来，不必动用撤销。
     // 一句话说清两边各管什么，它们就不再互相解释。
     'undo.tip': '撤销一整步（一笔 / 清空 / 随机 / 载入）。单个格子点一下就能改回来',
+    // **一颗只写"撤销"的按钮，在空盘上无法自证**（D119，作者定）：
+    // 用户刚清空，盘上什么都没有，按钮却亮着 —— 他看不到自己在撤销什么。
+    // 所以提示带上**撤销哪一步**。这几条与压栈时那个 label 一一对应。
+    'undo.what': '撤销：{what}',
+    'undo.step.clear': '清空',
+    'undo.step.randomize': '随机填充',
+    'undo.step.resizeBoard': '改棋盘尺寸',
+    'undo.step.showcase': '载入精彩局',
+    'undo.step.loadFile': '载入图案',
+    'undo.step.draw': '刚才那一笔',
     'toast.randomized': '已用种子 {seed} · 密度 {density} 初始化',
     'toast.resized': '棋盘 {w} × {h}',
     'toast.boundaryTorus': '边界：环形',
@@ -1522,6 +1532,13 @@ export const DICT = {
     'undo.stale.replaced': 'After replacing the whole board, earlier edits can no longer be undone',
     'undo.label': 'Undo',
     'undo.tip': 'Undo a whole step (a stroke, clear, randomize, load). For one cell, just tap it again',
+    'undo.what': 'Undo: {what}',
+    'undo.step.clear': 'Clear',
+    'undo.step.randomize': 'Randomize',
+    'undo.step.resizeBoard': 'Resize board',
+    'undo.step.showcase': 'Load a showcase',
+    'undo.step.loadFile': 'Load a pattern',
+    'undo.step.draw': 'that stroke',
     'toast.randomized': 'Seeded with {seed} at density {density}',
     'toast.resized': 'Board {w} × {h}',
     'toast.boundaryTorus': 'Boundary: torus',

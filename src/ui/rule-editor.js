@@ -7,6 +7,7 @@ import { validateClauses, validateRule } from '../engine/validate.js'
 import { PRESETS, presetRule } from '../engine/presets.js'
 import { exportRule, importRule } from '../engine/rule-io.js'
 import { t, stateLabel } from '../i18n/index.js'
+import { attachScrollHint } from './scroll-hint.js'
 
 const OP_KEYS = ['in', 'not_in', 'eq', 'range', 'lte', 'gte', 'any']
 
@@ -31,6 +32,9 @@ export function createRuleEditor(app) {
     io: $('re-io'), ioText: $('re-io-text'), ioMsg: $('re-io-msg'),
     exportBtn: $('re-export'), importBtn: $('re-import'), ioClose: $('re-io-close')
   }
+  // 规则编辑器是第二个「可滚动 + 固定页脚」的组合（D118）：
+  // 窄屏上正文会滚，页脚那排按钮在下面 —— 同样要让人看得出下面还有
+  const bodyHint = attachScrollHint(el.modal.querySelector('.modal-body'))
 
   // 草稿：改动只作用在这里，点「应用规则」才写回引擎
   let draft = { agingLayers: 0, clauses: [] }
@@ -49,6 +53,9 @@ export function createRuleEditor(app) {
     el.io.hidden = true
     el.modal.hidden = false
     refresh()
+    // 藏着的时候量不出高度 —— 显示出来之后再算"下面还有没有"（D118）。
+    // 同步即可：读 scrollHeight 会把待办布局结算掉，不必等 rAF（面板隐藏时它不跑）
+    bodyHint.refresh()
   }
   function close() { el.modal.hidden = true }
 

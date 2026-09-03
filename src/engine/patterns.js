@@ -158,6 +158,26 @@ OO....O.O...........OO
 OO
 OO`,
 
+  // 闪灯（Blinker）。原始 RLE：x = 3, y = 1, rule = B3/S23 / 3o!
+  // **三格横排，实测周期 2** —— 全宇宙最小的振荡子。
+  //
+  // 它是**第二幕那三条规矩里的两条**，两代之内演完（实测，不是抄来的）：
+  //   · 两端那两格各只有 **1** 个邻居 → 下一代死（规则一：朋友太少会孤单死掉）；
+  //   · 上下那两个空位各**刚好 3** 个邻居 → 下一代生（规则三：刚好三个会诞生）。
+  // 它之所以是最小的振荡子，正因为同时踩中这两条并闭合。
+  //
+  // 引导第一幕的舞台上本来就有它（那台戏里"一开一合的"就是它）——
+  // 从前舞台是手写坐标，库里却没有这个图案：**演示了一样东西，然后拿不出来**（§12 第六面）。
+  blinker: `
+OOO`,
+
+  // 蟾蜍（Toad）。原始 RLE：x = 4, y = 2, rule = B3/S23 / b3o$3o!
+  // 6 格，实测周期 2。收它不是为了凑数，是为了让"会呼吸的"读起来是**一类**而不是一个孤例 ——
+  // 只有闪灯一个的话，用户会以为那是个特例。
+  toad: `
+.OOO
+OOO.`,
+
   // 蜂巢（Beehive）。原始 RLE：x = 4, y = 3, rule = B3/S23 / b2ob$o2bo$b2o!
   // 6 格静物，实测 200 代逐格不变。与方块并列是因为它是第二常见的静物 ——
   // 随机盘跑完之后剩下的那些残骸，多半就是这两样。
@@ -192,18 +212,24 @@ function parseAscii(text) {
  *     它确实是静物，但反射器也是；把这两个按"长相"拆开，等于把同一件事说成两件。
  *     D64 早就给它们起过名字叫"互动型"，这一组就是那个意思。
  *   · `still` 不动的 —— 方块、蜂巢，它们的本事就是"待着"；
- *   · `restless` 自己变个不停 —— 脉冲星（原地喘气）、R-五连体（乱上一千代）。
- *     **这一组是你那四组之外补的**：脉冲星与 R-五连体不属于前三组里的任何一个，
- *     而每张卡必须有且仅有一组（守卫钉着），所以宁可多开一组，也不硬塞。
+ *   · `oscillator` 会呼吸的 —— 闪灯、蟾蜍、脉冲星：**周期性地重复自己**，可预测。
+ *     **这一组是 D130 补的，脉冲星从 restless 移过来**：那一组原先同时装着
+ *     周期 3 的脉冲星与乱上千代的 R-五连体 —— 从 3 格到 48 格、从周期 2 到混沌，
+ *     组内不一致就等于没分组。两者对用户是**两种不同的承诺**：
+ *     一个是"你可以看它呼吸"，一个是"你可以看它失控"。
+ *   · `restless` 自己变个不停、**而且说不准会变成什么** —— R-五连体（乱上一千代）。
  *   · `original` 用户原创 —— Matt（D64 那一条界线，它自己就该单独站着）。
+ *
+ * 顺序也是判据：由简到繁、由静到乱 —— 第一次进来的人从左上角读起。
  */
-export const PATTERN_GROUPS = Object.freeze(['ship', 'machine', 'still', 'restless', 'original'])
+export const PATTERN_GROUPS = Object.freeze(['ship', 'machine', 'still', 'oscillator', 'restless', 'original'])
 
 const GROUP_OF = Object.freeze({
   glider: 'ship', lwss: 'ship', mwss: 'ship', hwss: 'ship',
   gun: 'machine', qbshuttle: 'machine', snark: 'machine', eater: 'machine',
   block: 'still', beehive: 'still',
-  pulsar: 'restless', rpentomino: 'restless',
+  blinker: 'oscillator', toad: 'oscillator', pulsar: 'oscillator',
+  rpentomino: 'restless',
   matt: 'original'
 })
 
@@ -216,9 +242,17 @@ export const PATTERNS = Object.keys(SOURCES).map(key => ({ key, group: GROUP_OF[
 /**
  * 按分组排好的清单：竖条照它分段显示，窄屏横滑带照它排序（只是不显示小标题）。
  * **两处同一个顺序**，免得同一个盒子在两个屏上是两种排法。
+ *
+ * **组内按活格数由少到多**（D130）：分组的顺序判据是"由简到繁"，
+ * 组内不排就等于只做了一半 —— 会呼吸的那一组里，用户先看到的该是 3 格的闪灯，
+ * 不是 48 格的脉冲星。排序键取活格数而不是手写顺序：
+ * 加新图案时不必回来插队，也就不会插错。
  */
 export function groupedPatterns() {
-  return PATTERN_GROUPS.map(group => ({ group, items: PATTERNS.filter(p => p.group === group) }))
+  return PATTERN_GROUPS.map(group => ({
+    group,
+    items: PATTERNS.filter(p => p.group === group).sort((a, b) => a.cells.length - b.cells.length)
+  }))
 }
 
 export function getPattern(key) {

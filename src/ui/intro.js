@@ -68,12 +68,29 @@ class MiniBoard {
 const DEMO_LONELY = [[2, 2], [3, 2]]                              // 各只有 1 个朋友 → 都会没
 const DEMO_CROWDED = [[2, 1], [3, 1], [4, 1], [2, 2], [3, 2], [4, 2], [2, 3], [3, 3], [4, 3]] // 实心块，中间闷死留个洞
 const DEMO_BIRTH = [[2, 1], [3, 1], [2, 2]]                       // 空位 (3,2) 旁边刚好 3 个 → 冒出新的
-const DEMO_STAGE = [                                              // 第一幕：会自己动的一小台戏
-  [2, 1], [3, 2], [1, 3], [2, 3], [3, 3],                         // 会走路的（滑翔机）
-  [12, 2], [13, 2], [14, 2],                                      // 一开一合的（闪灯）
-  [16, 8], [17, 8], [16, 9], [17, 9],                             // 一动不动的（方块）
-  [7, 7], [8, 7], [9, 7], [8, 8]                                  // 会变形几步的
+/**
+ * 第一幕：会自己动的一小台戏。
+ *
+ * **有名字的那几样，从图案库里取，不手抄坐标**（D130 / §12 第六面）。
+ * 从前这里是三组手写坐标，注释里叫它们"滑翔机 / 闪灯 / 方块"——
+ * 而**闪灯当时根本不在图案库里**：第一幕给你看它、第二幕讲完规矩、面板里却拿不到。
+ * 那种缺口跨了两个模块，没有任何守卫会红。
+ *
+ * 现在这份清单是**真的依赖**：`pattern` 那几项从 `getPattern()` 取，
+ * 库里没有就当场抛。守卫据此扫"引导演示过的东西，面板里是否拿得到"。
+ * 最后那一样没有名字（只是"会变形几步的"），所以照旧写坐标，
+ * 并**明写它不是库里的东西** —— 没被命名就不构成"给得了"的承诺。
+ */
+const STAGE_PIECES = [
+  { pattern: 'glider', at: [1, 1] },        // 会走路的
+  { pattern: 'blinker', at: [12, 2] },      // 一开一合的
+  { pattern: 'block', at: [16, 8] },        // 一动不动的
+  { raw: [[7, 7], [8, 7], [9, 7], [8, 8]], why: '会变形几步的 —— 没有名字，也不在图案库里' }
 ]
+
+const DEMO_STAGE = STAGE_PIECES.flatMap(piece => piece.raw
+  ? piece.raw
+  : getPattern(piece.pattern).cells.map(([x, y]) => [x + piece.at[0], y + piece.at[1]]))
 
 /**
  * 介绍卡的页序与翻页决策 —— 纯函数，不碰 DOM，可以直接在测试里跑。
@@ -308,7 +325,23 @@ export function createIntro(app) {
             </div>
           </div>`).join('')}
       </div>
-      <p class="caption">${t('intro.act2.hint')}</p>`
+      <p class="caption">${t('intro.act2.hint')}</p>
+      <!-- **把引导讲的东西接上手**（D130）：只**选中**闪灯，不替用户放下 ——
+           动手那一下要是他做的（D124：应用别替用户做事）。
+           收尾照旧送滑翔机：闪灯是"你试试"，滑翔机是"送你的"，
+           合成一个两头都不像。 -->
+      <p class="act2-try">
+        <span>${t('intro.act2.try')}</span>
+        <button id="intro-take-blinker" class="confirm">${t('intro.act2.tryBtn')}</button>
+      </p>`
+
+    const take = document.getElementById('intro-take-blinker')
+    if (take) {
+      take.addEventListener('click', () => {
+        app.setStamp(getPattern('blinker'))   // 只选中，不落子
+        close()
+      })
+    }
 
     miniBoards = demos.map(d => {
       const b = new MiniBoard(d.w, d.h, d.setup)

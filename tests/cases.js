@@ -541,9 +541,9 @@ cases.push(
     }
   },
   {
-    name: '图案库：13 个图案的尺寸与活细胞数正确',
+    name: '图案库：15 个图案的尺寸与活细胞数正确',
     run(t) {
-      t.equal(PATTERNS.length, 13, '经典 5 + 用户注册 2 + 元像素零件 6')
+      t.equal(PATTERNS.length, 15, '经典 5 + 用户注册 2 + 元像素零件 6 + 基础振荡子 2（D130）')
       const expect = {
         glider: [3, 3, 5], gun: [36, 9, 36], pulsar: [13, 13, 48], lwss: [5, 4, 9], rpentomino: [3, 3, 5],
         matt: [3, 4, 5],  // 用户注册图案，包围盒 3×4：末行那个孤立格把高度撑到 4
@@ -551,7 +551,9 @@ cases.push(
         // 元像素零件·第一批（D96）
         mwss: [6, 5, 11], hwss: [7, 5, 13],
         snark: [17, 23, 52],   // 反射器本体（减掉演示滑翔机）；朝向按"对应滑翔机 = 盒里默认那架"挑（D98）
-        qbshuttle: [22, 7, 20], block: [2, 2, 4], beehive: [4, 3, 6]
+        qbshuttle: [22, 7, 20], block: [2, 2, 4], beehive: [4, 3, 6],
+        // 基础振荡子（D130）：接上第二幕那三条规矩
+        blinker: [3, 1, 3], toad: [4, 2, 6]
       }
       for (const key of Object.keys(expect)) {
         const p = getPattern(key)
@@ -566,7 +568,7 @@ cases.push(
     name: '图案库：Matt 排在 R-五连体之后，是第一个用户注册图案',
     run(t) {
       const keys = PATTERNS.map(p => p.key)
-      t.equal(keys.join(','), 'glider,gun,pulsar,lwss,rpentomino,matt,eater,mwss,hwss,snark,qbshuttle,block,beehive',
+      t.equal(keys.join(','), 'glider,gun,pulsar,lwss,rpentomino,matt,eater,mwss,hwss,snark,qbshuttle,block,blinker,toad,beehive',
         `顺序在表达来源：经典 5 → 用户注册 2 → 元像素零件 6，实测顺序 ${keys.join(',')}`)
       // 新来的一律往后排，**不许插到 lwss 旁边** —— 飞船族确实该挨着，
       // 但插进去会把已有卡片往后推，而取用区的位置是按着手指的记忆定的（D75 ③）
@@ -7761,6 +7763,112 @@ cases.push(
       const zb = readSrc('src/ui/zoom-bar.js')
       t.ok(/onTap\(el\.zin,/.test(zb) && /onTap\(el\.zout,/.test(zb), '缩放 ＋/－ 也走 onTap')
       t.ok(!/el\.zin\.addEventListener\('click'/.test(zb), '不许再直接挂 click —— 那正是丢点击的那条路')
+    }
+  }
+,
+  {
+    name: '基础振荡子：说明里那个周期是实测出来的（D130）',
+    run(t) {
+      // **文案里那个"可验证的数"必须实测，不许抄维基** —— §12 在数据上的一次。
+      // 说明里写"实测周期 2"，这里就真跑一遍；对不上就红。
+      const per = (key, max = 12) => {
+        const N = 21, C = N >> 1
+        const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+        const p = getPattern(key)
+        for (const [x, y] of p.cells) e.set(C + x, C + y, 1)
+        e.stats.alive = e.countAlive()
+        const snap = () => { let h = ''; for (let y = 0; y < N; y++) { for (let x = 0; x < N; x++) h += e.get(x, y) ? '1' : '0' } return h }
+        const s0 = snap()
+        for (let i = 1; i <= max; i++) { e.step(); if (snap() === s0) return i }
+        return -1
+      }
+      t.equal(per('blinker'), 2, '闪灯实测周期 2')
+      t.equal(per('toad'), 2, '蟾蜍实测周期 2')
+      for (const lang of ['zh', 'en']) {
+        for (const k of ['blinker', 'toad']) {
+          t.ok(/2/.test(DICT[lang]['pattern.' + k + '.desc']),
+            `${lang} 的 ${k} 说明里要写出那个周期`)
+        }
+      }
+
+      // **闪灯为什么是唯一正确的第一个**：它两代之内演完三条规矩里的两条。
+      // 这不是文学修辞，是可以数的 —— 数给守卫看。
+      const N = 21, C = N >> 1
+      const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of getPattern('blinker').cells) e.set(C + x, C + y, 1)
+      e.stats.alive = e.countAlive()
+      const nb = (x, y) => {
+        let n = 0
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue
+          n += e.get(x + dx, y + dy) ? 1 : 0
+        }
+        return n
+      }
+      t.equal(nb(C, C), 1, '左端那格只有 1 个邻居 → 规则一：朋友太少会死')
+      t.equal(nb(C + 2, C), 1, '右端那格同理')
+      t.equal(nb(C + 1, C - 1), 3, '上方那个空位刚好 3 个邻居 → 规则三：刚好三个会生')
+      t.equal(nb(C + 1, C + 1), 3, '下方那个空位同理')
+    }
+  },
+  {
+    name: '分组：会呼吸的与闹腾的分开，组内由简到繁（D130）',
+    run(t) {
+      // 从前 restless 同时装着周期 3 的脉冲星与乱上千代的 R-五连体 ——
+      // 3 格到 48 格、周期 2 到混沌，**组内不一致就等于没分组**。
+      // 两者对用户是两种承诺：一个"你可以看它呼吸"，一个"你可以看它失控"。
+      t.ok(PATTERN_GROUPS.indexOf('oscillator') >= 0, '有"会呼吸的"这一组')
+      const idx = k => PATTERN_GROUPS.indexOf(k)
+      t.ok(idx('still') < idx('oscillator') && idx('oscillator') < idx('restless'),
+        '顺序由静到乱：不动的 → 会呼吸的 → 闹腾的')
+      const grouped = groupedPatterns()
+      const of = g => (grouped.find(x => x.group === g) || { items: [] }).items.map(p => p.key)
+      t.equal(of('oscillator').join(','), 'blinker,toad,pulsar', '会呼吸的三个，且由简到繁')
+      t.equal(of('restless').join(','), 'rpentomino', '闹腾的只剩说不准会变成什么的那一类')
+      // 组内排序是**算出来的**，不是手写顺序 —— 加新图案不必回来插队
+      for (const g of grouped) {
+        const n = g.items.map(p => p.cells.length)
+        t.equal(n.slice().sort((a, b) => a - b).join(','), n.join(','), `${g.group} 组内要由少到多`)
+      }
+      // 每一组都要有小标题（两个语域、两种语言）
+      for (const g of PATTERN_GROUPS) {
+        for (const lang of ['zh', 'en']) {
+          t.ok(!!DICT[lang]['pattern.group.' + g], `${lang} 缺分组标题 ${g}`)
+          t.ok(!!DICT[lang]['pattern.group.' + g + '.simple'], `${lang} 缺简洁语域分组标题 ${g}`)
+        }
+      }
+    }
+  }
+,
+  {
+    name: '引导演示过的、有名字的东西，面板里必须拿得到（§12 第六面 / D130）',
+    run(t) {
+      // **来历**：第一幕的舞台给你看闪灯（注释原话"一开一合的（闪灯）"），
+      // 第二幕讲完三条规矩，而**面板里没有闪灯**。
+      // 这不是缺一个内容，是**产品展示了一样东西，然后自己给不了** ——
+      // §12 那一族的新一面：前几次是"说了没做到"，这次是"给你看了，却拿不出来"。
+      // 它跨了引导与图案库两个模块，**所以没有任何守卫会红**。
+      //
+      // **可扫的形式**：不去扫注释里的名字（那扫不动），而是让依赖变成真的 ——
+      // 舞台上有名字的那几样从 `getPattern()` 取，库里没有就当场抛。
+      const intro = readSrc('src/ui/intro.js')
+      const pieces = locate(intro, /const STAGE_PIECES = \[[\s\S]*?\n\]/g, '舞台清单的定位')[0]
+      const named = [...pieces.matchAll(/pattern: '(\w+)'/g)].map(m => m[1])
+      t.ok(named.length >= 3, `舞台上有名字的至少三样，实际 ${named.length}`)
+      for (const key of named) {
+        t.ok(PATTERNS.some(p => p.key === key),
+          `引导演示了「${key}」，图案库里却没有 —— 展示了一样东西然后给不了`)
+      }
+      t.ok(named.indexOf('blinker') >= 0, '闪灯就是当初那个缺口，它必须在舞台清单里')
+      // 舞台不许再手抄有名字的东西的坐标：没名字的那一样要**明写**它不是库里的
+      t.ok(/raw: \[/.test(pieces) && /why: '/.test(pieces),
+        '没有名字的那一样要写明它不在图案库里 —— 没被命名才不构成"给得了"的承诺')
+      t.equal((pieces.match(/raw: \[/g) || []).length, 1, '手写坐标只许剩这一处')
+
+      // **扫不动的那一半，如实留成判据**：文案里用词句点名一样东西（不是演示它），
+      // 形式上无从核对。目前只有第三幕的"会走路的小家伙"，而 D70 早已钉住"说了就得送"。
+      t.equal(DICT.zh['pattern.glider.simple'], '会走路的小家伙',
+        '第三幕承诺的那个名字，就是滑翔机在简洁语域里的名字 —— 两处必须是同一个东西')
     }
   }
 

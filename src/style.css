@@ -536,6 +536,17 @@ body.mode-full [data-mode="simple"] { display: none !important; }
   display: block; width: 100%; height: 96px;
   border: 1px solid var(--line); border-radius: 5px; cursor: pointer;
 }
+/* 「接上手」那一行（D130）：一句话 + 一颗按钮，排在三张卡之后。
+   按钮走「确认」档青绿（D72 第六档）—— 它坐实的正是"我要拿这个去试"这个待定意图。 */
+.act2-try {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 14px 0 4px; padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px; color: var(--text);
+}
+.act2-try > span { flex: 1 1 220px; min-width: 0; }
+.act2-try button { flex: none; min-height: 44px; padding: 0 16px; }
+
 .demo p { margin: 7px 0 8px; font-size: 11px; color: var(--muted); line-height: 1.55; min-height: 34px; }
 /* 「第几个 / 一共几个」（D118）：淡出说"下面还有"，编号说"一共三个、你看到第几个"。
    压一档存在感 —— 它是导航信息，不该和规则名字争眼。 */

@@ -22,7 +22,7 @@ import { SOURCES, resolveInitialBoard, priorityTable } from '../src/data/startup
 import { SESSION_WRITERS, resizePlan, captureSession, pasteCells, cellBounds } from '../src/data/session.js'
 import { QUANTITY_PROMISES, unregisteredEstimates, ESTIMATE_MARKS } from '../src/data/promises.js'
 import { STRUCTURE_CLAIMS, SCANNED_FILES, CLAIM_PATTERN, unregisteredClaims } from '../src/data/structure-claims.js'
-import { createUndoStack, staleReason, stepChangedAnything, patchBytes, snapshotBytes, MAX_UNDO_BYTES, STALE_REASONS } from '../src/data/undo.js'
+import { createUndoStack, staleReason, stepChangedAnything, patchBytes, snapshotBytes, MAX_UNDO_BYTES, MAX_RUN_STROKES, STALE_REASONS } from '../src/data/undo.js'
 import { runReplay, etaSeconds } from '../src/ui/replay-driver.js'
 import { BOARD_SIZES, BIG_FROM, isBigBoard, costOf, visualFor, neededBoard } from '../src/data/board-sizes.js'
 import { BUILTIN_LAYOUTS, validateLayout, ruleOf, exportFavorites, importFavorites, addLayout, byteLength, fitsBudget, liveBounds, mergeFavorites, normalizeRule, normalizeLife, layoutRow, layoutRows, foldRows, lifeText, showEntryPlan, MAX_BYTES, MAX_NOTE, RECENT_SHOWN } from '../src/data/favorites.js'
@@ -7379,10 +7379,13 @@ cases.push(
       t.equal(hard.length, 0, `安全区不许写死像素：${hard.join(' | ')}`)
 
       // 三处落实：流式布局整体让开 + 抽屉抬高 + 把手自己盖满露出来那一带
-      t.ok(/padding-bottom: calc\(46px \+ var\(--safe-b\)\)/.test(css),
+      t.ok(/padding-bottom: calc\(var\(--handle-h\) \+ var\(--safe-b\)\)/.test(css),
         '#app 要把安全区一起让出来 —— 它是必经之路，棋盘/临时条/控制排/卡片带全在它的流里')
-      t.ok(/transform: translateY\(calc\(-46px - var\(--safe-b\)\)\)/.test(css),
+      t.ok(/transform: translateY\(calc\(-1 \* var\(--handle-h\) - var\(--safe-b\)\)\)/.test(css),
         '抽屉是 position:fixed，不在流里，要自己抬（从 100dvh 往上移）')
+      // 把手那个高度只许有一处定义 —— 从前 46px 硬写在三处（D127）
+      t.equal((cssCode.match(/--handle-h:/g) || []).length, 1, '把手高度只许定义一处')
+      t.ok((cssCode.match(/var\(--handle-h\)/g) || []).length >= 3, '三处引用它，不再各写各的')
 
       // **贴底的固定定位元素，必须同时管住两样东西**（D117）：
       //   · home indicator —— `var(--safe-b)`（`env(safe-area-inset-bottom)`）
@@ -7412,7 +7415,7 @@ cases.push(
       }
       t.equal(offenders.length, 0,
         '贴底的 fixed 元素必须同时管住横条(--safe-b)与工具栏(dvh 锚点)，缺一不可：' + offenders.join(' ／ '))
-      t.ok(/height: calc\(46px \+ var\(--safe-b\)\)/.test(css) &&
+      t.ok(/height: calc\(var\(--handle-h\) \+ var\(--safe-b\)\)/.test(css) &&
         /padding-bottom: var\(--safe-b\)/.test(css),
         '把手要长到盖满露出来那一带 —— 否则横条里露出的是面板正文，' +
         '第一条分组标题正好落在那儿，等于把一个危险目标换成另一个')
@@ -7618,6 +7621,80 @@ cases.push(
       for (const k of ['draw.toggle', 'draw.tip', 'draw.on', 'draw.off']) {
         for (const lang of ['zh', 'en']) t.ok(!!DICT[lang][k], `${lang} 缺 ${k}`)
       }
+    }
+  }
+,
+  {
+    name: '撤销撤的是用户做过的事，不是应用自己做的事（D124）',
+    run(t) {
+      // 作者实测：走完引导按撤销 → 第一下去掉送的滑翔机，第二下变成全雪花的导演场。
+      // 技术上没错，但那是**应用替他做的**开局 —— 撤到第二下回到了他从来没见过的状态。
+      // **那不是后悔药，那是时光机。**
+      const main = readSrc('src/main.js')
+      const settle = locate(main, /app\.settleStep = function[\s\S]*?\n\}/g, 'settleStep 的定位')[0]
+      t.ok(/step\.entry\.by !== 'app'/.test(settle),
+        '判断多一维"谁做的"，但仍在 settleStep 这一处')
+      t.ok(/stepChangedAnything\(/.test(settle), '另一维"变了没有"还在（D113）')
+      // **圈整段，不逐个打标记**：链接落地是 applyShareState → resizeBoard / importRleText 好几层
+      t.equal((main.match(/app\.asAppAction\(/g) || []).length, 1,
+        'main.js 里只在启动那一段圈')
+      const boot = locate(main, /app\.applyInitialBoard = function[\s\S]*?\n\}/g, 'applyInitialBoard 的定位')[0]
+      t.ok(/app\.asAppAction\(\(\) => \{/.test(boot),
+        '启动整段圈成"应用做的"：链接落地 / id=builtin: / g= 重放 / 首访导演场，一个都不进栈')
+      const intro = readSrc('src/ui/intro.js')
+      t.ok(/app\.asAppAction\(\(\) => \{[\s\S]{0,220}?placeStarterGift/.test(intro),
+        '引导收尾的清盘+送礼也是应用做的')
+      // 压栈时要记下这一维
+      t.equal((main.match(/by: app\.appActing \? 'app' : 'user'/g) || []).length, 2,
+        '快照与补丁两处都要记"谁做的"')
+    }
+  },
+  {
+    name: '播放中落笔的快照另按步数封顶（D125）',
+    run(t) {
+      // 2304² 一份 5.06 MiB，32 MiB 只装得下 6 份 —— 播放中连画几笔，
+      // 之前那些**用户明确做过的**大步（清空/随机/载入）就被挤掉了。
+      // 字节封顶不区分"谁重要"，只认先来后到，所以这一类单独限步数。
+      t.equal(MAX_RUN_STROKES, 3, '播放中落笔的快照限 3 步')
+      const pre = { w: 8, h: 8, rule: 'B3/S23', stamp: 0 }
+      const st = createUndoStack()
+      st.push({ kind: 'snapshot', label: 'clear', session: { w: 4, h: 4, cells: [] }, pre })
+      for (let i = 0; i < 5; i++) {
+        st.push({ kind: 'snapshot', label: 'draw', session: { w: 4, h: 4, cells: [] }, pre })
+      }
+      const kinds = []
+      while (st.canUndo()) kinds.push(st.pop().label)
+      t.equal(kinds.filter(k => k === 'draw').length, 3, '涂抹只留最近三笔')
+      t.equal(kinds.filter(k => k === 'clear').length, 1,
+        '**栈底那份清空还在** —— 丢的是最旧的同类，不是用户明确做过的大步')
+    }
+  },
+  {
+    name: '放完了，这一轮选择就结束（D126）',
+    run(t) {
+      const main = readSrc('src/main.js')
+      const controls = readSrc('src/ui/controls.js')
+      // 触屏〔放这〕之后收掉选择 —— 用户的心智是"我放完了，这事结束了"
+      const confirm = locate(main, /app\.confirmStamp = function[\s\S]*?\n\}/g, 'confirmStamp 的定位')[0]
+      t.ok(/app\.setStamp\(null\)/.test(confirm), '触屏〔放这〕之后结束这一轮选择')
+      // **桌面那条不动**：一步点击，连着盖几个是既有用法（参照线序号就是为它写的）
+      const place = locate(main, /app\.placeStampAt = function[\s\S]*?\n\}/g, 'placeStampAt 的定位')[0]
+      t.ok(!/app\.setStamp\(null\)/.test(place),
+        '落子本身不收选择 —— 桌面连着盖几个是既有用法，收在触屏的确认那一步')
+      // 开画笔与举着图案是互斥的意图
+      t.ok(/if \(app\.drawOn && app\.stamp\) app\.setStamp\(null\)/.test(controls),
+        '点开画笔就结束这一轮选择 —— 否则下一次点棋盘又放了上一个图案')
+    }
+  },
+  {
+    name: '第二幕三张卡要编号：一共三个，你看到第几个（D118）',
+    run(t) {
+      const intro = readSrc('src/ui/intro.js')
+      t.ok(/demos\.map\(\(d, i\) =>/.test(intro), '要拿得到序号')
+      t.ok(/t\('intro\.act2\.no', \{ i: i \+ 1, n: demos\.length \}\)/.test(intro),
+        '编号是 i/n，n 由数组长度来 —— 加第四条规则时不用回来改文案')
+      for (const lang of ['zh', 'en']) t.ok(!!DICT[lang]['intro.act2.no'], `${lang} 缺 intro.act2.no`)
+      t.ok(/\.demo-no \{/.test(readSrc('src/style.css')), '编号要有自己的样式，压一档存在感')
     }
   }
 

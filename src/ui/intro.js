@@ -297,9 +297,9 @@ export function createIntro(app) {
       <h3>${t('intro.act2.title')}</h3>
       <p class="lead">${t('intro.act2.body')}</p>
       <div class="demo-row">
-        ${demos.map(d => `
+        ${demos.map((d, i) => `
           <div class="demo">
-            <b>${t('intro.act2.' + d.key)}</b>
+            <b><span class="demo-no">${t('intro.act2.no', { i: i + 1, n: demos.length })}</span>${t('intro.act2.' + d.key)}</b>
             <canvas class="demo-canvas" id="demo-${d.key}"></canvas>
             <p>${t('intro.act2.' + d.key + '.body')}</p>
             <div class="demo-btns">
@@ -464,8 +464,12 @@ export function createIntro(app) {
     // 而"链接坏了"这件事对最需要知道的那个人（正在走引导的第一次访客）隐藏了。
     const intent = app.initialIntent || {}
     if (app.shareApplied || intent.starterGift === false || intent.brokenLink) return
-    app.clear({ silent: true })   // 走既有的清空路径，记账与用户自己点清空完全一致
-    placeStarterGift(app.engine)
+    // **引导收尾是应用做的，不是用户做的**（D124）：清盘 + 送滑翔机整段圈起来，
+    // 一个都不进撤销栈 —— 否则用户走完引导按撤销，会退到他从来没见过的导演场。
+    app.asAppAction(() => {
+      app.clear({ silent: true })   // 走既有的清空路径，记账与用户自己点清空完全一致
+      placeStarterGift(app.engine)
+    })
     app.visual.reconcile(app.engine)
     app.records.noteEdit()        // 棋盘换了，之前攒的哈希作废
     app.markDirtyRun()            // 这局不是种子生成的，不能靠种子重放

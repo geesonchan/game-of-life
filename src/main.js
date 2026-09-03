@@ -281,7 +281,11 @@ app.settleStep = function () {
   const step = app.pendingStep
   if (!step) return app.lastStepAdded
   app.pendingStep = null
-  app.lastStepAdded = stepChangedAnything(step.entry, app.boardSnapshotNow())
+  // **两维，判断仍在这一处**（作者定的落地方式）：
+  //   ① 变了没有（D113）  ② 谁做的（D124）
+  // 应用自己布置的开局不算用户的一步 —— 撤它就是把人退到打开页面之前。
+  app.lastStepAdded = step.entry.by !== 'app' &&
+    stepChangedAnything(step.entry, app.boardSnapshotNow())
   if (app.lastStepAdded) app.undoStack.push(step.entry, step.opts)
   return app.lastStepAdded
 }
@@ -355,6 +359,28 @@ app.refreshUndo = function () {
  * **必须在写盘之前叫**，存的是"这一步之前那一刻"。
  * `dropPatches` 那一档给 A 类（改尺寸/读档/载入）：盘要换了，之前的补丁坐标失去前提。
  */
+/**
+ * **撤销撤的是用户做过的事，不是应用自己做的事**（D124，作者定）。
+ *
+ * 引导收尾的「清盘 + 送滑翔机」、链接落地的写盘、`id=builtin:` 载入、`g=` 重放 ——
+ * 这些都是**应用按指令自动布置的开局**，不是用户的操作。
+ * 它们进了栈，用户按撤销就会退到"打开页面之前"的状态 ——
+ * **那不是后悔药，那是时光机**（作者的话）。
+ * 作者实测：走完引导按撤销，第一下去掉送的滑翔机，第二下变成全雪花的导演场 ——
+ * 退到了他从来没见过的状态。
+ *
+ * 做成**一个开关而不是逐个调用点打标记**：链接落地那条路是
+ * `applyShareState → resizeBoard / importRleText`，嵌套好几层，
+ * 逐个打标记迟早漏一处；把整段圈起来，**里面不管多深都自动算"应用做的"**。
+ * 这是这个项目一贯的必经之路打法。
+ */
+app.appActing = 0
+
+app.asAppAction = function (fn) {
+  app.appActing++
+  try { return fn() } finally { app.appActing-- }
+}
+
 /** 现在这一刻的整份快照 —— 播放中落笔要**在落笔之前**先抓一份（D122） */
 app.captureUndoPoint = function () {
   return captureSession(app.engine, {
@@ -376,6 +402,7 @@ app.pushUndoSnapshot = function (label, opts = {}) {
     // 还原要连这两样（定稿点名）：`currentShowId` 不还，`id=` 就会指错那一局；
     // "在不在跑"不还，用户会看着自己那一局莫名其妙动起来。
     showId: app.currentShowId,
+    by: app.appActing ? 'app' : 'user',      // 谁做的（D124）
     pre: app.boardNow()
   } }
 }
@@ -391,6 +418,7 @@ app.pushUndoPatch = function (cells, runDirtyBefore) {
     cells,
     runDirtyBefore,
     showId: app.currentShowId,
+    by: app.appActing ? 'app' : 'user',
     pre: app.boardNow()
   } }
 }
@@ -728,6 +756,14 @@ app.confirmStamp = function (cell) {
   if (!app.stamp || !at) return
   app.cancelPending({ keepRef: true })     // 先退出待放态，再落子（参照线由落子自己贴）
   app.placeStampAt(at)
+  // **放完了，这一轮选择就结束**（D126，作者定）：用户的心智是"我放完了，这事结束了"，
+  // 而从前是"选择粘住直到你手动取消" —— 于是点开画笔之后，手指点棋盘还在放图案 A。
+  //
+  // **只收这一条路**：`confirmStamp` 是触屏的〔放这〕，是「选图案 → 摆幽灵 → 确认」
+  // 那个**两步确认**的最后一步（D89 ①），按下去读起来就是"这件事办完了"。
+  // 桌面那条是一步点击，连着盖几个是既有用法（D88 那套参照线序号正是为"连着放两个"写的），
+  // 而且右键随时能取消 —— 不动它。
+  app.setStamp(null)
 }
 
 /**
@@ -1371,19 +1407,24 @@ app.recoverToEmptyBoard = function (err) {
 app.applyInitialBoard = function (intent) {
   app.initialIntent = intent
   app.unlockBoard()          // 裁决完了，闸开（正常那条路的开闸处，D110 §13）
-  if (intent.source === 'link') {
-    app.applyShareState(intent)
-  } else if (intent.source === 'firstVisitDemo') {
-    app.engine.randomize(intent.seed, intent.density)
-    app.visual.sync(app.engine)
-    app.records.startRun()
-    app.fitView()
-  } else {
-    app.visual.sync(app.engine)
-    app.records.startRun()
-    app.fitView()
-  }
-  app.series.push(app.engine.stats.alive)
+  // **整段圈成"应用做的"**（D124）：链接落地、`id=builtin:`、`g=` 重放、首访导演场，
+  // 都是应用按指令布置开局，不是用户的操作 —— 一个都不许进撤销栈。
+  // 圈整段而不是逐个打标记：里面是 applyShareState → resizeBoard / importRleText 好几层。
+  app.asAppAction(() => {
+    if (intent.source === 'link') {
+      app.applyShareState(intent)
+    } else if (intent.source === 'firstVisitDemo') {
+      app.engine.randomize(intent.seed, intent.density)
+      app.visual.sync(app.engine)
+      app.records.startRun()
+      app.fitView()
+    } else {
+      app.visual.sync(app.engine)
+      app.records.startRun()
+      app.fitView()
+    }
+    app.series.push(app.engine.stats.alive)
+  })
   return intent
 }
 

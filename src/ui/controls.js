@@ -68,6 +68,9 @@ export function setupControls(app) {
   app.drawOn = prefs.get('touchDraw', '0') === '1'
   app.setDrawOn = function (on) {
     app.drawOn = !!on
+    // 开画笔与手上举着图案是**互斥的意图**（D126）：点开画笔就是"我要一点一点画"，
+    // 那一刻还举着上一个图案，下一次点棋盘就又放了它 —— 正是作者报的那个"黏住"。
+    if (app.drawOn && app.stamp) app.setStamp(null)
     prefs.set('touchDraw', app.drawOn ? '1' : '0')
     el.draw.setAttribute('aria-pressed', app.drawOn ? 'true' : 'false')
     app.toast(t(app.drawOn ? 'draw.on' : 'draw.off'))

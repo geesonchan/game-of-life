@@ -19,7 +19,17 @@
    一处定义、处处引用：新增底部浮层时引它，不必各写各的 env()。
    不写死 34px —— 那是某一代机型的数，机型换了就错；系统给的值才是对的（作者定）。
    兜底 0px：非 iOS、以及没有 viewport-fit=cover 时，它本来就该是 0。 */
-:root { --safe-b: env(safe-area-inset-bottom, 0px); }
+:root {
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* 抽屉把手露出来那一段有多高（D127）。
+     从前 46px 硬写在三处（面板的平移、把手的高、#app 的让位），
+     改一个就得记得改另外两个 —— §12 那一族的隐患。收成一处。
+     **56 而不是 46**：作者真机看下来"不压底栏了但离得还是近"。
+     多出来的 10px 是**呼吸位**，不是安全边距 ——
+     安全边距那件事由 `--safe-b` 与 dvh 锚点各自管着（D112/D117），
+     这一条纯粹是观感：手指点的东西离屏幕最下沿再远一点。 */
+  --handle-h: 56px;
+}
 
 html, body { height: 100%; margin: 0; }
 
@@ -516,6 +526,13 @@ body.mode-full [data-mode="simple"] { display: none !important; }
   border: 1px solid var(--line); border-radius: 5px; cursor: pointer;
 }
 .demo p { margin: 7px 0 8px; font-size: 11px; color: var(--muted); line-height: 1.55; min-height: 34px; }
+/* 「第几个 / 一共几个」（D118）：淡出说"下面还有"，编号说"一共三个、你看到第几个"。
+   压一档存在感 —— 它是导航信息，不该和规则名字争眼。 */
+.demo-no {
+  display: inline-block; margin-right: 6px;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .demo-btns { display: flex; gap: 5px; }
 .demo-btns button { flex: 1; padding: 4px 6px; font-size: 11px; }
 
@@ -1074,10 +1091,10 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
        余量给棋盘，不给玩具盒 —— 列表拿到非整数行的高度必然截断（D74）。 */
     grid-template-rows: auto 1fr auto auto auto;
     height: 100dvh;
-    /* 46px 给底部露头的抽屉把手让位；再加一个安全区，因为把手自己也被顶上去了。
+    /* 给底部露头的抽屉把手让位（--handle-h）；再加一个安全区，因为把手自己也被顶上去了。
        **这一句是必经之路**：棋盘、临时撤销条、小地图、控制排、卡片带全在 #app 的流里，
        它们一起让开，不必各改各的 —— 将来新加的底部元素也自动在安全区之上（D112）。 */
-    padding-bottom: calc(46px + var(--safe-b));
+    padding-bottom: calc(var(--handle-h) + var(--safe-b));
   }
 
   /* header 与 workspace 自己不生成盒子，里面的分段直接变成 #app 的网格子项，
@@ -1263,21 +1280,21 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
     border-left: none; border-top: 1px solid var(--line);
     border-radius: 14px 14px 0 0;
     /* 收起：只露把手，并且把它整个抬到安全区之上 ——
-       不抬的话 46px 的把手有 34px 落在横条里，只剩顶上十几px 点得中（真机实测的症状）。
+       不抬的话把手有 34px 落在横条里，只剩顶上十几px 点得中（真机实测的症状）。
        上边已经钉在 100dvh，所以这里从那儿**往上**移，不再是"往下移自己的高度"。 */
-    transform: translateY(calc(-46px - var(--safe-b)));
+    transform: translateY(calc(-1 * var(--handle-h) - var(--safe-b)));
     transition: transform .22s ease;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, .45);
     padding-bottom: calc(24px + var(--safe-b));   /* 拉开时，最下面那颗按钮也要在横条之上 */
   }
   body.drawer-open .panel { transform: translateY(-100%); }   /* 拉开：下缘对齐动态视口的底边 */
-  /* 把手自己长到**盖满**露出来那一带（46px + 安全区）。
+  /* 把手自己长到**盖满**露出来那一带（--handle-h + 安全区）。
      不这么做的话，抬高抽屉之后露在横条那 34px 里的是面板正文 ——
      第一条分组标题正好落在那儿，而它也是可点的：等于把一个危险目标换成了另一个（实测抓到）。
-     现在那 34px 是把手自己的内边距：文字与横杠都在上面 46px 的内容盒里，横条之上。 */
+     现在那 34px 是把手自己的内边距：文字与横杠都在上面那段内容盒里，横条之上。 */
   .drawer-handle {
     display: block; width: 100%;
-    height: calc(46px + var(--safe-b));
+    height: calc(var(--handle-h) + var(--safe-b));
     padding-bottom: var(--safe-b);
     background: none; border: none; border-radius: 14px 14px 0 0;
     font-size: 14px; color: var(--muted);

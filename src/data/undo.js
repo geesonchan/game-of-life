@@ -17,6 +17,21 @@
 export const MAX_UNDO_BYTES = 32 * 1024 * 1024
 
 /**
+ * **播放中落笔的快照，另按步数封顶**（D125，作者提的折衷）。
+ *
+ * 播放中每一笔都要存整盘（补丁在下一代就失效，D122），而 2304² 一份 5.06 MiB ——
+ * 32 MiB 只装得下 **6 份**。连画几笔，之前那些**用户明确做过的**大步
+ * （清空、随机、载入）就被挤掉了：**字节封顶不区分"谁重要"，只认先来后到。**
+ *
+ * 所以这一类单独限 3 步：多出来的时候丢**最旧的那一笔涂抹**，
+ * 而不是丢栈底那份清空快照。字节封顶照旧兜在外面，两条一起管。
+ *
+ * 为什么是 3：播放中的误触是"刚才那一下"，人不会想退回五笔之前 ——
+ * 那时盘上早就跑得面目全非了。3 步够覆盖"连蹭了两三下"。
+ */
+export const MAX_RUN_STROKES = 3
+
+/**
  * 一条补丁多大。
  *
  * 实测口径：一笔涂抹约 270 条 ≈ 2 KB → 每条约 8 字节（`[x, y, 旧值]` 三个小整数）。
@@ -139,6 +154,16 @@ export function createUndoStack(limit = MAX_UNDO_BYTES) {
       }
       items.push(entry)
       used += bytesOf(entry)
+      // **播放中落笔那一类另有步数上限**（D125）：超了丢最旧的**同类**，
+      // 而不是让字节封顶去丢栈底那份用户明确做过的大步
+      if (entry.kind === 'snapshot' && entry.label === 'draw') {
+        const runs = items.filter(it => it.kind === 'snapshot' && it.label === 'draw')
+        while (runs.length > MAX_RUN_STROKES) {
+          const oldest = runs.shift()
+          items.splice(items.indexOf(oldest), 1)
+          used -= bytesOf(oldest)
+        }
+      }
       evict()
       return this
     },

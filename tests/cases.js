@@ -3857,10 +3857,15 @@ cases.push(
       // 六行仍旧是六行：grid-row 的取值集合没有因为这轮多出新成员
       t.ok(/grid-template-rows:\s*auto 1fr auto auto auto/.test(css), '控制区仍是那几行')
 
-      // 两端按钮 44px 触控下限
+      // 两端按钮的触控下限。**44 是下限不是定值**（D128 修订）：
+      // 这两颗浮在画布上、又贴着屏幕边，点歪的代价是"在棋盘上画了一笔"，
+      // 所以给到 52。守卫从此钉"不许低于 44"，而不是钉住某个具体数 ——
+      // 钉死具体数会挡住把它调大，而调大恰恰是这条判据想要的方向。
       const step = /\.zoombar \.zoom-step \{([^}]*)\}/.exec(css)
-      t.ok(!!step && /width:\s*44px/.test(step[1]) && /height:\s*44px/.test(step[1]),
-        '＋/－ 必须是 44×44，桌面上也不缩水')
+      const px = (re) => { const m = re.exec(step ? step[1] : ''); return m ? Number(m[1]) : 0 }
+      t.ok(!!step, '找得到 ＋/－ 的规则')
+      t.ok(px(/width:\s*(\d+)px/) >= 44 && px(/height:\s*(\d+)px/) >= 44,
+        `＋/－ 不许低于 44×44，桌面上也不缩水（实际 ${px(/width:\s*(\d+)px/)}×${px(/height:\s*(\d+)px/)}）`)
 
       // 竖向滑块：现代写法与老 WebKit 写法都要写
       const vert = /#in-zoom \{([^}]*)\}/.exec(css)
@@ -4046,10 +4051,11 @@ cases.push(
     name: '缩放滑条：视觉尺寸与触控尺寸分离（D85 ①）',
     run(t) {
       const css = readSrc('src/style.css')
-      // 触控区：一格不缩
+      // 触控区：一格不缩。**下限不是定值**（D128 修订，理由见 D84 那条守卫旁边）
       const step = /\.zoombar \.zoom-step \{([^}]*)\}/.exec(css)
-      t.ok(!!step && /width:\s*44px/.test(step[1]) && /height:\s*44px/.test(step[1]),
-        '＋/－ 的触控区仍是 44×44')
+      const px = (re) => { const m = re.exec(step ? step[1] : ''); return m ? Number(m[1]) : 0 }
+      t.ok(px(/width:\s*(\d+)px/) >= 44 && px(/height:\s*(\d+)px/) >= 44,
+        '＋/－ 的触控区不许低于 44×44')
       const range = /#in-zoom \{([^}]*)\}/.exec(css)
       t.ok(!!range && /width:\s*44px/.test(range[1]), '滑条的触控区宽度仍是 44px')
 
@@ -7695,6 +7701,66 @@ cases.push(
         '编号是 i/n，n 由数组长度来 —— 加第四条规则时不用回来改文案')
       for (const lang of ['zh', 'en']) t.ok(!!DICT[lang]['intro.act2.no'], `${lang} 缺 intro.act2.no`)
       t.ok(/\.demo-no \{/.test(readSrc('src/style.css')), '编号要有自己的样式，压一档存在感')
+    }
+  }
+,
+  {
+    name: '浮在画布上的控件：离屏幕左右边缘也要留余量（D129）',
+    run(t) {
+      // 底部那条危险带我们处理过两轮（安全区 D112 + 浏览器工具栏 D115/D117），
+      // **左右边缘却一直没进过任何清单**（作者点出）。
+      // 手机壳边缘就在那儿，右手握持时左边尤其难够；
+      // 而且越靠边，拇指落点的弧线越大，点击越容易被判成拖动（D128 那条的成因之一）。
+      const css = readSrc('src/style.css').replace(/\/\*[\s\S]*?\*\//g, '')
+      t.equal((css.match(/--edge-x:/g) || []).length, 1, '左右留白只许定义一处')
+
+      // 画布上的浮层，靠边那一侧要引 --edge-x，不许再写死小数字
+      // **全仓每一条都要查，不能只查基础那条**：窄屏的覆盖规则曾经把它压回 8px，
+      // 而手机恰恰是唯一有握持问题的地方 —— 只查基础规则的守卫会放过它（真踩到了）。
+      const floats = [['\\.draw-toggle', '画笔开关', 'left'], ['\\.zoombar', '缩放条', 'right']]
+      for (const [sel, name, side] of floats) {
+        const all = css.match(new RegExp(sel + ' \\{[^}]*\\}', 'g')) || []
+        t.ok(all.length > 0, `找得到${name}的规则`)
+        const setsEdge = all.filter(r => new RegExp(side + ':').test(r))
+        t.ok(setsEdge.length > 0, `${name}总得有一条定它贴哪边`)
+        for (const r of setsEdge) {
+          t.ok(new RegExp(side + ':\\s*var\\(--edge-x\\)').test(r),
+            `${name}每一条定 ${side} 的规则都要用 --edge-x，不许写死：${r.replace(/\s+/g, ' ').slice(0, 60)}`)
+        }
+      }
+      // 值本身：16 是惯例值（iOS 自家界面的左右内边距），不是量出来的 —— 但不许低于它
+      const edge = Number((/--edge-x:\s*(\d+)px/.exec(css) || [])[1])
+      t.ok(edge >= 16, `左右留白不许低于 16px（实际 ${edge}）`)
+
+      // **浮在内容上的小控件，44 是下限不是目标**（D128）
+      // 尺寸那两条各自只取"带尺寸的那一处"：同名选择器全仓有好几条（§30）
+      for (const [re, name] of [
+        [/\.draw-toggle \{[^}]*min-height:[^}]*\}/g, '画笔开关'],
+        [/\.zoombar \.zoom-step \{[^}]*width:[^}]*\}/g, '缩放 ＋/－']
+      ]) {
+        const body = locate(css, re, name + '尺寸规则的定位')[0]
+        const h = Number((/min-height:\s*(\d+)px/.exec(body) || /height:\s*(\d+)px/.exec(body) || [])[1])
+        t.ok(h >= 52, `${name}浮在画布上，给到 52 以上（实际 ${h}）`)
+      }
+    }
+  },
+  {
+    name: '浮在画布上的控件按"抬手"算点击，不等浏览器合成 click（D128）',
+    run(t) {
+      // 症状：画笔开关与缩放条都"点几次才有反应"。**两个控件同一个毛病 = 共同的原因**。
+      // 原因：都靠浏览器合成的 click，而合成有条件 —— 手指移动不能超过约 10px 的容差。
+      // 这两个又恰好都小、都贴边，拇指够过去本来就带弧线，一划就被判成拖动，**静默丢掉**。
+      const tap = readSrc('src/ui/tap.js')
+      t.ok(/export const TAP_SLOP = 20/.test(tap), '容差放宽到 20px —— 比浏览器宽一倍')
+      t.ok(/pointerType === 'mouse'/.test(tap), '鼠标那条路不插手：它本来就准')
+      t.ok(/addEventListener\('click'/.test(tap),
+        '键盘那条路照旧走 click —— 回车/空格只发 click，不发 pointer 事件')
+      t.ok(/swallowClick/.test(tap), '触屏点完要挡掉紧随其后的合成 click，免得触发两遍')
+      // 两个浮层控件都接上了
+      t.ok(/onTap\(el\.draw,/.test(readSrc('src/ui/controls.js')), '画笔开关走 onTap')
+      const zb = readSrc('src/ui/zoom-bar.js')
+      t.ok(/onTap\(el\.zin,/.test(zb) && /onTap\(el\.zout,/.test(zb), '缩放 ＋/－ 也走 onTap')
+      t.ok(!/el\.zin\.addEventListener\('click'/.test(zb), '不许再直接挂 click —— 那正是丢点击的那条路')
     }
   }
 

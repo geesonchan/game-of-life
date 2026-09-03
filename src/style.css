@@ -21,6 +21,17 @@
    兜底 0px：非 iOS、以及没有 viewport-fit=cover 时，它本来就该是 0。 */
 :root {
   --safe-b: env(safe-area-inset-bottom, 0px);
+  /* **浮在画布上的控件离屏幕左右边缘留多少**（D129，作者提）。
+     从前只有 8～10px —— 那是"离画布边缘"的距离，不是"离**屏幕**边缘"的距离。
+     手机壳的边缘就在那儿，右手握持时左边尤其难够；
+     而且越靠边，拇指落点的弧线越大，点击越容易被判成拖动（D128 那条的成因之一）。
+
+     **16px 是个有依据的惯例，不是量出来的**（这一点如实说）：
+     iOS 自家界面的内容与控件普遍留 16pt 的左右内边距；44pt 说的是**目标多大**，
+     从来没说过**离边多远**。我没有拇指落点与手机壳厚度的数据，作者也没有 ——
+     所以取那个站得住的惯例值，真机上不够再加。
+     代价：画布左右各少 6～8px。 */
+  --edge-x: 16px;
   /* 抽屉把手露出来那一段有多高（D127）。
      从前 46px 硬写在三处（面板的平移、把手的高、#app 的让位），
      改一个就得记得改另外两个 —— §12 那一族的隐患。收成一处。
@@ -1462,10 +1473,13 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   .draw-toggle {
     display: block;
     position: absolute;
-    left: 10px; top: 50%;
+    left: var(--edge-x); top: 50%;
     transform: translateY(-50%);
     z-index: 5;
-    min-height: 44px; min-width: 56px;      /* 触控下限 */
+    /* 44 是**下限**，不是浮在内容上的小控件该取的值（D128）：
+       这一颗贴着屏幕边、又压在可交互的画布上，点歪的代价是"在棋盘上画了一笔"。
+       给到 52 —— 比下限高一档，仍不至于挡住棋盘。 */
+    min-height: 52px; min-width: 60px;
     padding: 0 12px; font-size: 13px;
     border-radius: 10px;
     background: rgba(14, 16, 21, 0.45);
@@ -1485,7 +1499,7 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
 .zoombar {
   position: absolute;
-  right: 10px; top: 50%;
+  right: var(--edge-x); top: 50%;
   transform: translateY(-50%);
   z-index: 5;
   display: flex;
@@ -1506,7 +1520,8 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
 
 /* ＋/－：触控区 44×44 一格不缩，画出来的只有那个符号（视觉尺寸与触控尺寸分离，D85 ①） */
 .zoombar .zoom-step {
-  width: 44px; height: 44px; padding: 0;
+  /* 同画笔开关：44 是下限，浮在画布上的小控件给到 52（D128） */
+  width: 52px; height: 52px; padding: 0;
   font-size: 15px; line-height: 1;
   background: none; border: none; border-radius: 10px;
   color: var(--muted);
@@ -1654,9 +1669,11 @@ body.stamp-active .page-zoom-hint { top: 92px; }
 .page-zoom-hint[hidden] { display: none; }
 
 @media (max-width: 767px) {
-  /* 手机上画布更矮：滑条相应收短，两端 44px 的触控区一格不动 */
+  /* 手机上画布更矮：滑条相应收短，两端的触控区一格不动 */
   #in-zoom { height: 120px; }
-  .zoombar { right: 8px; }
+  /* **握持余量在手机上更要留**（D129）：从前这里把它压回 8px ——
+     而手机恰恰是唯一有握持问题的地方。写死的那个 8 就是这么漏掉的。 */
+  .zoombar { right: var(--edge-x); }
   .page-zoom-hint { top: 48px; font-size: 11px; }
 }
 

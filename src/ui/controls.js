@@ -6,6 +6,7 @@ import { prefs } from './prefs.js'
 import { attachNumericEntry, NUMERIC_SLIDERS, CODEC_SLIDERS } from './numeric-entry.js'
 import { isBigBoard, costOf } from '../data/board-sizes.js'
 import { resizePlan, cellBounds } from '../data/session.js'
+import { onTap } from './tap.js'
 
 const $ = id => document.getElementById(id)
 
@@ -76,7 +77,8 @@ export function setupControls(app) {
     app.toast(t(app.drawOn ? 'draw.on' : 'draw.off'))
   }
   el.draw.setAttribute('aria-pressed', app.drawOn ? 'true' : 'false')
-  el.draw.addEventListener('click', () => app.setDrawOn(!app.drawOn))
+  // 浮在画布上、又贴着屏幕边 —— 按「抬手」算点击，别等浏览器合成 click（D128）
+  onTap(el.draw, () => app.setDrawOn(!app.drawOn))
 
   // 刷新的实现在 main.js（`app.refreshUndo` 那一处）——
   // 压栈发生在启动段，那时 setupControls 还没跑，实现放这儿就得先垫一个空函数，

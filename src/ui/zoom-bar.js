@@ -8,6 +8,7 @@ import { fitScaleOf, zoomFromSlider, sliderFromZoom, ZOOM_STEPS } from '../rende
 import { attachNumericEntry } from './numeric-entry.js'
 import { t } from '../i18n/index.js'
 import { prefs } from './prefs.js'
+import { onTap } from './tap.js'
 
 /** 一按 ＋/－ 走全程的 10%。按的是**行程**不是倍数，于是和滑条是同一把刻度。 */
 export const ZOOM_BUTTON_STEP = ZOOM_STEPS / 10
@@ -147,8 +148,10 @@ export function setupZoomBar(app) {
     applySlider()
     wake()
   }
-  el.zin.addEventListener('click', stepBy(ZOOM_BUTTON_STEP))
-  el.zout.addEventListener('click', stepBy(-ZOOM_BUTTON_STEP))
+  // 同画笔开关：这两颗也浮在画布上、也贴着屏幕边 —— 按"抬手"算点击（D128）。
+  // **这个毛病是老的**：它们一直靠合成 click，与画笔那批改动无关。
+  onTap(el.zin, stepBy(ZOOM_BUTTON_STEP))
+  onTap(el.zout, stepBy(-ZOOM_BUTTON_STEP))
 
   el.toggle.addEventListener('change', () => setEnabled(el.toggle.checked))
 

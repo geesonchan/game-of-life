@@ -65,9 +65,23 @@ class MiniBoard {
 }
 
 /* 三条规矩各配一块地：摆法都挑最不会分心的 */
+// **四条规矩，四张卡**（D131）。规则本来就是四条（B3/S23 的 S 是"2 或 3"两个数），
+// 从前只讲三条，把"活下去"那一条漏了。
+//
+// **顺序：先生、再活、再讲两种死法**（作者定）：
+//   · 从前是"死 / 死 / 生" —— 一上来两条都是死，读着压抑，
+//     而最要紧的"生"被排在最不容易读到的位置；
+//   · 现在前两条讲怎么留下来、后两条讲什么时候留不住，两两成对；
+//   · 孤单与拥挤是同一件事的两端（少了 / 多了），相邻着讲，
+//     "正合适是 2 到 3 个"这个区间自然浮出来；
+//   · 而"存活"正是那个区间本身，排在两种死法之前，后面两条就是"低于它"和"高于它"。
+const DEMO_BIRTH = [[2, 1], [3, 1], [2, 2]]                       // 空位 (3,2) 旁边刚好 3 个 → 冒出新的
+// **存活那一张用方块**，而且从图案库里取（D130 那条：引导演示的东西面板里要拿得到）。
+// **实测：方块每格有 3 个邻居**（不是 2）—— 3 落在"2 或 3"的**上沿**，
+// 紧挨着下一张"多于 3 就死"的门槛，于是那个区间的两头在相邻两张卡上都看得见。
+const DEMO_SURVIVE = getPattern('block').cells.map(([x, y]) => [x + 2, y + 1])
 const DEMO_LONELY = [[2, 2], [3, 2]]                              // 各只有 1 个朋友 → 都会没
 const DEMO_CROWDED = [[2, 1], [3, 1], [4, 1], [2, 2], [3, 2], [4, 2], [2, 3], [3, 3], [4, 3]] // 实心块，中间闷死留个洞
-const DEMO_BIRTH = [[2, 1], [3, 1], [2, 2]]                       // 空位 (3,2) 旁边刚好 3 个 → 冒出新的
 /**
  * 第一幕：会自己动的一小台戏。
  *
@@ -305,13 +319,15 @@ export function createIntro(app) {
 
   /* ---------------- 第二幕：规矩实验角 ---------------- */
   function act2() {
+    // 顺序即判据：生 → 活 → 孤单 → 拥挤（D131）。编号 i/n 里的 n 由长度来，自动变成 4。
     const demos = [
+      { key: 'birth', w: 7, h: 5, setup: DEMO_BIRTH },
+      { key: 'survive', w: 7, h: 5, setup: DEMO_SURVIVE },
       { key: 'lonely', w: 7, h: 5, setup: DEMO_LONELY },
-      { key: 'crowded', w: 7, h: 5, setup: DEMO_CROWDED },
-      { key: 'birth', w: 7, h: 5, setup: DEMO_BIRTH }
+      { key: 'crowded', w: 7, h: 5, setup: DEMO_CROWDED }
     ]
     bodyEl.innerHTML = `
-      <h3>${t('intro.act2.title')}</h3>
+      <h3>${t('intro.act2.title', { n: demos.length })}</h3>
       <p class="lead">${t('intro.act2.body')}</p>
       <div class="demo-row">
         ${demos.map((d, i) => `

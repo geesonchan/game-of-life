@@ -768,8 +768,11 @@ export const DICT = {
     'intro.act1.title': '这是一个格子世界。',
     'intro.act1.body': '每个亮格子是一个小生命。',
     'intro.act1.caption': '它们自己在动 —— 没有人在操纵。',
-    'intro.act2.title': '它们只守三条规矩。',
-    'intro.act2.body': '朋友太少会孤单死掉；邻居太挤会闷死；一个空位旁边刚好有三个朋友，就会诞生新生命。',
+    // **标题里那个数由卡片数填**（D131）：写死会出现「标题说三条、下面四张卡」——
+    // §12 那一族最直白的一种，这一批写的时候真踩到了。
+    // 占位符从 demos.length 来，将来加第五条也不用回来改文案。
+    'intro.act2.title': '它们只守 {n} 条规矩。',
+    'intro.act2.body': '空位旁边刚好三个朋友，就诞生一个新的；身边有 2 个或 3 个朋友，就能一直活下去；少于 2 个会孤单死掉；多于 3 个会拥挤死。',
     'intro.act2.hint': '这三块地你可以自己戳：点格子摆上或拿掉，再按「走一步」看会发生什么。',
     // **接上手那一句**（D130）。作者改过我的措辞，理由是更具体也更有吸引力：
     // 不说"这三条合起来最小的例子"，而说"这三条里的**两条**，一个**三格**的东西
@@ -778,11 +781,16 @@ export const DICT = {
     // **两条能接上手，一条只能看** —— 所以这句话只认领两条，不吹三条。
     'intro.act2.try': '这三条里的两条，一个三格的东西两代之内就演完了。',
     'intro.act2.tryBtn': '拿一个闪灯',
-    'intro.act2.lonely': '朋友太少',
-    'intro.act2.lonely.body': '只有一个朋友的格子，走一步就没了。',
-    'intro.act2.crowded': '挤得太满',
-    'intro.act2.crowded.body': '周围围得满满的，中间那个会闷死，留下一个洞。',
-    'intro.act2.birth': '刚好三个',
+    'intro.act2.lonely': '孤独死',
+    'intro.act2.lonely.body': '身边少于 2 个朋友就活不下去 —— 这两个各只有 1 个，走一步都没了。',
+    'intro.act2.crowded': '拥挤死',
+    'intro.act2.crowded.body': '身边多于 3 个朋友也活不下去 —— 中间那个被围满了，留下一个洞。',
+    'intro.act2.birth': '出生',
+    // **名字与统计面板同一套**（D131）：统计里每一代都在报"出生 / 存活 / 孤独死 / 拥挤死"，
+    // 而引导从前另说一套（"朋友太少 / 挤得太满"）。同一件事两处两个名字 ——
+    // 说的与做的同源那一族。以**统计面板为准**：它每一代都在用户眼前重复，引导只看一次。
+    'intro.act2.survive': '存活',
+    'intro.act2.survive.body': '方块这四个各有 3 个朋友 —— 2 个或 3 个都能活下去，所以走一步谁也不动。',
     'intro.act2.birth.body': '空位旁边刚好三个朋友，就会冒出一个新的。',
     'intro.act2.step': '走一步',
     'intro.act2.reset': '摆回去',
@@ -1816,16 +1824,18 @@ export const DICT = {
     'intro.act1.title': 'This is a world made of squares.',
     'intro.act1.body': 'Every bright square is a little living thing.',
     'intro.act1.caption': 'They move on their own — nobody is steering them.',
-    'intro.act2.title': 'They follow just three rules.',
-    'intro.act2.body': 'With too few friends it dies of loneliness. With neighbours packed too tight it suffocates. And an empty square with exactly three friends beside it grows a new life.',
+    'intro.act2.title': 'They follow just {n} rules.',
+    'intro.act2.body': 'An empty square with exactly three friends beside it grows a new life. With 2 or 3 friends around, a square keeps on living. Fewer than 2 and it dies of loneliness; more than 3 and it dies of crowding.',
     'intro.act2.hint': 'These three boards are yours to poke: click squares to add or remove them, then press “One step” and see what happens.',
     'intro.act2.try': 'Two of those three rules play out in two steps, in a shape just three squares wide.',
     'intro.act2.tryBtn': 'Pick up a Blinker',
-    'intro.act2.lonely': 'Too few friends',
-    'intro.act2.lonely.body': 'A square with only one friend is gone after one step.',
-    'intro.act2.crowded': 'Packed too tight',
-    'intro.act2.crowded.body': 'Hemmed in on every side, the middle one suffocates and leaves a hole.',
-    'intro.act2.birth': 'Exactly three',
+    'intro.act2.lonely': 'Died lonely',
+    'intro.act2.lonely.body': 'Fewer than 2 friends and you cannot hold on — these two have 1 each, and one step takes them both.',
+    'intro.act2.crowded': 'Died crowded',
+    'intro.act2.crowded.body': 'More than 3 friends and you cannot hold on either — the middle one is hemmed in and leaves a hole.',
+    'intro.act2.birth': 'Born',
+    'intro.act2.survive': 'Living on',
+    'intro.act2.survive.body': 'Each of these four has 3 friends — 2 or 3 both keep you alive, so a step changes nothing.',
     'intro.act2.birth.body': 'An empty square with exactly three friends grows a new one.',
     'intro.act2.step': 'One step',
     'intro.act2.reset': 'Put it back',

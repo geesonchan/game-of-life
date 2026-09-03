@@ -7871,6 +7871,73 @@ cases.push(
         '第三幕承诺的那个名字，就是滑翔机在简洁语域里的名字 —— 两处必须是同一个东西')
     }
   }
+,
+  {
+    name: '第二幕四条规矩：顺序、名字与统计面板同一套（D131）',
+    run(t) {
+      // **规则本来就是四条**（B3/S23 的 S 是"2 或 3"两个数），从前只讲三条，漏了"活下去"。
+      const intro = readSrc('src/ui/intro.js')
+      const demos = locate(intro, /const demos = \[[\s\S]*?\n    \]/g, '第二幕卡片清单的定位')[0]
+      const keys = [...demos.matchAll(/key: '(\w+)'/g)].map(m => m[1])
+      t.equal(keys.join(','), 'birth,survive,lonely,crowded',
+        '顺序即判据：先生、再活、再讲两种死法 —— 从前是"死/死/生"，一上来两条都是死')
+
+      // **名字与统计面板同一套**（说的与做的同源那一族）：
+      // 统计每一代都在报"出生 / 存活 / 孤独死 / 拥挤死"，引导不许另说一套。
+      t.equal(DICT.zh['intro.act2.birth'], DICT.zh['stat.births'], '出生：两处同一个词')
+      t.equal(DICT.zh['intro.act2.lonely'], DICT.zh['stat.lonely'], '孤独死：两处同一个词')
+      t.equal(DICT.zh['intro.act2.crowded'], DICT.zh['stat.crowded'], '拥挤死：两处同一个词')
+      t.equal(DICT.zh['intro.act2.survive'], DICT.zh['stat.alive'], '存活：借统计那个词')
+
+      // **必须写"2 个或 3 个"**，不能只写 2 —— S23 是两个数
+      // **两种语言各查各的**：拼起来查会让一边通过就掩盖另一边 ——
+      // 写这条时真踩到了：中文改成"只写 2"，英文还留着 "2 or 3"，守卫照样绿。
+      for (const k of ['intro.act2.survive.body', 'intro.act2.body']) {
+        t.ok(/2 个或 3 个/.test(DICT.zh[k]), `zh 的 ${k} 要写明"2 个或 3 个"，只写 2 就把规则说窄了`)
+        t.ok(/2 or 3/.test(DICT.en[k]), `en 的 ${k} 要写明 "2 or 3"`)
+      }
+      // 两种死法要说清各自的门槛
+      t.ok(/少于 2/.test(DICT.zh['intro.act2.lonely.body']), '孤单那张要写"少于 2"')
+      t.ok(/多于 3/.test(DICT.zh['intro.act2.crowded.body']), '拥挤那张要写"多于 3"')
+      // 总述也得是四条、且顺序对齐卡片
+      const body = DICT.zh['intro.act2.body']
+      const order = ['诞生', '活下去', '孤单', '拥挤'].map(w => body.indexOf(w))
+      t.ok(order.every(i => i >= 0), `总述里四条都要有（实际位置 ${order}）`)
+      t.equal(order.slice().sort((a, b) => a - b).join(','), order.join(','), '总述的顺序要与卡片一致')
+
+      // **标题里那个数不许写死**：写死就会出现"标题说三条、下面四张卡"（写这一批时真踩到了）
+      for (const lang of ['zh', 'en']) {
+        t.ok(/\{n\}/.test(DICT[lang]['intro.act2.title']),
+          `${lang} 的第二幕标题要用占位符填条数，不许写死`)
+        t.ok(!/三条|three/i.test(DICT[lang]['intro.act2.title']), `${lang} 的标题里不许留写死的数`)
+      }
+      t.ok(/t\('intro\.act2\.title', \{ n: demos\.length \}\)/.test(intro),
+        '标题那个数由卡片数来 —— 一处来源，加第五条也不用回来改文案')
+
+      // 存活那张用方块，**而且从图案库取**（D130）
+      t.ok(/getPattern\('block'\)/.test(intro), '存活那张的演示对象从图案库取，不手抄坐标')
+
+      // **实测：方块每格 3 个邻居**（不是 2）—— 文案里那个数不许抄
+      const N = 9, C = 3
+      const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+      const blk = getPattern('block')
+      for (const [x, y] of blk.cells) e.set(C + x, C + y, 1)
+      e.stats.alive = e.countAlive()
+      const nb = (x, y) => {
+        let n = 0
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue
+          n += e.get(x + dx, y + dy) ? 1 : 0
+        }
+        return n
+      }
+      for (const [x, y] of blk.cells) t.equal(nb(C + x, C + y), 3, '方块每格刚好 3 个邻居')
+      t.ok(/各有 3 个朋友/.test(DICT.zh['intro.act2.survive.body']), '文案要写实测那个 3')
+      const before = e.stats.alive
+      e.step()
+      t.equal(e.stats.alive, before, '走一步一格不动 —— 那本身就是这条规则的证明')
+    }
+  }
 
 )
 

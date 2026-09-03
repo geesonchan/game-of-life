@@ -4433,8 +4433,16 @@ cases.push(
       const html = readSrc('index.html')
       const css = readSrc('src/style.css')
       t.ok(/id="stamp-hint"/.test(html), '提示条要写在 HTML 里')
-      t.ok(/data-i18n="stamp\.hint\.desk"/.test(html) && /data-i18n="stamp\.hint\.touch"/.test(html),
-        '桌面与触屏两句都要在，文案走词典')
+      t.ok(/data-i18n="stamp\.hint\.desk"/.test(html), '桌面那句要在，文案走词典')
+      // 触屏那句拆成"转"与"放"两半（D132）：气泡在的时候只留"放"那半 ——
+      // 同一句话不许两处同时说。气泡本身不删（D88 ① 的理由仍然成立）。
+      t.ok(/data-i18n="stamp\.hint\.touch\.turn"/.test(html) &&
+        /data-i18n="stamp\.hint\.touch\.place"/.test(html),
+        '触屏那句拆成转/放两半，文案走词典')
+      t.ok(/body\.stamp-tip-on \.stamp-hint-turn \{ display: none; \}/.test(css),
+        '气泡在的时候，提示行里"转"那半要收起来')
+      t.ok(/classList\.toggle\('stamp-tip-on', show\)/.test(readSrc('src/main.js')),
+        '那个开关由气泡的显隐同一处驱动 —— 不许各判一遍')
       // 显示与否只看 body.stamp-active —— 状态本来就在那儿，再写一份 JS 就会有对不上的那天
       t.ok(/\.stamp-hint \{[^}]*display: none/.test(css), '没选中图案时不占地方')
       t.ok(/body\.stamp-active \.stamp-hint \{ display: block; \}/.test(css), '选中即出现')
@@ -4457,18 +4465,21 @@ cases.push(
       t.ok(/\.stamp-hint-touch \{ display: none; \}/.test(css), '桌面只显示键盘那一句')
       t.ok(/@media \(max-width: 767px\)[\s\S]*?\.stamp-hint-desk \{ display: none; \}/.test(css),
         '窄屏只显示触屏那一句')
-      // 五件事一件不少（桌面），三件事一件不少（触屏）
+      // 五件事一件不少（桌面）；触屏那四件拆成两半之后**合起来仍是四件**（D132）
       for (const lang of ['zh', 'en']) {
         const desk = DICT[lang]['stamp.hint.desk']
-        const touch = DICT[lang]['stamp.hint.touch']
-        t.ok(typeof desk === 'string' && typeof touch === 'string', `${lang} 缺提示词条`)
+        const turn = DICT[lang]['stamp.hint.touch.turn']
+        const place = DICT[lang]['stamp.hint.touch.place']
+        t.ok([desk, turn, place].every(x => typeof x === 'string'), `${lang} 缺提示词条`)
         t.equal(desk.split('·').length, 5, `${lang} 桌面那句要列五件事：旋转/镜像/微调/放下/取消`)
-        t.equal(touch.split('·').length, 4,
-          `${lang} 触屏那句要列四件事：旋转/翻转/摆好/再点一下放下（两步放置之后多了一步，D89 ①）`)
-        t.ok(typeof DICT[lang]['stamp.hint.desk.simple'] === 'string', `${lang} 缺简洁语域`)
-        t.ok(typeof DICT[lang]['stamp.hint.touch.simple'] === 'string', `${lang} 缺简洁语域`)
+        t.equal(turn.split('·').length + place.split('·').length, 4,
+          `${lang} 触屏那两半合起来仍要是四件事：旋转/翻转/摆好/再点一下放下（D89 ①）`)
+        t.equal(turn.split('·').length, 2, `${lang} "转"那半只管旋转与翻转 —— 与气泡说的是同一件事`)
+        for (const k of ['stamp.hint.desk.simple', 'stamp.hint.touch.turn.simple', 'stamp.hint.touch.place.simple']) {
+          t.ok(typeof DICT[lang][k] === 'string', `${lang} 缺简洁语域 ${k}`)
+        }
       }
-      t.ok(/⟳/.test(DICT.zh['stamp.hint.touch']) && /⇋/.test(DICT.zh['stamp.hint.touch']),
+      t.ok(/⟳/.test(DICT.zh['stamp.hint.touch.turn']) && /⇋/.test(DICT.zh['stamp.hint.touch.turn']),
         '触屏那句要用画布上那两颗按钮的同一个符号 —— 说的和看到的必须是一个东西')
     }
   },
@@ -7936,6 +7947,35 @@ cases.push(
       const before = e.stats.alive
       e.step()
       t.equal(e.stats.alive, before, '走一步一格不动 —— 那本身就是这条规则的证明')
+    }
+  }
+,
+  {
+    name: '许诺"两代之内演完"，就得让人看得到那两代（D132）',
+    run(t) {
+      // **§12 的一次落地：承诺和它落地的环境要对得上**（作者定）。
+      // 第二幕说"两代之内就演完了"，而点完按钮落地的环境是：
+      // 14,127 格的雪花盘 + 每格 1.84 屏幕像素 —— 三格闪灯一共 5.5px，**兑现不了**。
+      const intro = readSrc('src/ui/intro.js')
+      const main = readSrc('src/main.js')
+      const take = locate(intro, /take\.addEventListener\('click'[\s\S]*?\n      \}\)/g, '那颗按钮的定位')[0]
+
+      // **清盘与缩放两个都要**：实测过，光清雪花，5.5px 的东西照样看不见
+      t.ok(/app\.clear\(\{ silent: true \}\)/.test(take), '要腾出舞台')
+      t.ok(/app\.focusSmallDemo\(\)/.test(take), '还要缩到看得清 —— 只清不缩等于没兑现')
+
+      // **只清应用自己布的那一盘**：用户动过手就不许清（D93/D82）
+      t.ok(/if \(!app\.runDirty\) app\.clear\(/.test(take),
+        '只在用户一个字没动过时才清 —— 那时盘上是首访的导演场，清它不算替用户做事')
+      t.ok(/app\.asAppAction\(/.test(take), '这一整段是应用做的，不许进撤销栈（D124）')
+      t.ok(/app\.setStamp\(getPattern\('blinker'\)\)/.test(take), '只选中，不落子')
+
+      // 缩放到多大：三格要读得出来
+      t.ok(/app\.DEMO_CELL_PX = 20/.test(main), '每格 20 CSS 像素 —— 三格 60px')
+      const fn = locate(main, /app\.focusSmallDemo = function[\s\S]*?\n\}/g, 'focusSmallDemo 的定位')[0]
+      t.ok(/Math\.min\(vp\.maxScale/.test(fn), '别越过视口自己的上限')
+      t.ok(/app\.DEMO_CELL_PX \* dpr/.test(fn),
+        'scale 是设备像素，要乘 dpr —— 不乘就在高分屏上只有一半大')
     }
   }
 

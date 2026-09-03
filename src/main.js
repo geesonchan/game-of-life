@@ -381,6 +381,30 @@ app.asAppAction = function (fn) {
   try { return fn() } finally { app.appActing-- }
 }
 
+/**
+ * **让一个三格的东西真的看得见**（D132）。
+ *
+ * 判据（作者定）：**引导说"两代之内就演完了"，就必须让人真的看得到那两代。**
+ * 这是 §12 的一次落地 —— **承诺和它落地的环境要对得上**。
+ *
+ * 实测过才知道单清盘不够：首访那盘是 200²，每格只占 **1.84 个屏幕像素**，
+ * 三格闪灯一共 **5.5px**。把雪花清掉之后噪音是没了，可 5.5px 的东西照样看不见。
+ * 所以"清盘"与"缩放"不是两个备选方案，**两个都要**。
+ *
+ * 取每格 20 CSS 像素：三格 60px，视野里还剩十几格，够看它上下一开一合。
+ * `maxScale` 在高 dpr 上会把它压回去一点 —— 那时仍远好过 1.84px，不为这点再加一层。
+ */
+app.DEMO_CELL_PX = 20
+
+app.focusSmallDemo = function () {
+  const vp = app.viewport
+  const dpr = (app.renderer && app.renderer.dpr) || 1
+  vp.scale = Math.min(vp.maxScale, app.DEMO_CELL_PX * dpr)
+  vp.originX = app.engine.w / 2 - app.canvas.width / (2 * vp.scale)
+  vp.originY = app.engine.h / 2 - app.canvas.height / (2 * vp.scale)
+  app.dirty = true
+}
+
 /** 现在这一刻的整份快照 —— 播放中落笔要**在落笔之前**先抓一份（D122） */
 app.captureUndoPoint = function () {
   return captureSession(app.engine, {
@@ -709,6 +733,8 @@ function afterOrientChange(kind) {
 app.syncStampTip = function () {
   const show = shouldShowStampTip(prefs.get('stampTipSeen'), !!app.stamp)
   document.getElementById('stamp-tip').hidden = !show
+  // 气泡在的时候，提示行里"转"那半收起来 —— 同一句话不许两处同时说（D132）
+  document.body.classList.toggle('stamp-tip-on', show)
   const hint = document.getElementById('stamp-hint')
   hint.classList.remove('flash')
   if (show) {

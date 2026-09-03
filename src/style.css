@@ -1614,6 +1614,9 @@ button.running:hover { background: #855f1c; border-color: #ab8228; color: #fff7e
   animation: tipIn .18s ease-out;
 }
 .stamp-tip[hidden] { display: none; }
+/* 气泡在的时候，提示行里"转"那半收起来（D132）——
+   两处同时说同一句，等于两处都没说清。气泡不删（D88 ① 的理由仍成立），删的是重复。 */
+body.stamp-tip-on .stamp-hint-turn { display: none; }
 .stamp-tip::before {                    /* 尖角：指着那两颗按钮 */
   content: ''; position: absolute;
   top: -5px; right: 16px;

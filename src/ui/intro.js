@@ -354,7 +354,22 @@ export function createIntro(app) {
     const take = document.getElementById('intro-take-blinker')
     if (take) {
       take.addEventListener('click', () => {
-        app.setStamp(getPattern('blinker'))   // 只选中，不落子
+        // **把舞台腾出来**（D132）。作者报的：点完之后面对的是一片 14,127 格的雪花、
+        // 三条提示同时说话 —— 而"两代之内演完"在那样的盘上**兑现不了**。
+        //
+        // 清盘 + 缩放**两个都要**（实测：200² 上每格只占 1.84px，
+        // 光清掉雪花，三格闪灯仍只有 5.5px，照样看不见）。
+        //
+        // **只清应用自己布的那一盘**：`runDirty` 为假 = 用户一个字没动过，
+        // 此刻盘上就是首访的导演场。清它不算替用户做事（D124 的口径，
+        // 第三幕收尾送滑翔机时本来也会清盘，站里有先例）。
+        // 用户动过手就**不清** —— 那是他的东西（D93/D82）；缩放照做，
+        // 让他至少看得清自己放下的那三格。
+        app.asAppAction(() => {
+          if (!app.runDirty) app.clear({ silent: true })
+          app.focusSmallDemo()
+        })
+        app.setStamp(getPattern('blinker'))   // 只选中，不落子（D124）
         close()
       })
     }

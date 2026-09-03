@@ -133,7 +133,12 @@
              显示与否只看 body.stamp-active，桌面/手机两句由媒体查询挑，零 JS 分支。 -->
         <p class="stamp-hint" id="stamp-hint">
           <span class="stamp-hint-desk" data-i18n="stamp.hint.desk">R 旋转 · F 镜像 · 方向键微调 · 回车放下 · Esc 取消</span>
-          <span class="stamp-hint-touch" data-i18n="stamp.hint.touch">⟳ 旋转 · ⇋ 翻转 · 点棋盘放下</span>
+          <!-- 触屏那句拆两半（D132）：**转**那半与右边那个气泡说的是同一件事，
+               气泡在的时候这半就收起来 —— 两处同时说同一句，等于两处都没说清。
+               气泡不删（D88 ① 的理由仍然成立：提示要长在动作发生的位置上），
+               删的是**重复**。 -->
+          <span class="stamp-hint-touch stamp-hint-turn" data-i18n="stamp.hint.touch.turn">⟳ 旋转 · ⇋ 翻转</span>
+          <span class="stamp-hint-touch stamp-hint-place" data-i18n="stamp.hint.touch.place">点棋盘摆好 · 再点一下放下</span>
         </p>
         <!-- 两步放置的第二步（D89 ①）：待放态才出现，点它 = 落子。
              位置跟着幽灵走（D90 ③，与 D47 的框选菜单同一套定位逻辑）——

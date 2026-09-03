@@ -165,6 +165,14 @@
         <!-- 缩放滑条（D84）。捏合既不可发现也不精确，这是它的可见、可精确的那一份。
              绝对定位在画布右缘的浮层 —— 不进控制区的行结构，
              D74 的六行与 D75 的位置恒定都不受影响；层级走 D79 的「贴附」层（5）。 -->
+        <!-- 画笔开关（D123）：**手指没有"悬停"** —— 桌面上鼠标移过棋盘什么都不发生，
+             要按下去才画；手指碰到就是按下。所以触屏默认不画，先看、先缩放、先平移。
+             它只管**触屏**那条路：鼠标那条一个字没动（桌面本来就有"移过去不算按下"这个中间态）。
+             摆图案不归它管 —— 选了图案本身就是明确意图（那条路在 pointerdown 里更早 return）。
+             放左侧中部：与右侧的缩放条对称，且完全避开底部那条危险带。
+             **开着时必须一眼看得出**（作者定的陷阱 a），所以开着是实心强调色。 -->
+        <button class="draw-toggle" id="btn-draw" aria-pressed="false"
+                data-i18n="draw.toggle" data-i18n-title="draw.tip">画笔</button>
         <div class="zoombar" id="zoombar">
           <button class="zoom-step" id="btn-zoom-in" data-i18n-title="tip.zoomIn">＋</button>
           <div class="zoom-track">

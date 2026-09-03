@@ -20,7 +20,8 @@
 export const PREF_KEYS = Object.freeze([
   'introSeen', 'lang', 'mode', 'zoomBar',
   'stampTipSeen',   // 旋转气泡看过没有（D88 ①）
-  'motionRay'       // 动向线开关（D88 ②）
+  'motionRay',      // 动向线开关（D88 ②）
+  'touchDraw'       // 手指画笔开关（D123）—— 看的人自己的偏好，与色带、语言同族
 ])
 
 /**

@@ -506,6 +506,10 @@ export const DICT = {
     // **一颗只写"撤销"的按钮，在空盘上无法自证**（D119，作者定）：
     // 用户刚清空，盘上什么都没有，按钮却亮着 —— 他看不到自己在撤销什么。
     // 所以提示带上**撤销哪一步**。这几条与压栈时那个 label 一一对应。
+    'draw.toggle': '画笔',
+    'draw.tip': '手指画笔：关着时单指是平移，开着时单指画格子',
+    'draw.on': '画笔开了 —— 单指现在会画格子',
+    'draw.off': '画笔关了 —— 单指现在是平移',
     'undo.what': '撤销：{what}',
     'undo.step.clear': '清空',
     'undo.step.randomize': '随机填充',
@@ -1532,6 +1536,10 @@ export const DICT = {
     'undo.stale.replaced': 'After replacing the whole board, earlier edits can no longer be undone',
     'undo.label': 'Undo',
     'undo.tip': 'Undo a whole step (a stroke, clear, randomize, load). For one cell, just tap it again',
+    'draw.toggle': 'Draw',
+    'draw.tip': 'Finger drawing: off = one finger pans, on = one finger draws',
+    'draw.on': 'Drawing on — one finger now draws cells',
+    'draw.off': 'Drawing off — one finger now pans',
     'undo.what': 'Undo: {what}',
     'undo.step.clear': 'Clear',
     'undo.step.randomize': 'Randomize',

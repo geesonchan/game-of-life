@@ -1172,9 +1172,14 @@ cases.push(
       // 是界面偏好而非实验数据、丢了不损失用户劳动、只影响这台设备的这个浏览器。
       // zoomBar（缩放滑条开关）是照这三条收进来的第四个。
       // autoShow 随看展一起撤了（v1.19.0）——白名单退回六个
-      t.equal(PREF_KEYS.length, 6, '白名单里只有这几个')
+      // touchDraw（手指画笔开关，D123）照那三条收进来，逐条对过：
+      //   ① 是界面偏好：它决定"单指是画还是平移"，不是任何实验数据；
+      //   ② 丢了不损失用户劳动：最坏是退回默认（关），棋盘一个格子都不受影响；
+      //   ③ 只影响这台设备的这个浏览器：它存在的理由就是"这台设备的手指没有悬停"。
+      t.equal(PREF_KEYS.length, 7, '白名单里只有这几个')
+      t.ok(PREF_KEYS.indexOf('touchDraw') >= 0, 'touchDraw 要在白名单里 —— 不然写进去会抛')
       t.equal(PREF_KEYS.slice().sort().join(','),
-        'introSeen,lang,mode,motionRay,stampTipSeen,zoomBar', '逐个点名')
+        'introSeen,lang,mode,motionRay,stampTipSeen,touchDraw,zoomBar', '逐个点名')
       // 反面照旧：游戏数据一个都不许进（下面那条用真存储撞过一遍）
       for (const k of ['board', 'save', 'ledger', 'snapshots'])
         t.ok(!PREF_KEYS.includes(k), `${k} 不许进白名单`)
@@ -7540,6 +7545,79 @@ cases.push(
       t.ok(/stepChangedAnything\(step\.entry, app\.boardSnapshotNow\(\)\)/.test(settle),
         '结算就是拿这一步与"现在的棋盘"比一比')
       t.ok(/app\.pendingStep = null/.test(settle), '结算完待定位要清空 —— 幂等，谁先问谁触发')
+    }
+  }
+,
+  {
+    name: '跑一代作废的是补丁，不是"从此不再记录"（D122）',
+    run(t) {
+      // 作者报的 bug：播放中手指蹭到棋盘留下一两个点，撤销仍是灰的。
+      // 病因：「跑一代作废整栈」被实现成了「播放期间不接受压栈」—— 两件事混成了一件。
+      // **作废的是"按坐标回滚的那种"，不是"从此不再记录"。**
+      const pre = { w: 8, h: 8, rule: 'B3/S23', stamp: 0 }
+      const st = createUndoStack()
+      st.push({ kind: 'snapshot', label: 'clear', session: { w: 4, h: 4, cells: [] }, pre })
+      st.push({ kind: 'patch', label: 'draw', cells: [[0, 0, 0]], pre })
+      t.equal(st.size(), 2, '一份快照 + 一条补丁')
+      t.equal(st.dropPatches(), true, '跑一代：丢掉补丁')
+      t.equal(st.size(), 1, '快照留着 —— 它带着整盘，跑多少代都还得回去')
+      t.equal(st.peek().kind, 'snapshot', '留下的是快照')
+      t.equal(st.dropPatches(), false, '没补丁可丢时返回 false —— 免得每帧白刷新一次')
+
+      const main = readSrc('src/main.js')
+      const inv = locate(main, /app\.invalidateUndoOnStep = function[\s\S]*?\n\}/g, '作废那一处的定位')[0]
+      t.ok(/dropPatches\(\)/.test(inv), '跑一代只丢补丁')
+      t.ok(!/undoStack\.clear\(\)/.test(inv), '不许整栈清空 —— 那等于播放期间不接受压栈')
+      t.ok(/kind === 'patch'/.test(inv), '待定的那一步也只在它是补丁时才作废')
+
+      // **播放中落笔要走快照**：补丁的旧值在下一代就对不上了（速度 10 就是 100ms 后）
+      const input = readSrc('src/ui/input.js')
+      const begin = locate(input, /function beginStroke\(\)[\s\S]*?\n  \}/g, 'beginStroke 的定位')[0]
+      t.ok(/app\.running \? app\.captureUndoPoint\(\) : null/.test(begin),
+        '播放中落笔要在**落笔之前**抓一份整盘快照')
+      const commit = locate(input, /function commitStroke\(\)[\s\S]*?\n  \}/g, 'commitStroke 的定位')[0]
+      t.ok(/if \(stroke\.before\) app\.pushUndoSnapshot\('draw', \{ session: stroke\.before \}\)/.test(commit),
+        '播放中那一笔压快照')
+      t.ok(/else app\.pushUndoPatch\(/.test(commit), '静止时仍走补丁 —— 便宜得多')
+    }
+  },
+  {
+    name: '手指画笔开关：只管触屏，摆图案不归它管（D123）',
+    run(t) {
+      const input = readSrc('src/ui/input.js')
+      const html = readSrc('index.html')
+      const css = readSrc('src/style.css')
+      const controls = readSrc('src/ui/controls.js')
+
+      // **只拦触屏**：鼠标那条路一个字没动（桌面本来就有"移过去不算按下"这个中间态）
+      t.ok(/if \(isTouch\(e\) && !app\.drawOn\) \{/.test(input),
+        '关着时只拦触屏的落笔，鼠标不受影响')
+      t.equal((input.match(/!app\.drawOn/g) || []).length, 1, '这个判断只许有一处')
+
+      // **摆图案不归它管**：那条路在 pointerdown 里更早 return
+      const down = locate(input, /canvas\.addEventListener\('pointerdown'[\s\S]*?\n  \}\)/g, 'pointerdown 的定位')[0]
+      const stampAt = down.indexOf("mode = 'stamp'")
+      const gateAt = down.indexOf('!app.drawOn')
+      t.ok(stampAt >= 0 && gateAt >= 0 && stampAt < gateAt,
+        '摆图案那条路要排在画笔开关**之前** —— 选了图案本身就是明确意图，与手指蹭到完全不同')
+
+      // **开着一眼看得出**（陷阱 a：否则用户撞上"我点了半天怎么画不出来"）
+      t.ok(/<button class="draw-toggle" id="btn-draw" aria-pressed="false"/.test(html),
+        '开关在画布上，且用 aria-pressed 表状态')
+      t.ok(/\.draw-toggle\[aria-pressed="true"\] \{[^}]*background: var\(--accent\)/.test(css),
+        '开着时是实心强调色 —— 与关着那个半透明幽灵板拉开两档')
+      t.ok(/\.draw-toggle \{ display: none; \}/.test(css), '桌面上不出现：鼠标那条路没有误触问题')
+      t.ok(/@media \(max-width: 767px\), \(pointer: coarse\)/.test(css),
+        '出现的条件是粗指针或窄屏 —— 判据是"有没有悬停"，那是指针的属性')
+
+      // **记住它**：属于看的人自己的偏好那一档（与色带、语言同族），不进 captureSession
+      t.ok(/prefs\.get\('touchDraw', '0'\) === '1'/.test(controls), '默认关，且从 prefs 读')
+      t.ok(/prefs\.set\('touchDraw'/.test(controls), '改了要记住')
+      t.ok(!/touchDraw/.test(readSrc('src/data/session.js')),
+        '它不是这一局的一部分 —— 不许进 captureSession')
+      for (const k of ['draw.toggle', 'draw.tip', 'draw.on', 'draw.off']) {
+        for (const lang of ['zh', 'en']) t.ok(!!DICT[lang][k], `${lang} 缺 ${k}`)
+      }
     }
   }
 

@@ -355,18 +355,24 @@ app.refreshUndo = function () {
  * **必须在写盘之前叫**，存的是"这一步之前那一刻"。
  * `dropPatches` 那一档给 A 类（改尺寸/读档/载入）：盘要换了，之前的补丁坐标失去前提。
  */
+/** 现在这一刻的整份快照 —— 播放中落笔要**在落笔之前**先抓一份（D122） */
+app.captureUndoPoint = function () {
+  return captureSession(app.engine, {
+    speed: app.speed,
+    view: app.viewport ? app.viewport.capture() : null,
+    runDirty: app.runDirty,
+    running: app.running
+  })
+}
+
 app.pushUndoSnapshot = function (label, opts = {}) {
   app.settleStep()          // 上一步先结算，待定位一次只放一个
   app.lastStepAdded = false // 这一次还没结算，先别让别人读到上一次的答案
   app.pendingStep = { opts, entry: {
     kind: 'snapshot',
     label,
-    session: captureSession(app.engine, {
-      speed: app.speed,
-      view: app.viewport ? app.viewport.capture() : null,
-      runDirty: app.runDirty,
-      running: app.running
-    }),
+    // `opts.session` 是**事先抓好**的那一份（播放中落笔用）；平时就抓当下这一刻
+    session: opts.session || app.captureUndoPoint(),
     // 还原要连这两样（定稿点名）：`currentShowId` 不还，`id=` 就会指错那一局；
     // "在不在跑"不还，用户会看着自己那一局莫名其妙动起来。
     showId: app.currentShowId,
@@ -397,8 +403,18 @@ app.pushUndoPatch = function (cells, runDirtyBefore) {
  * 得有自己的守卫：跑过一代，补丁记的那个棋盘就不存在了，整栈作废。
  */
 app.invalidateUndoOnStep = function () {
-  app.pendingStep = null      // 待定的那一步也一起作废：它记的棋盘同样已经不存在了
-  if (app.undoStack.size()) { app.undoStack.clear(); app.refreshUndo() }
+  // **作废的是"按坐标回滚的那种"，不是"从此不再记录"**（D122）。
+  // 补丁的旧值在引擎跑过之后就对不上了；快照带着整盘，跑多少代都还得回去。
+  // 从前这里整栈清空，等于"播放期间不接受压栈"——
+  // 于是播放中误触留下的点撤不掉，而那恰恰是最需要撤销的时刻：
+  // 盘上正在动，人连那个点落在哪儿都看不清。
+  let changed = false
+  if (app.pendingStep && app.pendingStep.entry.kind === 'patch') {
+    app.pendingStep = null
+    changed = true
+  }
+  if (app.undoStack.dropPatches()) changed = true
+  if (changed) app.refreshUndo()
 }
 
 /**

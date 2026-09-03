@@ -39,7 +39,7 @@ export function setupControls(app) {
   const el = {
     play: $('btn-play'), step: $('btn-step'), random: $('btn-random'), clear: $('btn-clear'),
     fit: $('btn-fit'), speed: $('in-speed'), density: $('in-density'), seed: $('in-seed'),
-    undo: $('btn-undo'),
+    undo: $('btn-undo'), draw: $('btn-draw'),
     lblSpeed: $('lbl-speed'), lblDensity: $('lbl-density'),
     lblNotation: $('lbl-notation'), lblFingerprint: $('lbl-fingerprint'),
     age: $('in-age'), glow: $('in-glow'),
@@ -54,6 +54,26 @@ export function setupControls(app) {
   el.clear.addEventListener('click', () => app.clear())
   // 撤销只有这一个入口（D116：临时条已撤销 —— 它压在画布上，挡视线也挡操作）
   el.undo.addEventListener('click', () => app.undo())
+
+  /**
+   * **手指画笔开关**（D123）。
+   *
+   * 只管**触屏**那条路：鼠标那条一个字没动 —— 桌面本来就有"移过去不算按下"这个中间态，
+   * 手指没有。所以这不是"两端两套心智模型"，是**同一个模型**（按下去才画）
+   * 在一个缺了中间态的设备上补回那个中间态。
+   *
+   * **记住它**（作者定）：它属于"看的人自己的偏好"那一档，与色带、语言同族，
+   * 不是这一局的一部分 —— 所以进 prefs，不进 captureSession。
+   */
+  app.drawOn = prefs.get('touchDraw', '0') === '1'
+  app.setDrawOn = function (on) {
+    app.drawOn = !!on
+    prefs.set('touchDraw', app.drawOn ? '1' : '0')
+    el.draw.setAttribute('aria-pressed', app.drawOn ? 'true' : 'false')
+    app.toast(t(app.drawOn ? 'draw.on' : 'draw.off'))
+  }
+  el.draw.setAttribute('aria-pressed', app.drawOn ? 'true' : 'false')
+  el.draw.addEventListener('click', () => app.setDrawOn(!app.drawOn))
 
   // 刷新的实现在 main.js（`app.refreshUndo` 那一处）——
   // 压栈发生在启动段，那时 setupControls 还没跑，实现放这儿就得先垫一个空函数，

@@ -155,8 +155,25 @@ export function createUndoStack(limit = MAX_UNDO_BYTES) {
      * 三处都问它。三处各判一次的话，迟早出现"按钮亮着但点了没反应"。
      */
     canUndo() { return items.length > 0 },
-    /** 跑过一代就整栈作废 —— 棋盘已经不是补丁记的那个棋盘了 */
+    /** 整栈作废 */
     clear() { items = []; used = 0 },
+    /**
+     * **跑过一代作废的是补丁，不是快照**（D122）。
+     *
+     * 补丁按**坐标 + 旧值**回滚：引擎往前跑过之后，那些旧值已经对不上现在的棋盘，
+     * 照它回滚就是往一盘演化过的局面里写陈年数据 —— 必须丢。
+     * 快照带的是**整盘**（w/h/规则/格子/代数），自成一体，
+     * 跑多少代都还得回去 —— 丢它没有道理，`staleReason` 本来也从不拦它。
+     *
+     * 从前这里是整栈清空，于是"跑一代作废"被实现成了"**播放期间不接受压栈**"——
+     * 播放中误触留下的那一两个点撤不掉，而那恰恰是最需要撤销的时刻。
+     */
+    dropPatches() {
+      const before = items.length
+      items = items.filter(it => it.kind === 'snapshot')
+      used = items.reduce((n, it) => n + bytesOf(it), 0)
+      return before !== items.length
+    },
     size() { return items.length },
     bytes() { return used },
     limit() { return limit }

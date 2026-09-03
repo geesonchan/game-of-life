@@ -79,7 +79,12 @@ export function setupCanvasInput(app) {
   }
 
   function beginStroke() {
-    stroke = { cells: [], runDirtyBefore: app.runDirty, startedAt: now() }
+    // **播放中落笔：先抓整份快照**（D122）。
+    // 补丁按坐标+旧值回滚，而下一代（速度 10 就是 100ms 后）那些旧值就对不上了 ——
+    // 播放中记补丁等于没记。快照自成一体，跑多少代都还得回去。
+    // 抓在**落笔之前**：这一笔要撤回的正是"我还没碰它的那一刻"。
+    const before = app.running ? app.captureUndoPoint() : null
+    stroke = { cells: [], runDirtyBefore: app.runDirty, startedAt: now(), before }
   }
   /** 落笔前先记下原值；同一格重复画只记第一次 */
   function noteCell(x, y) {
@@ -106,7 +111,9 @@ export function setupCanvasInput(app) {
     if (stroke.cells.length) {
       // **撤销：收笔时压栈**（D67 那个数组白捡 —— 它本来就是为整笔回滚攒的）。
       // 压在这儿而不是落笔时：画到一半还不算"一步"，用户要撤的是**一整笔**。
-      app.pushUndoPatch(stroke.cells, stroke.runDirtyBefore)
+      // 播放中那一笔走快照（落笔前抓的那份），静止时走补丁 —— 便宜得多。
+      if (stroke.before) app.pushUndoSnapshot('draw', { session: stroke.before })
+      else app.pushUndoPatch(stroke.cells, stroke.runDirtyBefore)
       app.records.noteEdit()   // 轨迹变了，之前攒的哈希作废
       app.markDirtyRun()       // 手绘过的局不能再靠种子重放
       // 画笔也是"落子"：它把参照线替换掉 —— 画笔没有方向，于是等于清掉（D91）。
@@ -208,6 +215,17 @@ export function setupCanvasInput(app) {
     }
     canvas.setPointerCapture(e.pointerId)
     const p = p0
+    // **手指画笔关着时，单指是平移**（D123）。
+    // 手指没有"悬停"这个中间态：碰到就是按下，于是桌面能用的默认在手机上必然误触。
+    // 而这个应用大部分时间不是在画 —— 缩放、平移、看细节、播放观察。
+    // 关着时把单指还给平移，正好是那些高频意图。
+    // 只拦触屏：鼠标那条路一个字没动。
+    if (isTouch(e) && !app.drawOn) {
+      mode = 'pan'
+      canvas.classList.add('panning')
+      lastPointer = p
+      return
+    }
     if (e.button === 1 || spaceHeld) {
       mode = 'pan'
       canvas.classList.add('panning')

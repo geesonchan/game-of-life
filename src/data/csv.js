@@ -23,6 +23,6 @@ export const SNAPSHOT_COLUMNS = ['gen', 'alive', 'births', 'deathsLonely', 'deat
 
 /** 实验台账的列（规格 3.4） */
 export const LEDGER_COLUMNS = [
-  'runId', 'timestamp', 'seed', 'ruleFingerprint', 'ruleNotation', 'boundary',
+  'runId', 'timestamp', 'origin', 'seed', 'ruleFingerprint', 'ruleNotation', 'boundary',
   'boardSize', 'initDensity', 'endType', 'endGen', 'peakPop', 'note'
 ]

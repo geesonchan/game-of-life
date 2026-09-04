@@ -382,6 +382,29 @@ app.asAppAction = function (fn) {
 }
 
 /**
+ * 把当前选中的那张卡滚进视野（D133）。
+ *
+ * `block/inline: 'nearest'` —— 已经在视野里就一动不动，不抢用户正在看的位置。
+ */
+/** 引导把闪灯交到手上时挂起的一次性交待（D133）。纯 UI 状态，不进任何快照 */
+app.demoHintPending = false
+
+app.revealStampCard = function () {
+  if (!app.stamp) return
+  const card = document.querySelector(`[data-pattern="${app.stamp.key}"]`)
+  if (!card || !card.scrollIntoView) return
+  // **本来就看得见 → 一动不动**（用户自己点卡片那条路，别抢他正在看的位置）；
+  // **本来看不见 → 摆到正中**（应用替他选的那条路，那一刻他要的就是"我拿的是这个"）。
+  // 用 nearest 会把它停在带子边缘、还切掉一半 —— 那是"技术上在视野里"，不是"看得见"。
+  const box = card.getBoundingClientRect()
+  const list = card.parentElement && card.parentElement.getBoundingClientRect()
+  const visible = list && box.left >= list.left - 1 && box.right <= list.right + 1 &&
+    box.top >= list.top - 1 && box.bottom <= list.bottom + 1
+  if (visible) return
+  card.scrollIntoView({ block: 'nearest', inline: 'center' })
+}
+
+/**
  * **让一个三格的东西真的看得见**（D132）。
  *
  * 判据（作者定）：**引导说"两代之内就演完了"，就必须让人真的看得到那两代。**
@@ -789,7 +812,10 @@ app.confirmStamp = function (cell) {
   // 那个**两步确认**的最后一步（D89 ①），按下去读起来就是"这件事办完了"。
   // 桌面那条是一步点击，连着盖几个是既有用法（D88 那套参照线序号正是为"连着放两个"写的），
   // 而且右键随时能取消 —— 不动它。
-  app.setStamp(null)
+  //
+  // **静默收手**：用户完成的是"放下"不是"取消"，弹「已取消选择」既不准，
+  // 又会把 placeStampAt 刚说完的那句盖掉（D133 实测撞上了）。
+  app.setStamp(null, { silent: true })
 }
 
 /**
@@ -845,7 +871,13 @@ app.placeStampConfirm = function () {
   if (app.stampOutside !== !fits) { app.stampOutside = !fits; app.dirty = true }
 }
 
-app.setStamp = function (pattern) {
+/**
+ * @param {object|null} pattern
+ * @param {{silent?: boolean}} opts `silent` 给**自动收手**用（放完之后那一次，D126）：
+ *   那时用户完成的是"放下"，不是"取消" —— 弹一句「已取消选择」既不准，
+ *   还会把刚说完的那句交待冲掉（D133 实测撞上了）。
+ */
+app.setStamp = function (pattern, opts = {}) {
   app.stamp = pattern
   // 换图案（或取消选择）时，待放的那个幽灵一并收走；**参照线留着** ——
   // 棋盘没变，刚才那条线仍然说得准，而拿起下一个图案正是要拿它来对（D91）
@@ -855,12 +887,20 @@ app.setStamp = function (pattern) {
   document.getElementById('stamp-tools').hidden = !pattern
   app.syncStampTip()
   app.library.renderPatterns()
+  // **高亮了还不够，得让人看见**（D133）。
+  // 作者报"没有一个是高亮的"，查下来高亮**是对的** —— 那张卡在 `left: 1054px`，
+  // 而卡片带只有 351px 宽、`scrollLeft` 还停在 0：**高亮在屏幕外七百像素处**。
+  // 与 D87 那条同族：**不在注意力所在处的提示，等于没有提示**。
+  //
+  // 放在 setStamp 这一处，是因为**所有改选中状态的路都经过它**（扫过，没有旁路）——
+  // 用户点卡片那条路本来就在视野里，滚一下是空操作；替用户选的那些路才真需要它。
+  app.revealStampCard()
   // 精彩局卡片带也要跟着变（拿在手上的那张要高亮）—— 与图案卡同一时刻、同一处触发
   if (app.favorites) app.favorites.renderShow()
   app.canvas.classList.toggle('stamping', !!pattern)
   app.dirty = true
   if (pattern) app.toast(t('pattern.selected', { name: pattern.label || t('pattern.' + pattern.key) }))
-  else app.toast(t('pattern.cancelled'))
+  else if (!opts.silent) app.toast(t('pattern.cancelled'))
 }
 
 /** 在某个格子放下当前图案（以光标为中心） */
@@ -927,7 +967,15 @@ app.placeStampAt = function (cell) {
   app.captureBaseline()
   app.dirty = true
   app.updateHud()
-  app.toast(t('pattern.placed', { name: label }))
+  // **引导交待的那一句**（D133）：它承诺"两代之内演完"，就得把最后一步说完 ——
+  // 给了东西还要说拿它干什么。一次性：说过就收，不再打扰。
+  // 这是**应用说的话**，只弹一句话、不碰棋盘，所以与撤销栈无关（D124）。
+  if (app.demoHintPending) {
+    app.demoHintPending = false
+    app.toast(t('intro.demo.next', { step: t('ctrl.step') }))
+  } else {
+    app.toast(t('pattern.placed', { name: label }))
+  }
   app.endStep()
 }
 

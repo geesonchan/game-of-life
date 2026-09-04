@@ -783,6 +783,13 @@ export const DICT = {
     // **两条能接上手，一条只能看** —— 所以这句话只认领两条，不吹三条。
     'intro.act2.try': '这三条里的两条，一个三格的东西两代之内就演完了。',
     'intro.act2.tryBtn': '拿一个闪灯',
+    // **承诺讲了一半：给了东西，没说拿它干什么**（D133，作者定）。
+    // 放下之后要指向**下一个动作**，而且：
+    //   ① 具体到按哪一颗，不许说"试试看"；
+    //   ② 用**单步**不用播放 —— 闪灯周期是 2，速度 10 时一秒眨五次，
+    //      单步才看得清"两代之内演完"，那句承诺正是在这儿兑现的。
+    // 按钮名从 `ctrl.step` 插进来，不手抄 —— 按钮改名了这句话跟着改（§12）。
+    'intro.demo.next': '放好了 —— 点〔{step}〕看它一代变一次，两下就回到原样',
     'intro.act2.lonely': '孤独死',
     'intro.act2.lonely.body': '身边少于 2 个朋友就活不下去 —— 这两个各只有 1 个，走一步都没了。',
     'intro.act2.crowded': '拥挤死',
@@ -1833,6 +1840,7 @@ export const DICT = {
     'intro.act2.hint': 'These three boards are yours to poke: click squares to add or remove them, then press “One step” and see what happens.',
     'intro.act2.try': 'Two of those three rules play out in two steps, in a shape just three squares wide.',
     'intro.act2.tryBtn': 'Pick up a Blinker',
+    'intro.demo.next': 'Placed — tap [{step}] to move it one step; two taps and it is back where it started',
     'intro.act2.lonely': 'Died lonely',
     'intro.act2.lonely.body': 'Fewer than 2 friends and you cannot hold on — these two have 1 each, and one step takes them both.',
     'intro.act2.crowded': 'Died crowded',

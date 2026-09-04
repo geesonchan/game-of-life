@@ -370,6 +370,7 @@ export function createIntro(app) {
           app.focusSmallDemo()
         })
         app.setStamp(getPattern('blinker'))   // 只选中，不落子（D124）
+        app.demoHintPending = true            // 放下之后交待下一步（D133）
         close()
       })
     }

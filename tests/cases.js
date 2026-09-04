@@ -7695,7 +7695,10 @@ cases.push(
       const controls = readSrc('src/ui/controls.js')
       // 触屏〔放这〕之后收掉选择 —— 用户的心智是"我放完了，这事结束了"
       const confirm = locate(main, /app\.confirmStamp = function[\s\S]*?\n\}/g, 'confirmStamp 的定位')[0]
-      t.ok(/app\.setStamp\(null\)/.test(confirm), '触屏〔放这〕之后结束这一轮选择')
+      t.ok(/app\.setStamp\(null, \{ silent: true \}\)/.test(confirm),
+        '触屏〔放这〕之后结束这一轮选择，**且静默** —— ' +
+        '用户完成的是"放下"不是"取消"，弹「已取消选择」既不准，' +
+        '又会把刚说完的那句交待盖掉（D133 实测撞上了）')
       // **桌面那条不动**：一步点击，连着盖几个是既有用法（参照线序号就是为它写的）
       const place = locate(main, /app\.placeStampAt = function[\s\S]*?\n\}/g, 'placeStampAt 的定位')[0]
       t.ok(!/app\.setStamp\(null\)/.test(place),
@@ -7976,6 +7979,49 @@ cases.push(
       t.ok(/Math\.min\(vp\.maxScale/.test(fn), '别越过视口自己的上限')
       t.ok(/app\.DEMO_CELL_PX \* dpr/.test(fn),
         'scale 是设备像素，要乘 dpr —— 不乘就在高分屏上只有一半大')
+    }
+  }
+,
+  {
+    name: '替用户改了选中状态，就得让他看见（D133）',
+    run(t) {
+      // 作者报"没有一个是高亮的"。查下来**高亮是对的** ——
+      // 那张卡在 left:1054px，而卡片带只有 351px 宽、scrollLeft 还停在 0：
+      // **高亮在屏幕外七百像素处**。所以判据不是"状态没显示"，是**显示了但没被看见** ——
+      // 与 D87 那条同族：不在注意力所在处的提示，等于没有提示。
+      const main = readSrc('src/main.js')
+      const set = locate(main, /app\.setStamp = function[\s\S]*?\n\}/g, 'setStamp 的定位')[0]
+      t.ok(/app\.library\.renderPatterns\(\)/.test(set), '换选中就重画卡片（高亮）')
+      t.ok(/app\.revealStampCard\(\)/.test(set), '还要把那张卡滚进视野 —— 高亮在屏幕外等于没有')
+      const reveal = locate(main, /app\.revealStampCard = function[\s\S]*?\n\}/g, 'revealStampCard 的定位')[0]
+      t.ok(/if \(visible\) return/.test(reveal),
+        '已经在视野里就一动不动 —— 不抢用户正在看的位置（他自己点卡片那条路）')
+      t.ok(/inline: 'center'/.test(reveal),
+        "看不见的时候摆到正中 —— nearest 会把它停在带子边缘还切掉一半，" +
+        "那是'技术上在视野里'，不是'看得见'")
+      // **所有改选中状态的路都经过 setStamp**（扫过没有旁路），所以放这一处就够
+      const stray = []
+      for (const f of ['src/main.js', 'src/ui/intro.js', 'src/ui/library.js', 'src/ui/input.js', 'src/ui/controls.js']) {
+        const src = readSrc(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+        for (const m of src.match(/app\.stamp\s*=\s*[^=]/g) || []) stray.push(f + ': ' + m.trim())
+      }
+      t.equal(stray.length, 1, `只许 setStamp 里那一处直接赋值 app.stamp（实际 ${stray.join(' / ')}）`)
+
+      // **承诺讲了一半：给了东西，没说拿它干什么**
+      for (const lang of ['zh', 'en']) {
+        const line = DICT[lang]['intro.demo.next']
+        t.ok(typeof line === 'string' && line.length > 0, `${lang} 缺那句交待`)
+        t.ok(/\{step\}/.test(line),
+          `${lang} 那句要把按钮名插进来，不许手抄 —— 按钮改名了这句话要跟着改`)
+        t.ok(!/播放|Play/.test(line),
+          `${lang} 要指向单步不是播放：闪灯周期 2，速度 10 时一秒眨五次，单步才看得清`)
+      }
+      // 一次性：说过就收
+      const place = locate(main, /app\.placeStampAt = function[\s\S]*?\n\}/g, 'placeStampAt 的定位')[0]
+      t.ok(/app\.demoHintPending = false/.test(place), '交待过就收，不再打扰')
+      t.ok(/t\('intro\.demo\.next', \{ step: t\('ctrl\.step'\) \}\)/.test(place),
+        '按钮名从 ctrl.step 来 —— 与按钮上写的是同一处（§12）')
+      t.ok(/app\.demoHintPending = true/.test(readSrc('src/ui/intro.js')), '引导交出闪灯时挂起它')
     }
   }
 

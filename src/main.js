@@ -518,6 +518,12 @@ app.undo = function () {
     app.engine.stats.alive = app.engine.countAlive()
     app.visual.reconcile(app.engine)
     app.runDirty = top.runDirtyBefore
+    // **撤销也是"改了棋盘"**（D136）：轨迹变了，之前攒的哈希不再代表这条轨迹，
+    // "这一局是小局"那个判断也得重新来 —— 否则标记过一次之后，
+    // 后面**该报的终止都不报了**（作者预判到的反向 bug）。
+    // 快照那一支不必：`restoreSession` 走 `startRun`，那里已经全复位。
+    // 判据：**每一条改棋盘的路都要告诉 records**，撤销这一支从前是唯一的例外。
+    app.records.noteEdit()
   } else {
     app.restoreSession(top.session)
   }

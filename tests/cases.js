@@ -8135,6 +8135,44 @@ cases.push(
       }
     }
   }
+,
+  {
+    name: '每一条改棋盘的路都要告诉 records（D136）',
+    run(t) {
+      // 作者预判的反向 bug：小局标记过之后如果不复位，
+      // **后面该报的终止都不报了**。所以"什么时候清掉那个标记"必须逐条查。
+      const rec = readSrc('src/ui/records.js')
+      const main = readSrc('src/main.js')
+
+      // 复位只有两个入口：新一局（startRun）与改了棋盘（noteEdit）
+      for (const [fn, re] of [['startRun', /function startRun\(\)[\s\S]*?\n  \}/g],
+        ['noteEdit', /function noteEdit\(\)[\s\S]*?\n  \}/g]]) {
+        t.ok(/tinyNoted = false/.test(locate(rec, re, fn + ' 的定位')[0]), `${fn} 要复位那个标记`)
+      }
+
+      // **撤销的补丁那一支从前是唯一的例外** —— 它改了棋盘却没告诉 records
+      const undoFn = locate(main, /app\.undo = function[\s\S]*?\n\}/g, 'undo 的定位')[0]
+      const patchArm = undoFn.slice(undoFn.indexOf("top.kind === 'patch'"), undoFn.indexOf('} else {'))
+      t.ok(/app\.records\.noteEdit\(\)/.test(patchArm),
+        '撤销的补丁分支要告诉 records —— 轨迹变了，哈希与"小局"判断都得重来')
+      // 快照那一支靠 restoreSession → startRun，不必重复
+      const restore = locate(main, /app\.restoreSession = function[\s\S]*?\n\}/g, 'restoreSession 的定位')[0]
+      t.ok(/app\.records\.startRun\(\)/.test(restore), '快照那一支由 startRun 全复位')
+
+      // 逐条点名：清空 / 随机 / 改尺寸 / 载入图案 / 读档，都要有其中一个
+      for (const [f, name, re] of [
+        ['src/main.js', 'clear', /app\.clear = function[\s\S]*?\n\}/g],
+        ['src/main.js', 'randomize', /app\.randomize = function[\s\S]*?\n\}/g],
+        ['src/main.js', 'resizeBoard', /app\.resizeBoard = function[\s\S]*?\n\}/g],
+        ['src/main.js', 'placeStampAt', /app\.placeStampAt = function[\s\S]*?\n\}/g],
+        ['src/ui/io.js', 'importRleText', /app\.importRleText = function[\s\S]*?\n  \}/g]
+      ]) {
+        const body = locate(readSrc(f), re, name + ' 的定位')[0]
+        t.ok(/records\.(startRun|noteEdit)\(\)/.test(body),
+          `${name} 改了棋盘，就得告诉 records（startRun 或 noteEdit）`)
+      }
+    }
+  }
 
 )
 

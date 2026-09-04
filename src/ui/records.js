@@ -3,7 +3,7 @@
 import { SnapshotLog } from '../data/snapshots.js'
 import { TerminationDetector } from '../data/detector.js'
 import { Chronicle } from '../data/chronicle.js'
-import { Ledger } from '../data/ledger.js'
+import { Ledger, ORIGIN_SEEDED, ORIGIN_HANDMADE } from '../data/ledger.js'
 import { toCSV, SNAPSHOT_COLUMNS, LEDGER_COLUMNS } from '../data/csv.js'
 import { t } from '../i18n/index.js'
 
@@ -55,6 +55,7 @@ export function setupRecords(app) {
     runSeq++
     currentRun = { runId: `run-${runSeq}-${Date.now().toString(36)}`, startedAt: new Date().toISOString() }
     lastEnd = null
+    tinyNoted = false          // 新一局重新判
     log.reset()
     detector.reset()
     chronicle.reset(app.engine.w * app.engine.h)
@@ -77,6 +78,36 @@ export function setupRecords(app) {
    * 每代调用一次。engine 已经跨到新一代。
    * @returns {object|null} 终止信息
    */
+  /**
+   * **一局要先成为一局，才谈得上结束**（D134）。
+   *
+   * 从前只要检测器一命中就 `finishRun`：落台账、弹总结卡、停下来。
+   * 于是放个方块走一步（静止）、放两个格子走一步（全灭）、放个闪灯走两步（循环）——
+   * **一分钟能落三条台账、弹三次框**。实测过，而且**与引导无关**：
+   * 任何人试任何基础图案都会撞到，引导那条路只是把它暴露出来了。
+   *
+   * 判据落在**这一局本身**，不落在"这个人是谁"：处境判断不了，
+   * 而"这一局有没有跑起来"判断得了 —— 而它恰好把两种人都覆盖了。
+   * 这是那条老原理的又一次：**把判断从"输入的种类"挪到"输出的事实"**
+   * （D110 §23：按理由挑路 vs 按结果挑路；D113：枚举操作 vs 问棋盘变没变）。
+   * 这一次是从"**这个人是谁**"挪到"**这一局是什么样**"。
+   */
+  /**
+   * 几代之内终止就不算一局。
+   *
+   * **这个数是判断，不是测量** —— 记下它当初罩住了什么，以后想调看得见：
+   * 闪灯 2 · 蟾蜍 2 · 信标 2 · 脉冲星 3 · 方块 1（静止）· 两个格子 1（全灭）。
+   * 而真正的探索局几乎不可能在第 8 代结束 ——
+   * 200×200 密度 0.35 八代静止的话，那本身就是异常，值得被看见。
+   *
+   * **没有再 AND 一个"手摆的局"**（作者定）：随机生成的局在 8 代内终止同样不值得记，
+   * 多一个条件就多一个会烂的分支。
+   */
+  const MIN_RUN_GENS = 8
+
+  /** 这一局已经判过是"小局"了 —— 之后一律不再打扰（下面那段说明为什么必须记这个） */
+  let tinyNoted = false
+
   function onGeneration(stats) {
     log.push(stats)
     chronicle.observe(stats)
@@ -89,6 +120,17 @@ export function setupRecords(app) {
     const alreadyEnded = !!lastEnd     // 必须先取，finishRun 会把 lastEnd 设上
     const hit = detector.observe(stats.gen, needsHash() ? app.engine.hash() : '', stats.alive)
     if (hit && !alreadyEnded) {
+      // **判过一次就一直算数**：闪灯每两代命中一次，只跳过"这一次"是不够的 ——
+      // 走到第 10 代那一次 gen 就大于 8，会补弹一张卡。所以记在这一局上，不是记在这一次上。
+      if (tinyNoted) return hit
+      if (hit.gen <= MIN_RUN_GENS) {
+        tinyNoted = true
+        // **说出来，但不挡路**：不落台账、不弹框、也**不停下来** ——
+        // 停下来本身就是一种打断，而闪灯一直眨正是它该做的事。
+        // 顺带把"循环""静止"这两个词教给他 —— 发现照说，只是不占住屏幕。
+        app.toast(t('end.tiny.' + hit.type, { period: hit.period || 0, gen: hit.gen }))
+        return hit
+      }
       finishRun(hit)
       return hit
     }
@@ -98,6 +140,7 @@ export function setupRecords(app) {
   /** 手绘改了棋盘 ⇒ 轨迹变了，之前攒的哈希不再代表这条轨迹 */
   function noteEdit() {
     detector.reset()
+    tinyNoted = false          // 改了棋盘就是另一条轨迹，重新判
     observeInitial()
   }
 
@@ -109,6 +152,10 @@ export function setupRecords(app) {
     ledger.add({
       runId: currentRun.runId,
       timestamp: currentRun.startedAt,
+      // **这一局是怎么来的**（D135）。`runDirty` 本来就是"不能再靠种子重放"，
+      // 正是这件事 —— 手摆过、载入过、读过档的局，种子与初始密度都不成立。
+      // 只说来源，不自己清字段：哪些列因此不成立由 `ledger.add` 一处决定。
+      origin: app.runDirty ? ORIGIN_HANDMADE : ORIGIN_SEEDED,
       seed: e.seed,
       ruleFingerprint: e.rule.fingerprint,
       ruleNotation: e.rule.notation || 'clauses',
@@ -146,7 +193,9 @@ export function setupRecords(app) {
       cell('sum.gens', end.gen),
       cell('sum.peak', chronicle.peak),
       cell('sum.alive', app.engine.stats.alive),
-      cell('sum.seed', app.engine.seed, true),
+      // **手摆的局不许显示种子**（D135）：那个数产生不出这盘棋。
+      // 与台账同一个判据（`runDirty`），免得卡片说一套、台账说另一套。
+      cell('sum.seed', app.runDirty ? t('sum.seed.na') : app.engine.seed, true),
       cell('sum.rule', app.engine.rule.notation || t('rule.beyondBS'), true)
     ].join('')
     el.note.value = ''
@@ -197,7 +246,8 @@ export function setupRecords(app) {
           <div class="led-row">
             <div class="led-head"><b>${t('end.' + r.endType)}</b>
               <span>${t('chron.gen', { gen: r.endGen })} · ${t('sum.peak')} ${r.peakPop}</span></div>
-            <div class="led-meta mono">${r.ruleNotation} · ${r.boundary} · ${r.boardSize} · seed ${r.seed}</div>
+            <div class="led-meta mono">${r.ruleNotation} · ${r.boundary} · ${r.boardSize} · ${
+              r.origin === ORIGIN_HANDMADE ? t('led.handmade') : `seed ${r.seed}`}</div>
             <input type="text" class="led-note" data-run="${r.runId}" value="${escapeAttr(r.note)}"
               data-i18n-placeholder="led.notePlaceholder" placeholder="${t('led.notePlaceholder')}" />
           </div>`).join('')

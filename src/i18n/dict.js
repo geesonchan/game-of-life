@@ -926,6 +926,16 @@ export const DICT = {
     'end.capped': '代数上限',
     'end.capped.body': '跑满 {gen} 代仍未终止，它可能还会一直变化下去。',
     'end.capped.simple': '这个世界走了 {gen} 步还没停下来，它也许会一直变下去',
+    // **小局的那一句**（D134）：不弹框、不落台账，一句话把发现说出来。
+    // 用词与上面那几条同源（循环 / 静止 / 全灭）—— 教的是同一个词，不另造一套。
+    // **填不出来的字段就别填**（D135）：手摆的局，种子产生不出这盘棋。
+    // 空着可以，写一个假的不行。
+    'sum.seed.na': '手摆的，没有种子',
+    'led.handmade': '手摆／载入，无种子',
+    'end.tiny.cycle': '它回到原样了 —— 这叫循环，周期 {period} 代',
+    'end.tiny.still': '它不动了 —— 这叫静止，之后不会再变',
+    'end.tiny.extinction': '都没了 —— 这几个格子没活下来',
+    'end.tiny.capped': '跑满了设定的代数',
     'end.manual': '手动结束',
     'end.manual.body': '在第 {gen} 代手动结束了本局。',
     'end.manual.simple': '你在第 {gen} 步的时候停下了这个世界',
@@ -1971,6 +1981,12 @@ export const DICT = {
     'end.capped': 'Generation cap',
     'end.capped.body': 'Ran the full {gen} generations without terminating; it may well keep changing.',
     'end.capped.simple': 'This world went {gen} steps and still has not stopped — it might keep changing forever',
+    'sum.seed.na': 'placed by hand — no seed',
+    'led.handmade': 'by hand / loaded, no seed',
+    'end.tiny.cycle': 'Back to where it started — that is a cycle, period {period}',
+    'end.tiny.still': 'It stopped changing — that is a still life',
+    'end.tiny.extinction': 'All gone — those few did not hold on',
+    'end.tiny.capped': 'Reached the step limit you set',
     'end.manual': 'Ended by hand',
     'end.manual.body': 'You ended this run at generation {gen}.',
     'end.manual.simple': 'You stopped this world at step {gen}',

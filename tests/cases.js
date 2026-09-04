@@ -30,7 +30,7 @@ import { createLifeProbe, probeLife, PROBE_SPEC } from '../src/data/life-probe.j
 import { SnapshotLog } from '../src/data/snapshots.js'
 import { TerminationDetector } from '../src/data/detector.js'
 import { Chronicle } from '../src/data/chronicle.js'
-import { Ledger } from '../src/data/ledger.js'
+import { Ledger, ORIGIN_SEEDED, ORIGIN_HANDMADE, NA_FIELDS } from '../src/data/ledger.js'
 import { toCSV, SNAPSHOT_COLUMNS, LEDGER_COLUMNS } from '../src/data/csv.js'
 import { VisualState } from '../src/render/visual-state.js'
 import { buildAgeIndexLUT, AGE_MAX } from '../src/render/palette.js'
@@ -8022,6 +8022,117 @@ cases.push(
       t.ok(/t\('intro\.demo\.next', \{ step: t\('ctrl\.step'\) \}\)/.test(place),
         '按钮名从 ctrl.step 来 —— 与按钮上写的是同一处（§12）')
       t.ok(/app\.demoHintPending = true/.test(readSrc('src/ui/intro.js')), '引导交出闪灯时挂起它')
+    }
+  }
+,
+  {
+    name: '一局要先成为一局，才谈得上结束（D134）',
+    run(t) {
+      // 实测过（走真实路径，不是只读代码）：放方块走一步→「静止」、
+      // 放两格走一步→「全灭」、放闪灯走两步→「循环」，**一分钟落三条台账、弹三次框**。
+      // 而且与引导无关 —— 任何人试任何基础图案都会撞到。
+      const rec = readSrc('src/ui/records.js')
+
+      // **判据落在这一局本身，不落在"这个人是谁"**
+      t.ok(/const MIN_RUN_GENS = 8/.test(rec), '门槛写成具名常量')
+      t.ok(/这个数是判断，不是测量/.test(rec), '要写明它是判断不是测量')
+      for (const covered of ['闪灯 2', '蟾蜍 2', '信标 2', '脉冲星 3', '方块 1', '两个格子 1']) {
+        t.ok(rec.indexOf(covered) >= 0, `覆盖清单里要写明它罩住了什么：${covered}`)
+      }
+      // **没有再 AND 一个"手摆的局"**（作者定：多一个条件就多一个会烂的分支）
+      const on = locate(rec, /function onGeneration\(stats\)[\s\S]*?\n  \}/g, 'onGeneration 的定位')[0]
+      t.ok(!/runDirty/.test(on), '不许再 AND 一个 runDirty —— 随机局 8 代内终止同样不值得记')
+
+      // **判过一次就一直算数**：只跳过"这一次"不够 ——
+      // 闪灯每两代命中一次，走到第 10 代那一次 gen>8，会补弹一张卡
+      t.ok(/if \(tinyNoted\) return hit/.test(on),
+        '这一局判过是小局，之后一律不再打扰 —— 记在这一局上，不是记在这一次上')
+      t.ok(/hit\.gen <= MIN_RUN_GENS/.test(on), '门槛看的是终止时的代数')
+      t.ok(!/finishRun/.test(on.slice(on.indexOf('tinyNoted = true'), on.indexOf('finishRun'))),
+        '小局那条路不许走 finishRun —— 那才是落台账 + 弹框的地方')
+      // 不停下来：停下来本身就是一种打断
+      const tiny = on.slice(on.indexOf('tinyNoted = true'))
+      t.ok(!/setRunning\(false\)/.test(tiny), '小局不许停下来 —— 闪灯一直眨正是它该做的事')
+      // 复位：新一局、改过棋盘都要重新判
+      t.ok(/tinyNoted = false/.test(locate(rec, /function startRun\(\)[\s\S]*?\n  \}/g, 'startRun 的定位')[0]),
+        '新一局重新判')
+      t.ok(/tinyNoted = false/.test(locate(rec, /function noteEdit\(\)[\s\S]*?\n  \}/g, 'noteEdit 的定位')[0]),
+        '改了棋盘就是另一条轨迹，重新判')
+
+      // 那句话四种终止各有一条，且用词与总结卡同源（教的是同一个词）
+      for (const type of ['cycle', 'still', 'extinction', 'capped']) {
+        for (const lang of ['zh', 'en']) {
+          t.ok(!!DICT[lang]['end.tiny.' + type], `${lang} 缺 end.tiny.${type}`)
+        }
+      }
+      t.ok(/循环/.test(DICT.zh['end.tiny.cycle']) && /{period}/.test(DICT.zh['end.tiny.cycle']),
+        '循环那句要把"循环"这个词和周期一起教给他')
+      t.ok(/静止/.test(DICT.zh['end.tiny.still']), '静止那句要教"静止"这个词')
+
+      // **连走十代只说一次**（作者点名要配的守卫）：拿真引擎跑
+      const N = 21, C = N >> 1
+      const e = new LifeEngine(N, N, { rule: lifeRule(), boundary: 'dead' })
+      for (const [x, y] of getPattern('blinker').cells) e.set(C + x, C + y, 1)
+      e.stats.alive = e.countAlive()
+      const det = new TerminationDetector()
+      const hashOf = () => { let h = ''; for (let y = 0; y < N; y++) { for (let x = 0; x < N; x++) h += e.get(x, y) ? '1' : '0' } return h }
+      det.observe(0, hashOf(), e.stats.alive)
+      let hits = 0
+      let noted = false
+      let cards = 0
+      for (let g = 1; g <= 10; g++) {
+        e.step()
+        const hit = det.observe(g, hashOf(), e.stats.alive)
+        if (!hit) continue
+        hits++
+        if (noted) continue                       // 照抄上面那条路的逻辑
+        if (hit.gen <= 8) { noted = true } else { cards++ }
+      }
+      t.ok(hits >= 4, `闪灯十代里会命中好几次（实际 ${hits}）—— 正是它必须只说一次的原因`)
+      t.equal(cards, 0, '连走十代，一张卡都不许弹 —— 包括第 10 代那次 gen>8 的')
+    }
+  }
+,
+  {
+    name: '填不出来的字段就别填：手摆的局没有种子（D135）',
+    run(t) {
+      // 台账从前无条件填 seed 与 initDensity。而**手摆的局，那个种子产生不出那盘棋** ——
+      // 实测抓到过：手摆一个 T 形四格跑到第 11 代，台账那行写着 `seed 4271`。
+      // 记的不是"微不足道的事实"，是**一个不成立的事实**。
+      const led = new Ledger()
+      const base = {
+        runId: 'r1', timestamp: 'T', seed: 4271, ruleNotation: 'B3/S23', boundary: 'torus',
+        boardSize: '200x200', initDensity: 0.35, endType: 'cycle', endGen: 11, peakPop: 20
+      }
+      const hand = led.add({ ...base, origin: ORIGIN_HANDMADE })
+      t.equal(hand.seed, '', '手摆的局：种子留空，不许写一个假的')
+      t.equal(hand.initDensity, '', '初始密度同理 —— 盘不是那么来的')
+      t.equal(hand.endGen, 11, '而真的那些字段照旧记：终止代数')
+      t.equal(hand.peakPop, 20, '峰值人口也照旧')
+      t.equal(hand.boardSize, '200x200', '盘尺寸与规则永远成立')
+      const seeded = led.add({ ...base, runId: 'r2', origin: ORIGIN_SEEDED })
+      t.equal(seeded.seed, 4271, '种子生成的局照旧记种子')
+      t.equal(seeded.initDensity, 0.35, '初始密度也照旧')
+
+      // **清空发生在 add 这一处，不靠调用方记得**
+      t.ok(NA_FIELDS[ORIGIN_HANDMADE].indexOf('seed') >= 0, '登记表里写明哪些列不成立')
+      const src = readSrc('src/data/ledger.js')
+      t.ok(/for \(const f of NA_FIELDS\[row\.origin\] \|\| \[\]\) row\[f\] = ''/.test(src),
+        '不成立的字段在 add 里清 —— 各调用点各清一遍的话，下一个写入点就会漏')
+
+      // 判据同一个：卡片与台账都看 runDirty，不许一处说一套
+      const rec = readSrc('src/ui/records.js')
+      t.ok(/origin: app\.runDirty \? ORIGIN_HANDMADE : ORIGIN_SEEDED/.test(rec),
+        '来源由 runDirty 判 —— 它本来就是"不能再靠种子重放"')
+      t.ok(/app\.runDirty \? t\('sum\.seed\.na'\) : app\.engine\.seed/.test(rec),
+        '总结卡上那一格也不许显示假种子')
+      t.ok(/origin === ORIGIN_HANDMADE \? t\('led\.handmade'\)/.test(rec),
+        '台账那一行也要分辨得出来')
+      // origin 要进 CSV，否则导出来的表分辨不出哪些行的种子是空的
+      t.ok(readSrc('src/data/csv.js').indexOf("'origin'") >= 0, 'origin 要进 CSV 列')
+      for (const lang of ['zh', 'en']) {
+        t.ok(!!DICT[lang]['sum.seed.na'] && !!DICT[lang]['led.handmade'], `${lang} 缺那两条词条`)
+      }
     }
   }
 
